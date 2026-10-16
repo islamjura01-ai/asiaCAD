@@ -131,11 +131,13 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
   β — 7-jadval, K — 4-jadval (F ≥ 500 ga), t < 10 min tuzatmasi (63-band), t = tcon + tcan + 0.017·Σl/v (11–13-formulalar).
   q20, n, mr, γ hudud bo'yicha 1-rasm va 2-ilovadan qo'lda kiritiladi (dasturda xarita yo'q). Quduqlarda F (ga) — qo'shiladigan maydon.
   Namuna: `examples/k2_yomgir.kan.json`.
-- **Norma tekshiruvi** (QMQ 2.04.03-19 — SHNQ 2.04.22-25 ga ko'ra amaldagi tarmoq normasi; jadval qiymatlari SNiP 2.04.03-85 dan,
-  **QMQ matni bilan tasdiqlanmagan**): min diametr (ko'cha 200, hovli 150),
-  min nishablik (Ø150 — 0.008, Ø200 — 0.007, kattalari 1/D — ogohlantirish), max to'lish, o'z-o'zini tozalash tezligi,
-  max tezlik (metall 8, nometall 4 m/s), sig'im, quduqlar oralig'i (35/50/75/100/150/200 m), quvur ustidagi qatlam ≥ 0.7 m,
-  muzlash chuqurligi, diametr kamayishi, quduq diametri. Xato — qizil qator.
+- **Norma tekshiruvi** — SNiP 2.04.03-85 (eski norma, matn bilan solishtirilgan; har bir xabarda band):
+  min diametr 2.33 (maishiy: ko'cha 200, hovli 150; yomg'ir: ko'cha 250, hovli 200),
+  min nishablik 2.41 (Ø150 — 0,008, Ø200 — 0,007; asoslangan holda 0,007 / 0,005 — ogohlantirish; kattalari 1/D — amaliy qoida),
+  max to'lish va min tezlik 2.34 / 16-jadval (yomg'ir P ≤ 0,33 yil — 0,6 m/s), max tezlik 2.36 (8/4, yomg'ir 10/7 m/s),
+  ulanish burchagi ≥ 90° 4.5, shelyga bo'yicha ulash 4.7, chuqurlik 4.8 (quvur ustigacha ≥ 0,7 m, muzlash −0,3/−0,5 m),
+  quduqlar oralig'i va o'lchami — SP 32.13330.2018 6.3.1 (35/50/75/100/150/200 m; D ≤ 600 — 1000 mm, D ≥ 700 — D+500).
+  Xato — qizil qator.
 - **Chizma** (`SEWER fayl.kan.json [x,y | -]`): plan (quduqlar, quvurlar material rangida, oqim strelkasi, yozuvlar) va bo'ylama
   profil (yer, quvur tubi/usti, quduqlar, jadval: belgilar, chuqurlik, nishablik ‰, masofa, quvur) — qatlamlar `K1_QUVUR`,
   `K1_QUDUQ`, `K1_YOZUV`, `K1_PROFIL`; bitta undo qadami.

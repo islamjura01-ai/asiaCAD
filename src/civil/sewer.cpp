@@ -16,9 +16,22 @@ namespace {
 constexpr double kPI = 3.14159265358979323846;
 
 // ---------------------------------------------------------------- normativ jadvallar
-// QMQ 2.04.03-19 "Kanalizatsiya. Tashqi tarmoqlar va inshootlar" — qiymatlar SNiP 2.04.03-85 dan, QMQ matni bilan
-// solishtirilmagan.
-const char* kRef = "QMQ 2.04.03-19 (SNiP 2.04.03-85)";
+// SNiP 2.04.03-85 "Kanalizatsiya. Tashqi tarmoqlar va inshootlar" (eski norma) — matn bilan solishtirilgan:
+// 2.33 eng kichik diametrlar, 2.34 va 16-jadval (to'lish, eng kichik tezlik), 2.36 eng katta tezlik, 2.41 nishabliklar,
+// 4.5 ulanish burchagi, 4.7 shelyga bo'yicha ulash, 4.8 chuqurlik. Quduqlar oralig'i va o'lchami — SP 32.13330.2018 6.3.1
+// (SNiP 2.04.03-85 ning dolzarblashtirilgan tahriri, qiymatlar bir xil).
+const char* kRef = "SNiP 2.04.03-85";
+const char* clauseOf(const std::string& key) {
+    static const std::pair<const char*, const char*> t[] = {
+        {"sewer.chk.min_dn", "2.33"},        {"sewer.chk.min_slope", "2.41"},    {"sewer.chk.slope_just", "2.41"},
+        {"sewer.chk.capacity", "2.34"},      {"sewer.chk.fill", "2.34, 16-jadval"}, {"sewer.chk.vmin", "2.34, 16-jadval"},
+        {"sewer.chk.vmax", "2.36"},          {"sewer.chk.cover", "4.8"},         {"sewer.chk.frost", "4.8"},
+        {"sewer.chk.angle", "4.5"},          {"sewer.chk.dn_decrease", "4.7"},
+        {"sewer.chk.spacing", "SP 32.13330.2018, 6.3.1"}, {"sewer.chk.manhole_d", "SP 32.13330.2018, 6.3.1"}};
+    for (const auto& [k, c] : t)
+        if (key == k) return c;
+    return "";
+}
 const char* kStormRef = "SHNQ 2.04.22-25, 62-70";
 
 double lerp(const double* xs, const double* ys, int n, double x) {
@@ -35,16 +48,17 @@ double maxFill(int dn, bool storm) {
     if (dn <= 900) return 0.75;
     return 0.8;
 }
-double minVelocity(int dn) {
+double minVelocity(int dn, bool storm = false, double P = 1.0) {
+    if (storm && P <= 0.33 + 1e-9) return 0.6;  // 16-jadval, 3-izoh
     if (dn <= 250) return 0.7;
     if (dn <= 400) return 0.8;
     if (dn <= 500) return 0.9;
     if (dn <= 800) return 1.0;
-    if (dn <= 1200) return 1.15;
+    if (dn <= 1200) return 1.15;  // 900 (H/D 0,75) va 1000-1200 (H/D 0,8)
     if (dn <= 1500) return 1.3;
     return 1.5;
 }
-double maxVelocity(PipeMaterial m) { return isMetal(m) ? 8.0 : 4.0; }
+double maxVelocity(PipeMaterial m, bool storm = false) { return storm ? (isMetal(m) ? 10.0 : 7.0) : (isMetal(m) ? 8.0 : 4.0); }  // 2.36
 double maxSpacing(int dn) {
     if (dn <= 150) return 35;
     if (dn <= 450) return 50;
@@ -54,18 +68,18 @@ double maxSpacing(int dn) {
     if (dn <= 2000) return 200;
     return 250;
 }
-double minSlopeFor(int dn) {
+double minSlopeFor(int dn) {  // 2.41
     if (dn <= 150) return 0.008;
     if (dn <= 200) return 0.007;
-    return 1.0 / dn;  // amaliy qoida i ≥ 1/D (ogohlantirish darajasi)
+    return 1.0 / dn;  // normada yo'q — amaliy qoida i ≥ 1/D (ogohlantirish darajasi)
 }
-double requiredManhole(int dn, bool street) {
-    if (dn <= 150 && !street) return 0.7;
+double minSlopeJustified(int dn) { return dn <= 150 ? 0.007 : 0.005; }  // 2.41: "obosnovaniye" bilan ayrim uchastkalarda
+// SP 32.13330.2018 6.3.1: D <= 600 — 1000×1000 mm; D >= 700 — (D+400)×(D+500) mm. Bu yerda — kattaroq o'lcham.
+// D <= 150 va chuqurlik <= 1,2 m da 700 mm — SNiP 2.04.03-85 4.15 izohi (matni bilan solishtirilmagan).
+double requiredManhole(int dn, bool street, double depth) {
+    if (dn <= 150 && !street && depth <= 1.2 + 1e-9) return 0.7;
     if (dn <= 600) return 1.0;
-    if (dn <= 700) return 1.25;
-    if (dn <= 1000) return 1.5;
-    if (dn <= 1200) return 2.0;
-    return 2.5;
+    return (dn + 500) / 1000.0;
 }
 constexpr double kMinCover = 0.7;  // quvur ustigacha, m
 
@@ -194,7 +208,8 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
     }
     const bool storm = n.system == "K2";
     auto add = [&](Issue::Level lv, const char* key, std::vector<std::string> a, int seg, int mh) {
-        r.issues.push_back({lv, key, std::move(a), kRef, seg, mh});
+        const std::string c = clauseOf(key);
+        r.issues.push_back({lv, key, std::move(a), c.empty() ? std::string(kRef) : (c.rfind("SP", 0) == 0 ? c : std::string(kRef) + ", " + c), seg, mh});
     };
     const auto& m0 = n.manholes.front();
     double invOut = m0.invert ? *m0.invert : m0.rim - n.startDepth;
@@ -235,8 +250,8 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
         s.depthDown = b.rim - s.invDown;
         s.coverMin = std::min(a.rim - (s.invUp + dout), b.rim - (s.invDown + dout));
         s.maxFill = n.pressure ? 1.0 : maxFill(p.dn, storm);
-        s.vMin = minVelocity(p.dn);
-        s.vMax = maxVelocity(p.material);
+        s.vMin = minVelocity(p.dn, storm, n.storm.P);
+        s.vMax = maxVelocity(p.material, storm);
         s.maxSpacing = maxSpacing(p.dn);
         s.minSlope = minSlopeFor(p.dn);
         const double gSlope = std::max(s.slope, 1e-6);
@@ -267,11 +282,13 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
 
         // ---- tekshiruvlar
         const int si = static_cast<int>(i);
-        const int minDn = n.street ? 200 : 150;
+        const int minDn = storm ? (n.street ? 250 : 200) : (n.street ? 200 : 150);  // 2.33
         if (!n.pressure && p.dn < minDn) add(Issue::Error, "sewer.chk.min_dn", {sid, std::to_string(p.dn), std::to_string(minDn)}, si, -1);
         if (!n.pressure) {
-            if (p.dn <= 200 && s.slope + 1e-12 < s.minSlope)
-                add(Issue::Error, "sewer.chk.min_slope", {sid, num(s.slope, 4), num(s.minSlope, 4), std::to_string(p.dn)}, si, -1);
+            if (p.dn <= 200 && s.slope + 1e-12 < minSlopeJustified(p.dn))
+                add(Issue::Error, "sewer.chk.min_slope", {sid, num(s.slope, 4), num(minSlopeJustified(p.dn), 4), std::to_string(p.dn)}, si, -1);
+            else if (p.dn <= 200 && s.slope + 1e-12 < s.minSlope)
+                add(Issue::Warning, "sewer.chk.slope_just", {sid, num(s.slope, 4), num(s.minSlope, 4), std::to_string(p.dn)}, si, -1);
             else if (p.dn > 200 && s.slope + 1e-12 < s.minSlope)
                 add(Issue::Warning, "sewer.chk.slope_rule", {sid, num(s.slope, 4), num(s.minSlope, 4)}, si, -1);
             if (s.length > s.maxSpacing + 1e-9)
@@ -298,6 +315,17 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
             r.issues.push_back({Issue::Info, "sewer.chk.storm_flow", {sid, num(s.stormF, 2), num(s.stormT, 1), num(s.stormZ, 3), num(s.flowLs, 1)},
                                 kStormRef, si, -1});
         if (s.invDown > b.rim) add(Issue::Error, "sewer.chk.above_ground", {sid}, si, -1);
+        // 4.5: ulanadigan va chiqaruvchi quvurlar orasidagi burchak >= 90° (ya'ni burilish <= 90°)
+        if (i > 0 && !n.pressure) {
+            const auto& z = n.manholes[i - 1];
+            const double ux = a.x - z.x, uy = a.y - z.y, vx = b.x - a.x, vy = b.y - a.y;
+            const double lu = std::hypot(ux, uy), lv2 = std::hypot(vx, vy);
+            if (lu > 1e-9 && lv2 > 1e-9) {
+                const double cosT = std::clamp((ux * vx + uy * vy) / (lu * lv2), -1.0, 1.0);
+                const double between = 180.0 - std::acos(cosT) * 180.0 / kPI;
+                if (between + 1e-6 < 90.0) add(Issue::Error, "sewer.chk.angle", {a.name, num(between, 0)}, si, static_cast<int>(i));
+            }
+        }
 
         // ---- miqdorlar
         auto& q = qty[p.id];
@@ -321,9 +349,9 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
         int dn = 0;
         if (k > 0 && r.segments[k - 1].spec) dn = std::max(dn, r.segments[k - 1].spec->dn);
         if (k + 1 < nm && k < r.segments.size() && r.segments[k].spec) dn = std::max(dn, r.segments[k].spec->dn);
-        mr.required = requiredManhole(dn, n.street);
-        mr.diameter = n.manholes[k].diameter > 0 ? n.manholes[k].diameter : mr.required;
         mr.depth = n.manholes[k].rim - std::min(mr.invIn, mr.invOut);
+        mr.required = requiredManhole(dn, n.street, mr.depth);
+        mr.diameter = n.manholes[k].diameter > 0 ? n.manholes[k].diameter : mr.required;
         if (mr.diameter + 1e-9 < mr.required)
             add(Issue::Error, "sewer.chk.manhole_d", {n.manholes[k].name, num(mr.diameter), num(mr.required), std::to_string(dn)}, -1,
                 static_cast<int>(k));

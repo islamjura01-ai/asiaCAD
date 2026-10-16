@@ -1591,6 +1591,43 @@ TEST(sewer_compute_inverts_and_checks) {
     mh.manholes[1].diameter = 0.7;
     CHECK(has(civil::compute(mh), "sewer.chk.manhole_d"));
 }
+TEST(sewer_snip_2_04_03_85) {
+    auto has = [&](const civil::SewerResult& rr, const std::string& key) {
+        for (const auto& i : rr.issues) if (i.key == key) return true;
+        return false;
+    };
+    auto ref = [&](const civil::SewerResult& rr, const std::string& key) {
+        for (const auto& i : rr.issues) if (i.key == key) return i.ref;
+        return std::string();
+    };
+    // 2.41: Ø200 0,006 — faqat asoslangan holda (ogohlantirish), 0,004 — xato
+    auto a = demoNet();
+    a.segments[0].slope = 0.006;
+    const auto ra = civil::compute(a);
+    CHECK(has(ra, "sewer.chk.slope_just") && !has(ra, "sewer.chk.min_slope"));
+    CHECK(ref(ra, "sewer.chk.slope_just") == "SNiP 2.04.03-85, 2.41");
+    // 2.33: yomg'ir ko'cha tarmog'i Ø200 < Ø250
+    auto st = demoNet();
+    st.system = "K2";
+    st.street = true;
+    CHECK(has(civil::compute(st), "sewer.chk.min_dn"));
+    // 4.5: burilish 120° (quvurlar orasidagi burchak 60° < 90°)
+    auto an = demoNet();
+    an.manholes[2].x = 40 - 22.5;
+    an.manholes[2].y = 39;
+    const auto rn = civil::compute(an);
+    CHECK(has(rn, "sewer.chk.angle"));
+    CHECK(!has(civil::compute(demoNet()), "sewer.chk.angle"));
+    // SP 32.13330 6.3.1: Ø800 quduq — 800 + 500 = 1,3 m
+    auto big = demoNet();
+    big.segments = {{"RC-TS-800", 0.002, 300.0}, {"RC-TS-800", 0.002, 300.0}};
+    const auto rbg = civil::compute(big);
+    bool any = false;
+    for (const auto& m : rbg.manholes) any |= std::abs(m.required - 1.3) < 1e-9;
+    CHECK(any && !has(rbg, "sewer.chk.spec"));
+    CHECK(ref(rbg, "sewer.chk.vmin").empty() || ref(rbg, "sewer.chk.vmin") == "SNiP 2.04.03-85, 2.34, 16-jadval");
+}
+
 TEST(sewer_json_roundtrip_and_drawing) {
     auto n = demoNet();
     n.manholes[2].invert = 97.0;

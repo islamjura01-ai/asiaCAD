@@ -577,7 +577,9 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         }
         for (const auto& is : res.issues) {
             const char* lv = is.level == civil::Issue::Error ? "sewer.lvl.error" : is.level == civil::Issue::Warning ? "sewer.lvl.warning" : "sewer.lvl.info";
-            out_ << "  " << loc_.tr(lv) << ": " << loc_.tr(is.key, is.args) << '\n';
+            const std::string msg = loc_.tr(is.key, is.args);
+            out_ << "  " << loc_.tr(lv) << ": " << msg
+                 << (is.ref.empty() || msg.find('(') != std::string::npos ? std::string() : "  [" + is.ref + "]") << '\n';
         }
         // chizish: plan + (ixtiyoriy) profil
         std::vector<std::unique_ptr<IEntity>> es = civil::drawPlan(net, res);

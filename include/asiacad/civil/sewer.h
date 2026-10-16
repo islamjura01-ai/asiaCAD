@@ -2,9 +2,9 @@
 // AsiaCAD — o'z oqimli (va bosimli) kanalizatsiya tarmog'i: quduqlar zanjiri, quvur bo'laklari,
 // gidravlik hisob (Manning, qisman to'lish), normativ tekshiruv, plan va bo'ylama profil chizmasi.
 //
-// Tarmoq normalari: QMQ 2.04.03-19 "Kanalizatsiya. Tashqi tarmoqlar va inshootlar" (SHNQ 2.04.22-25 1-band
-// havolasiga ko'ra amaldagi hujjat). Jadval qiymatlari SNiP 2.04.03-85 dan olingan — QMQ matni bilan solishtirilmagan,
-// UI ularni "tasdiqlanmagan" deb belgilaydi.
+// Tarmoq normalari: SNiP 2.04.03-85 "Kanalizatsiya. Tashqi tarmoqlar va inshootlar" (eski norma, matn bilan
+// solishtirilgan; quduqlar oralig'i/o'lchami — SP 32.13330.2018 6.3.1, qiymatlar bir xil),
+// har bir xabarda band raqami ko'rsatiladi.
 // Yomg'ir (K2) sarfi: SHNQ 2.04.22-25, 62–70-bandlar — chegaraviy intensivlik usuli (8–13-formulalar, 3–7-jadvallar).
 #include <array>
 #include <asiacad/civil/pipe_catalog.h>

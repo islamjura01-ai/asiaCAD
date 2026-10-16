@@ -1,0 +1,267 @@
+// GUI tutun testi: oyna ko'rsatilmaydi (offscreen), lekin asboblar -> Interpreter -> Document zanjiri
+// to'liq tekshiriladi. ctest orqali QT_QPA_PLATFORM=offscreen bilan ishga tushadi.
+#include "main_window.h"
+
+#include <asiacad/core/dimension.h>
+#include <asiacad/core/entities.h>
+
+#include <QMouseEvent>
+
+#include <QApplication>
+#include <QComboBox>
+
+#include <cstdio>
+#include <string>
+
+using namespace asiacad;
+using namespace asiacad::gui;
+
+// Haqiqiy sichqoncha hodisalari (bog'lanish/orto/qutb shu yo'l orqali ishlaydi)
+static void mouse(QWidget* w, QEvent::Type t, const QPointF& pos, Qt::MouseButtons held) {
+    QMouseEvent e(t, pos, w->mapToGlobal(pos), t == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton, held, Qt::NoModifier);
+    QApplication::sendEvent(w, &e);
+}
+static void click(Viewport* v, const Vec3& p) {
+    const QPointF s = v->toScreen(p);
+    mouse(v, QEvent::MouseMove, s, Qt::NoButton);
+    mouse(v, QEvent::MouseButtonPress, s, Qt::LeftButton);
+    mouse(v, QEvent::MouseButtonRelease, s, Qt::NoButton);
+}
+static const LineEntity* lastLine(Document& doc) {
+    const LineEntity* r = nullptr;
+    doc.forEach([&](const IEntity& e) { if (e.type() == EntityType::Line) r = static_cast<const LineEntity*>(&e); });
+    return r;
+}
+
+static int failures = 0, checks = 0;
+#define CHECK(c) do { ++checks; if (!(c)) { ++failures; std::printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); } } while (0)
+
+int main(int argc, char** argv) {
+    QApplication app(argc, argv);
+    i18n::Localizer loc;
+    CHECK(loc.loadDirectory(ASIACAD_I18N_DIR) == 6);
+    loc.setLanguage("uz");
+    MainWindow w(loc);
+    Document& doc = w.document();
+    Viewport* v = w.viewport();
+    v->resize(800, 600);
+    v->setView({50, 50, 0}, 5.0);
+
+    // 1. Chiziq asbobi: 3 nuqta -> 2 ta LINE, har biri alohida undo qadami
+    w.activateTool("line");
+    CHECK(v->tool() == Tool::Line);
+    v->feedPoint({0, 0, 0});
+    v->feedPoint({10, 0, 0});
+    v->feedPoint({10, 10, 0});
+    v->finishTool();
+    CHECK(doc.size() == 2);
+    CHECK(v->tool() == Tool::Select);
+    w.runLine("UNDO");
+    CHECK(doc.size() == 1);
+    w.runLine("REDO");
+    CHECK(doc.size() == 2);
+
+    // 2. Aylana: markaz + radius nuqtasi
+    w.activateTool("circle");
+    v->feedPoint({30, 30, 0});
+    v->feedPoint({35, 30, 0});
+    CHECK(doc.size() == 3);
+    bool hasCircle = false;
+    doc.forEach([&](const IEntity& e) {
+        if (e.type() == EntityType::Circle) hasCircle = std::abs(static_cast<const CircleEntity&>(e).radius() - 5.0) < 1e-9;
+    });
+    CHECK(hasCircle);
+
+    // 3. Poliliniya: birinchi nuqtaga qaytish -> yopiq
+    w.activateTool("pline");
+    v->feedPoint({0, 40, 0});
+    v->feedPoint({20, 40, 0});
+    v->feedPoint({20, 60, 0});
+    v->feedPoint({0, 40, 0});  // yopish
+    bool closedPl = false;
+    doc.forEach([&](const IEntity& e) {
+        if (e.type() == EntityType::Polyline) closedPl = static_cast<const PolylineEntity&>(e).isClosed();
+    });
+    CHECK(closedPl);
+    CHECK(doc.size() == 4);
+
+    // 4. Yoy: 3 nuqta
+    w.activateTool("arc");
+    v->feedPoint({50, 0, 0});
+    v->feedPoint({60, 10, 0});
+    v->feedPoint({70, 0, 0});
+    CHECK(doc.size() == 5);
+
+    // 5. Tanlash va ko'chirish
+    v->setSelection(doc.ids());
+    w.activateTool("move");
+    CHECK(v->tool() == Tool::Move);
+    v->feedPoint({0, 0, 0});
+    v->feedPoint({100, 0, 0});
+    BBox b = doc.extents();
+    CHECK(b.min.x >= 99.999);
+    w.runLine("UNDO");
+    b = doc.extents();
+    CHECK(b.min.x < 1e-9);
+
+    // 6. Tanlovsiz ko'chirish — asbob yoqilmaydi
+    v->setSelection({});
+    w.activateTool("move");
+    CHECK(v->tool() == Tool::Select);
+
+    // 7. O'chirish: tanlangan obyektlar va tanlov tozalanishi
+    v->setSelection({doc.ids().front()});
+    w.runLine("ERASE " + QString::number(doc.ids().front()));
+    CHECK(doc.size() == 4);
+    CHECK(v->selection().empty());
+
+    // 8. Buyruq boshqa tilda: rus tilida aylana
+    w.runLine("КРУГ 0,0 3");
+    CHECK(doc.size() == 5);
+
+    // 9. Til almashtirish: interfeys va Interpreter birga
+    w.setLanguage("ru");
+    CHECK(loc.language() == "ru");
+    w.setLanguage("tr");
+    CHECK(loc.language() == "tr");
+
+    // 10. Rejimlar
+    w.setMode(UiMode::Module);
+    CHECK(w.mode() == UiMode::Module);
+    w.setMode(UiMode::Focus);
+    CHECK(w.mode() == UiMode::Focus);
+    w.setMode(UiMode::Classic);
+
+    // 11. Nuqta formati: katta UTM koordinatalari aniqligi yo'qolmaydi
+    CHECK(Viewport::fmtPoint({4512398.123456, 1234612.5, 0}) == "4512398.123456,1234612.5");
+
+    // 12. Ekran <-> dunyo almashuvi
+    const Vec3 wp{12.5, -3.25, 0};
+    const Vec3 back = v->toWorld(v->toScreen(wp));
+    CHECK(std::abs(back.x - wp.x) < 1e-9 && std::abs(back.y - wp.y) < 1e-9);
+
+    // 13. ORTO: kursor biroz qiya bo'lsa ham chiziq gorizontal
+    w.runLine("NEW !");
+    v->setSnapModes(0);
+    v->setView({0, 0, 0}, 5.0);
+    v->setOrtho(true);
+    CHECK(v->ortho() && !v->polar());
+    w.activateTool("line");
+    click(v, {0, 0, 0});
+    click(v, {30, 3, 0});
+    v->finishTool();
+    const LineEntity* ol = lastLine(doc);
+    CHECK(ol && std::abs(ol->endPoint().x - 30) < 1e-6 && std::abs(ol->endPoint().y) < 1e-9);
+
+    // 14. QUTB: 44° atrofidagi kursor 45° nurga tortiladi; orto avtomatik o'chadi
+    v->setPolar(true);
+    CHECK(v->polar() && !v->ortho());
+    w.activateTool("line");
+    click(v, {-40, -40, 0});
+    click(v, {-30, -40 + 10 * std::tan(44.0 * M_PI / 180.0), 0});
+    v->finishTool();
+    const LineEntity* pl = lastLine(doc);
+    CHECK(pl && std::abs((pl->endPoint().x + 40) - (pl->endPoint().y + 40)) < 1e-6);
+
+    // 15. To'g'ridan-to'g'ri masofa: qutb nuri bo'yicha 25 birlik
+    w.activateTool("line");
+    click(v, {0, -20, 0});
+    mouse(v, QEvent::MouseMove, v->toScreen({10, -19.9, 0}), Qt::NoButton);
+    CHECK(v->feedDistance(25));
+    v->finishTool();
+    const LineEntity* dl = lastLine(doc);
+    CHECK(dl && std::abs(dl->endPoint().x - 25) < 1e-9 && std::abs(dl->endPoint().y + 20) < 1e-9);
+
+    // 16. Tutqich: chiziq oxirini sudrab ko'chirish -> GRIP buyrug'i, undo bilan qaytadi
+    const EntityId lineId = doc.ids().front();
+    v->setSelection({lineId});
+    const QPointF gp = v->toScreen({30, 0, 0});
+    const auto g = v->gripAt(gp);
+    CHECK(g && g->first == lineId && g->second == 1);
+    mouse(v, QEvent::MouseMove, gp, Qt::NoButton);
+    mouse(v, QEvent::MouseButtonPress, gp, Qt::LeftButton);
+    CHECK(v->tool() == Tool::Grip);
+    mouse(v, QEvent::MouseMove, v->toScreen({30, 20, 0}), Qt::LeftButton);
+    mouse(v, QEvent::MouseButtonRelease, v->toScreen({30, 20, 0}), Qt::NoButton);
+    CHECK(v->tool() == Tool::Select);
+    auto* gl = static_cast<const LineEntity*>(doc.find(lineId));
+    CHECK(gl && std::abs(gl->endPoint().y - 20) < 1e-6 && std::abs(gl->endPoint().x - 30) < 1e-6);
+    CHECK(v->selection().size() == 1);  // tanlov saqlanadi (ID o'zgarmaydi)
+    w.runLine("UNDO");
+    gl = static_cast<const LineEntity*>(doc.find(lineId));
+    CHECK(gl && std::abs(gl->endPoint().y) < 1e-9);
+    // Esc — tutqich bekor
+    v->beginGrip(lineId, 0);
+    CHECK(v->tool() == Tool::Grip);
+    v->cancelTool();
+    CHECK(v->tool() == Tool::Select);
+    v->setPolar(false);
+
+    // 17. O'lcham asboblari
+    const auto before = doc.size();
+    w.activateTool("dimlinear");
+    CHECK(v->tool() == Tool::DimLinear);
+    v->feedPoint({0, 0, 0});
+    v->feedPoint({30, 0, 0});
+    v->feedPoint({15, -8, 0});
+    CHECK(doc.size() == before + 1);
+    CHECK(v->tool() == Tool::DimLinear);  // asbob keyingi o'lcham uchun faol qoladi
+    w.runLine("CIRCLE 50,50 10");
+    w.activateTool("dimradius");
+    v->setView({50, 50, 0}, 5.0);
+    v->feedPoint({60, 50, 0});  // aylanani tanlash
+    v->feedPoint({75, 55, 0});  // joy
+    w.activateTool("dimdiameter");
+    v->feedPoint({50, 60, 0});
+    v->feedPoint({52, 52, 0});
+    std::vector<std::string> dims;
+    doc.forEach([&](const IEntity& e) {
+        if (e.type() == EntityType::Dimension) dims.push_back(static_cast<const DimensionEntity&>(e).text());
+    });
+    CHECK(dims.size() == 3);
+    CHECK(dims.size() == 3 && dims[0] == "30" && dims[1] == "R10" && dims[2] == "\xC3\x98" "20");
+    v->cancelTool();
+
+    // 18. Tahrir asboblari: OFFSET, TRIM, EXTEND, FILLET (sichqoncha bilan; nuqta obyekt ustiga tushiriladi)
+    w.runLine("NEW !");
+    v->setView({0, 0, 0}, 10.0);
+    w.runLine("LINE -20,0 20,0");          // 1
+    w.runLine("LINE 0,-10 0,10");          // 2
+    w.runLine("LINE -20,15 -5,15");        // 3
+    w.runLine("LINE 10,5 10,20");          // 4
+    w.activateTool("offset");
+    v->setOffsetDistance(4);
+    click(v, {5, 0.3, 0});                 // obyekt (0.3 — apertura ichida)
+    click(v, {5, 8, 0});                   // tomon
+    CHECK(doc.size() == 5);
+    auto* off = dynamic_cast<const LineEntity*>(doc.find(5));
+    CHECK(off && std::abs(off->startPoint().y - 4) < 1e-9);
+    v->cancelTool();
+    w.activateTool("trim");
+    click(v, {15, 0.2, 0});                // 1-chiziqning o'ng qismi (x>0) olib tashlanadi... lekin 4-chiziq ham kesmaydi
+    auto* tr = dynamic_cast<const LineEntity*>(doc.find(1));
+    CHECK(tr && std::abs(tr->endPoint().x) < 1e-9);
+    v->cancelTool();
+    w.activateTool("extend");
+    click(v, {-6, 15.2, 0});               // 3-chiziq o'ng uchi -> 2-chiziq (x=0)? 2-chiziq y<=10, demak 4-chiziq x=10
+    auto* ex = dynamic_cast<const LineEntity*>(doc.find(3));
+    CHECK(ex && std::abs(ex->endPoint().x - 10) < 1e-9);
+    v->cancelTool();
+    w.activateTool("fillet");
+    v->setFilletRadius(2);
+    click(v, {-10, 15, 0});
+    click(v, {10, 8, 0});
+    bool hasFilletArc = false;
+    doc.forEach([&](const IEntity& e) {
+        if (auto* a = dynamic_cast<const ArcEntity*>(&e)) hasFilletArc = std::abs(a->radius() - 2) < 1e-9;
+    });
+    CHECK(hasFilletArc);
+    w.runLine("UNDO");
+    hasFilletArc = false;
+    doc.forEach([&](const IEntity& e) { if (e.type() == EntityType::Arc) hasFilletArc = true; });
+    CHECK(!hasFilletArc);
+    v->cancelTool();
+
+    std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
+    return failures == 0 ? 0 : 1;
+}

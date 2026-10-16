@@ -6,6 +6,7 @@
 #include "main_window.h"
 #include "sewer_dialog.h"
 #include "building_dialog.h"
+#include "rebar_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -53,6 +54,8 @@ int main(int argc, char** argv) {
     QString file, lang, mode, i18nDir, shot, size = "1440x900", tool, cursor, select, grip, value, sewerFile, sewerTab, sewerTpl, viewArg;
     bool sewer = false;
     int building = 0;
+    bool rebar = false;
+    QString rebarKind;
     bool ortho = false, polar = false;
     QStringList points;
     QStringList cmds;
@@ -75,6 +78,8 @@ int main(int argc, char** argv) {
         else if (a == "--grip") grip = next();
         else if (a == "--value") value = next();  // OFFSET masofasi / FILLET radiusi
         else if (a == "--view") viewArg = next();  // cx,cy,piksel/birlik
+        else if (a == "--rebar") rebar = true;  // Armatura 3D menyusi (bino --building N dan)
+        else if (a == "--rebar-kind") rebarKind = next();  // FOUND/STRIP/COLUMN/WALL/SLAB/ROOF
         else if (a == "--building") building = next().toInt();  // Monolit bino menyusi (qavatlar)
         else if (a == "--sewer") sewer = true;                 // Kanalizatsiya menyusi (skrinshot uni oladi)
         else if (a == "--sewer-file") { sewer = true; sewerFile = next(); }
@@ -117,6 +122,11 @@ int main(int argc, char** argv) {
             if (const auto gi = grip.split(','); gi.size() == 2) w.viewport()->beginGrip(gi[0].toULongLong(), gi[1].toInt());
             if (!tool.isEmpty()) w.activateTool(tool);
             if (building > 0) w.openBuilding()->setFloors(building);
+            if (rebar) {
+                auto* rd = w.openRebar();
+                asiacad::bim::ElemKind k;
+                if (!rebarKind.isEmpty() && asiacad::bim::kindFromKey(rebarKind.toStdString(), k)) rd->selectKind(k);
+            }
             if (sewer) {
                 auto* d = w.openSewer();
                 if (!sewerTpl.isEmpty()) d->selectTemplate(sewerTpl.toInt());
@@ -147,7 +157,8 @@ int main(int argc, char** argv) {
             QWidget* target = &w;
             for (QWidget* tl : QApplication::topLevelWidgets())
                 if ((sewer && tl->isVisible() && tl->inherits("asiacad::gui::SewerDialog")) ||
-                    (building > 0 && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")))
+                    (building > 0 && !rebar && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
+                    (rebar && tl->isVisible() && tl->inherits("asiacad::gui::RebarDialog")))
                     target = tl;
             target->grab().save(shot);
             QApplication::exit(0);

@@ -31,6 +31,7 @@ public:
     void addPrism(const std::vector<P3>& outline, const std::vector<std::vector<P3>>& holes, double z0, double z1, const QColor& c,
                   int alpha = 255);
     void addLabel(const P3& at, const QString& text);
+    void addPolyline(const std::vector<P3>& pts, const QColor& c, double widthPx, bool closed = false);  // armatura va h.k.
     void endScene(bool keepView = false);
     void resetView();
     QSize sizeHint() const override { return {420, 320}; }
@@ -51,6 +52,8 @@ private:
         int alpha = 255;
         std::vector<std::vector<P3>> holes;  // teshiklar (OddEven)
         int group = -1;                      // bitta jism (prizma) — chuqurlik bo'yicha birga saralanadi
+        double lineWidth = 0;                // > 0 — yuza emas, chiziq (ochiq/yopiq)
+        bool closed = false;
     };
     int groups_ = 0;
     struct Label {

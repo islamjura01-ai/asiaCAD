@@ -92,6 +92,10 @@ void SewerDialog::buildUi() {
     auto* split = new QSplitter(Qt::Horizontal, this);
     root->addWidget(split, 1);
 
+    // ---- yon shablonlar paneli
+    side_ = new TemplateSidebar(t("gui.side.title"), t("gui.side.search"), t("gui.side.apply"), t("gui.side.hint"), split);
+    connect(side_, &TemplateSidebar::templateActivated, this, [this](const QVariant& v) { selectTemplate(v.toInt()); });
+
     // ---- chap: parametrlar
     auto* leftScroll = new QScrollArea(split);
     leftScroll->setWidgetResizable(true);
@@ -236,9 +240,10 @@ void SewerDialog::buildUi() {
     tabs_->addTab(checks_, t("gui.sew.checks"));
     tabs_->addTab(qty_, t("gui.sew.qty"));
     split->setStretchFactor(0, 0);
-    split->setStretchFactor(1, 3);
-    split->setStretchFactor(2, 2);
-    split->setSizes({360, 780, 400});
+    split->setStretchFactor(1, 0);
+    split->setStretchFactor(2, 3);
+    split->setStretchFactor(3, 2);
+    split->setSizes({260, 360, 700, 400});
 
     // ---- past: holat va tugmalar
     auto* bottom = new QHBoxLayout;
@@ -300,6 +305,25 @@ void SewerDialog::fillTemplates() {
     for (const auto& tp : templates_) {
         const QString nm = tp.name.rfind("tpl.", 0) == 0 ? t(tp.name.c_str()) : QString::fromStdString(tp.name);
         tpl_->addItem((tp.user ? QString::fromUtf8("★ ") : QString()) + nm);
+    }
+    // yon panel: material bo'yicha bo'limlar
+    side_->clear();
+    for (auto m : PipeCatalog::builtin().materials()) {
+        bool any = false;
+        for (int i = 0; i < static_cast<int>(templates_.size()); ++i) {
+            const auto& tp = templates_[static_cast<std::size_t>(i)];
+            const PipeSpec* s = PipeCatalog::builtin().find(tp.specId);
+            if (!s || s->material != m) continue;
+            if (!any) side_->addSection(t((std::string("pipe.mat.") + materialKey(m)).c_str()));
+            any = true;
+            const QString nm = tp.name.rfind("tpl.", 0) == 0 ? t(tp.name.c_str()) : QString::fromStdString(tp.name);
+            const QColor acc = m == PipeMaterial::Concrete ? QColor(150, 140, 122)
+                             : m == PipeMaterial::Steel || m == PipeMaterial::DuctileIron ? QColor(120, 130, 150)
+                             : m == PipeMaterial::AsbestosCement ? QColor(170, 170, 160)
+                             : QColor(230, 120, 50);
+            side_->addTemplate(nm, QStringLiteral("%1 · i=%2 · %3 m").arg(QString::fromStdString(tp.system)).arg(tp.slope, 0, 'g', 3).arg(tp.startDepth, 0, 'f', 2),
+                               i, acc, tp.user);
+        }
     }
 }
 

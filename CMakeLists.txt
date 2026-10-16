@@ -51,6 +51,7 @@ add_library(asiacad_civil
   src/civil/pipe_catalog.cpp
   src/civil/sewer.cpp
   src/bim/building.cpp
+  src/bim/rebar.cpp
 )
 target_include_directories(asiacad_civil PUBLIC include)
 target_link_libraries(asiacad_civil PUBLIC asiacad_core)
@@ -86,7 +87,7 @@ if(ASIACAD_BUILD_GUI)
       apps/gui/viewport.cpp
       apps/gui/theme.cpp
       apps/gui/icons.cpp
-      apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp
+      apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp
     )
     target_link_libraries(asiacad-gui PRIVATE asiacad_cmd Qt6::Widgets Qt6::OpenGLWidgets)
     target_compile_definitions(asiacad-gui PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}")
@@ -99,7 +100,7 @@ if(ASIACAD_BUILD_GUI)
 
     # GUI tutun testi (ekransiz)
     add_executable(asiacad_gui_tests tests/gui_smoke.cpp
-      apps/gui/main_window.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp)
+      apps/gui/main_window.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp)
     target_include_directories(asiacad_gui_tests PRIVATE apps/gui)
     target_link_libraries(asiacad_gui_tests PRIVATE asiacad_cmd Qt6::Widgets Qt6::OpenGLWidgets)
     target_compile_definitions(asiacad_gui_tests PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}")

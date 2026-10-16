@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.11: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.12: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -154,6 +154,24 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
 - PTO: tur × qavat bo'yicha soni, beton m³, qolip m²; beton sinflari bo'yicha jami. `BUILDING [n] [H] [t] [x,y]` —
   jadvalni chizmaga (qatlam PTO). GUI: "Tarmoqlar → Monolit bino" (Modul rejimida "BIM"): qatlam xaritasi, parametrlar,
   3D model (qavatlar bo'yicha ko'rsatish), PTO, tekshiruv. Namuna: `examples/bino_plan.acs`.
+
+## Armatura 3D (v0.12) — `src/bim/rebar.*`
+
+- Bino modelidan fundamentdan tomgacha avtomatik karkas: fundament plitasi/lenta — pastki va yuqori to'r + stullar;
+  ustun — bo'ylama sterjenlar + xomutlar (uchlarida zich), keyingi qavatga nahlyostka; devor — ikki yuza + shpilkalar;
+  plita/tom — to'rlar kontur va teshiklar bo'yicha kesiladi. Savdo uzunligi 11,7 m dan oshsa nahlyostka qo'shiladi.
+- Ведомость: pozitsiya, Ø, sinf, uzunlik, soni, massa; Ø bo'yicha jami; bog'lash simi, stul, shpilka.
+- Tekshiruv (SP 63.13330 / ShNQ 2.03.01-24 asosida, tasdiqlanmagan): himoya qatlami, ustun Ø ≥ 12, xomut qadami/Ø,
+  plita va devor qadami, armaturalash foizi.
+- `REBAR [file.json] [x,y]` (uz ARMATURA, ru АРМАТУРА) — vedomostni chizmaga (qatlam ARM_VEDOMOST).
+- GUI: "Tarmoqlar → Armatura" yoki "Monolit bino → Armatura (3D)": yon tomonda shablonlar paneli (12 ta tayyor +
+  o'zingiz saqlaganlar), element turi parametrlari, 3D karkas (Ø bo'yicha rang, tur/qavat filtri, shaffof beton).
+
+## Yon shablonlar paneli (v0.12)
+
+Har bir katta menyuda chapda shablonlar paneli turadi (qidiruv, bo'limlar, ikki marta bosish — qo'llash):
+kanalizatsiya — quvur shablonlari material bo'yicha; monolit bino — bino tiplari (karkas 9/16 qavat, ofis, kottej, maktab);
+armatura — element turlari bo'yicha. Foydalanuvchi shablonlari AppData'da saqlanadi.
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

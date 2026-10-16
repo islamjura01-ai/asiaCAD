@@ -218,6 +218,16 @@ void Pipe3DView::addPrism(const std::vector<P3>& o, const std::vector<std::vecto
 
 void Pipe3DView::addLabel(const P3& at, const QString& text) { labels_.push_back({at, text}); }
 
+void Pipe3DView::addPolyline(const std::vector<P3>& pts, const QColor& c, double widthPx, bool closed) {
+    if (pts.size() < 2) return;
+    Face f;
+    f.pts = pts;
+    f.color = c;
+    f.lineWidth = std::max(0.5, widthPx);
+    f.closed = closed;
+    faces_.push_back(f);
+}
+
 void Pipe3DView::endScene(bool keepView) {
     double minX = 1e300, maxX = -1e300, minY = 1e300, maxY = -1e300, minZ = 1e300, maxZ = -1e300;
     for (const auto& f : faces_)
@@ -293,6 +303,10 @@ void Pipe3DView::paintEvent(QPaintEvent*) {
             d += dd;
         }
         d /= static_cast<double>(f.pts.size());
+        if (f.lineWidth > 0) {
+            items.push_back({d, i, 1.0});
+            continue;
+        }
         P3 nrm = f.pts.size() >= 3 ? norm(cross(sub(f.pts[1], f.pts[0]), sub(f.pts[2], f.pts[0]))) : P3{0, 0, 1};
         // ko'rish fazosiga
         const double x1 = nrm.x * std::cos(a) - nrm.y * std::sin(a);
@@ -319,6 +333,17 @@ void Pipe3DView::paintEvent(QPaintEvent*) {
     });
     for (const auto& it : items) {
         const auto& f = faces_[it.idx];
+        if (f.lineWidth > 0) {
+            QPolygonF pl;
+            for (const auto& q : f.pts) pl << project(q);
+            if (f.closed) pl << pl.front();
+            QPen lp(f.color, f.lineWidth);
+            lp.setCapStyle(Qt::RoundCap);
+            p.setPen(lp);
+            p.setBrush(Qt::NoBrush);
+            p.drawPolyline(pl);
+            continue;
+        }
         QPolygonF poly;
         for (const auto& q : f.pts) poly << project(q);
         QPainterPath path;

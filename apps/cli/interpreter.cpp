@@ -1,6 +1,7 @@
 #include "interpreter.h"
 
 #include <asiacad/bim/building.h>
+#include <asiacad/bim/rebar.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
@@ -99,6 +100,7 @@ const char* commandSyntax(const std::string& c) {
         {"FILLET", "p1 p2 [r]"},
         {"SEWER", "file.kan.json [x,y | -]"},
         {"BUILDING", "[n] [H] [t] [x,y] | file.json [x,y]"},
+        {"REBAR", "[file.json] [x,y]"},
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
@@ -497,6 +499,51 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             last_.clear();
             for (auto* c : adds) last_.push_back(c->entityId());
             say("bim.msg.table", {std::to_string(last_.size())});
+        }
+    } else if (cmd == "REBAR") {
+        bim::BuildingParams bp;
+        auto lm = bim::autoLayerMap(doc_);
+        bim::RebarSettings rs = bim::defaultRebarSettings();
+        std::size_t k = 0;
+        if (!a.empty() && extOf(a[0]) == "json") {
+            std::ifstream f(a[0], std::ios::binary);
+            if (!f) throw Error("acad.err.open", {a[0]});
+            std::stringstream buf;
+            buf << f.rdbuf();
+            bim::paramsFromJson(buf.str(), bp, lm);
+            bim::rebarFromJson(buf.str(), rs);
+            k = 1;
+        }
+        const auto bm = bim::buildModel(bim::readPlan(doc_, lm), bp);
+        const auto rm = bim::buildRebar(bm, bp, rs);
+        for (const auto& [dia, kg] : rm.massByDia) say("rebar.msg.dia", {dia, std::format("{:.1f}", kg)});
+        for (const auto& is : rm.issues)
+            out_ << "  " << loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(is.key, is.args) << '\n';
+        long nbars = 0;
+        for (const auto& r : rm.schedule) nbars += r.count;
+        say("rebar.msg.total", {std::format("{:.3f}", rm.totalMass / 1000), std::to_string(nbars), std::format("{:.1f}", rm.wireKg),
+                                std::to_string(rm.nodes), std::to_string(rm.chairs), std::to_string(rm.ties)});
+        if (a.size() > k) {
+            const Vec3 o = parsePoint(a[k]);
+            auto levelName = [&](int lv) { return lv == 0 ? loc_.tr("bim.level.found") : loc_.tr("bim.level.n", {std::to_string(lv)}); };
+            bim::ScheduleLabels L{loc_.tr("rebar.tbl.title"), loc_.tr("gui.rb.col.pos"), loc_.tr("gui.rb.col.elem"), "\xC3\x98",
+                                  loc_.tr("gui.rb.col.cls"), loc_.tr("gui.rb.col.len"), loc_.tr("gui.rb.col.cnt"), loc_.tr("gui.rb.col.mass"),
+                                  loc_.tr("gui.bim.total"), loc_.tr("rebar.tbl.wire"), levelName,
+                                  [&](bim::ElemKind kk) { return loc_.tr(std::string("bim.kind.") + bim::kindKey(kk)); },
+                                  [&](bim::BarRole r) { return loc_.tr(std::string("rebar.role.") + bim::roleKey(r)); }};
+            auto es = bim::drawSchedule(rm, o, 0.25, L);
+            auto comp = std::make_unique<CompositeCommand>(cmd);
+            if (!doc_.layer("ARM_VEDOMOST")) comp->add(std::make_unique<SetLayerCommand>(Layer{"ARM_VEDOMOST"}));
+            std::vector<AddEntityCommand*> adds;
+            for (auto& e : es) {
+                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+                adds.push_back(c.get());
+                comp->add(std::move(c));
+            }
+            stack_.execute(std::move(comp));
+            last_.clear();
+            for (auto* c : adds) last_.push_back(c->entityId());
+            say("rebar.msg.table", {std::to_string(last_.size())});
         }
     } else if (cmd == "PIPES") {
         const auto& cat = civil::PipeCatalog::builtin();

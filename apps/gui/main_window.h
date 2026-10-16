@@ -36,6 +36,7 @@ namespace asiacad::gui {
 class CommandPalette;
 class SewerDialog;
 class BuildingDialog;
+class RebarDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -52,6 +53,7 @@ public:
     void activateTool(const QString& key);  // "line", "circle", ... (sinov va skriptlar uchun)
     SewerDialog* openSewer();               // "Kanalizatsiya" menyusi (bitta nusxa, modal emas)
     BuildingDialog* openBuilding();         // "Monolit bino" menyusi
+    RebarDialog* openRebar();               // "Armatura 3D" menyusi
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -91,6 +93,7 @@ private:
     CommandPalette* palette_ = nullptr;
     SewerDialog* sewer_ = nullptr;
     BuildingDialog* building_ = nullptr;
+    RebarDialog* rebar_ = nullptr;
 
     QHash<QString, QAction*> act_;  // "line" -> QAction
     QTabWidget* ribbon_ = nullptr;

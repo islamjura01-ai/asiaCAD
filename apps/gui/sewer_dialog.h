@@ -3,6 +3,7 @@
 // quvur bo'laklari jadvali, jonli gidravlik hisob va norma tekshiruvi, hajmlar (PTO) va 3D ko'rinish.
 // "Chizmaga chizish" tarmoqni .kan.json ga yozib, SEWER buyrug'ini Interpreter orqali bajaradi (undo bitta qadam).
 #include "pipe3d_view.h"
+#include "template_sidebar.h"
 
 #include <asiacad/civil/sewer.h>
 #include <asiacad/i18n/localizer.h>
@@ -37,6 +38,7 @@ public:
     const civil::SewerResult& result() const { return res_; }
     bool withProfile() const;
     QString templatesPath() const;
+    TemplateSidebar* sidebar() const { return side_; }
 
     // sinov va skrinshot uchun
     void selectTemplate(int index);
@@ -75,6 +77,7 @@ private:
     bool updating_ = false;
 
     QComboBox* tpl_ = nullptr;
+    TemplateSidebar* side_ = nullptr;
     QLineEdit* name_ = nullptr;
     QComboBox* system_ = nullptr;
     QCheckBox* street_ = nullptr;

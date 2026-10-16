@@ -1,5 +1,6 @@
 // AsiaCAD core testlari (tashqi kutubxonasiz)
 #include <asiacad/bim/building.h>
+#include <asiacad/bim/rebar.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -330,7 +331,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 47);
+    CHECK(loc.canonicalCommands().size() == 48);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -1720,6 +1721,80 @@ TEST(cli_building_command) {
     const auto u = runScript("uz", {"QATLAM USTUN", "JORIY USTUN", "POLICHIZIQ 0,0 0.4,0 0.4,0.4 0,0.4 YOPIQ", "BINO 2 3 0.2 20,10"});
     CHECK(u.find("1-qavat · Ustun: 1 dona") != std::string::npos);
     CHECK(u.find("PTO jadvali chizildi") != std::string::npos);
+}
+
+TEST(rebar_build_model) {
+    CHECK(std::abs(bim::barMassPerM(0.012) - 0.888) < 1e-3);
+    CHECK(std::abs(bim::barMassPerM(0.016) - 1.578) < 1e-3);
+    Document doc;
+    auto add = [&](const char* layer, std::vector<Vec3> pts) {
+        auto e = std::make_unique<PolylineEntity>(std::move(pts), true);
+        e->setLayer(layer);
+        doc.add(std::move(e));
+    };
+    add("USTUN", {{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.4, 0}, {0, 0.4, 0}});
+    add("PLITA", {{-3, -3, 0}, {3, -3, 0}, {3, 3, 0}, {-3, 3, 0}});
+    bim::BuildingParams p;
+    p.floors = 2;
+    const auto bm = bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p);
+    auto rs = bim::defaultRebarSettings();
+    CHECK(rs.byKind.count(bim::ElemKind::Column) && rs.byKind.count(bim::ElemKind::Slab) && rs.byKind.count(bim::ElemKind::FoundationSlab));
+    const auto rm = bim::buildRebar(bm, p, rs);
+    CHECK(rm.totalMass > 0);
+    double sum = 0;
+    for (const auto& r : rm.schedule) sum += r.mass;
+    NEAR(sum, rm.totalMass);
+    int mainL1 = 0, stir = 0, slabBX = 0;
+    bool found = false, roof = false;
+    for (const auto& b : rm.bars) {
+        if (b.kind == bim::ElemKind::Column && b.level == 1 && b.role == bim::BarRole::Main) ++mainL1;
+        if (b.kind == bim::ElemKind::Column && b.role == bim::BarRole::Stirrup) ++stir;
+        if (b.kind == bim::ElemKind::Slab && b.level == 1 && b.role == bim::BarRole::BottomX) ++slabBX;
+        found |= b.kind == bim::ElemKind::FoundationSlab;
+        roof |= b.kind == bim::ElemKind::Roof;
+    }
+    CHECK(mainL1 == rs.byKind[bim::ElemKind::Column].nMain);
+    CHECK(stir > 10);
+    CHECK(slabBX >= 28 && slabBX <= 32);  // 6 m / 0,2 (teshik yo'q)
+    CHECK(found && roof);                  // fundamentdan tomgacha
+    CHECK(rm.nodes > 0 && rm.wireKg > 0 && rm.chairs > 0);
+    // himoya qatlami va ustun Ø tekshiruvi
+    auto bad = rs;
+    bad.byKind[bim::ElemKind::Column].cover = 0.015;
+    bad.byKind[bim::ElemKind::Column].d1 = 0.010;
+    const auto rb = bim::buildRebar(bm, p, bad);
+    bool cover = false, cold = false;
+    for (const auto& is : rb.issues) {
+        cover |= is.key == "rebar.chk.cover";
+        cold |= is.key == "rebar.chk.col_d";
+    }
+    CHECK(cover && cold);
+}
+
+TEST(rebar_json_roundtrip) {
+    auto rs = bim::defaultRebarSettings();
+    rs.byKind[bim::ElemKind::Column].nMain = 8;
+    rs.byKind[bim::ElemKind::Slab].s1 = 0.15;
+    rs.stockLength = 12;
+    bim::RebarSettings back;
+    bim::rebarFromJson(bim::rebarToJson(rs), back);
+    CHECK(back.byKind[bim::ElemKind::Column].nMain == 8);
+    NEAR(back.byKind[bim::ElemKind::Slab].s1, 0.15);
+    NEAR(back.stockLength, 12);
+    // bino JSON ichidagi "rebar" bloki
+    bim::RebarSettings b2;
+    bim::rebarFromJson("{\"format\":\"asiacad-building\",\"rebar\":" + bim::rebarToJson(rs) + "}", b2);
+    CHECK(b2.byKind[bim::ElemKind::Column].nMain == 8);
+    auto tpls = bim::builtinRebarTemplates();
+    CHECK(tpls.size() == 12);
+    const auto t2 = bim::templatesFromJson(bim::templatesToJson(tpls));
+    CHECK(t2.size() == tpls.size() && t2[3].id == tpls[3].id && t2[3].nMain == tpls[3].nMain);
+}
+
+TEST(cli_rebar_command) {
+    const auto u = runScript("uz", {"QATLAM USTUN", "JORIY USTUN", "POLICHIZIQ 0,0 0.4,0 0.4,0.4 0,0.4 YOPIQ", "ARMATURA 20,10"});
+    CHECK(u.find("Armatura jami") != std::string::npos);
+    CHECK(u.find("Armatura vedomosti chizildi") != std::string::npos);
 }
 
 int main() {

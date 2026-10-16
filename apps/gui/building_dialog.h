@@ -3,6 +3,7 @@
 // parametrlari, beton sinflari, jonli 3D model (qavatlar bo'yicha ko'rsatish), PTO jadvali va tekshiruv.
 // "PTO jadvalini chizmaga" — parametrlar JSON'ga yoziladi va BUILDING buyrug'i Interpreter orqali bajariladi.
 #include "pipe3d_view.h"
+#include "template_sidebar.h"
 
 #include <asiacad/bim/building.h>
 #include <asiacad/i18n/localizer.h>
@@ -31,9 +32,12 @@ public:
     void reread();  // chizmadan qayta o'qish (qatlamlar ro'yxati yangilanadi)
     void setFloors(int n);
     Pipe3DView* view() const { return view_; }
+    TemplateSidebar* sidebar() const { return side_; }
+    void applyTypology(const QString& id);  // btpl.* — bino tiplari
 
 signals:
     void tableRequested(const QString& jsonPath);
+    void rebarRequested();
 
 private:
     QString t(const char* key, const QStringList& args = {}) const;
@@ -47,6 +51,7 @@ private:
     bim::BuildingModel model_;
     bool updating_ = false;
 
+    TemplateSidebar* side_ = nullptr;
     QTableWidget* layers_ = nullptr;
     QSpinBox* floors_ = nullptr;
     QDoubleSpinBox *height_ = nullptr, *slab_ = nullptr, *roof_ = nullptr, *ftop_ = nullptr, *ft_ = nullptr, *fover_ = nullptr,

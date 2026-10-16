@@ -3,6 +3,7 @@
 #include "main_window.h"
 #include "sewer_dialog.h"
 #include "building_dialog.h"
+#include "rebar_dialog.h"
 
 #include <QPushButton>
 #include <QTableWidget>
@@ -272,6 +273,7 @@ int main(int argc, char** argv) {
     w.runLine("PLINE 0,0,100 40,0,99.8 85,0,99.6 120,10,99.4");
     v->setSelection(doc.ids());
     SewerDialog* sd = w.openSewer();
+    CHECK(sd->sidebar()->count() >= 8);
     CHECK(sd != nullptr);
     sd->selectTemplate(1);  // ko'cha tarmog'i PVX SN8 Ø200
     auto clickBtn = [&](const char* key) {
@@ -320,6 +322,42 @@ int main(int argc, char** argv) {
     CHECK(doc.layer("PTO").has_value());
     w.runLine("UNDO");
     CHECK(doc.size() == nb);
+    // yon shablonlar paneli — bino tiplari
+    CHECK(bd->sidebar()->count() == 5);
+    CHECK(bd->sidebar()->activate(3));  // kottej 2 qavat
+    CHECK(bd->params().floors == 2 && bd->params().stripFoundation);
+    bd->setFloors(4);
+
+    // 21. Armatura 3D: bino modelidan fundamentdan tomgacha, yon shablonlar, ведомость chizmaga va undo
+    RebarDialog* rd = nullptr;
+    for (auto* b : bd->findChildren<QPushButton*>())
+        if (b->text() == QString::fromStdString(loc.tr("gui.bim.rebar"))) b->click();
+    rd = w.findChild<RebarDialog*>();
+    CHECK(rd != nullptr);
+    if (rd) {
+        CHECK(rd->sidebar()->count() >= 12);
+        const double m0 = rd->model().totalMass;
+        CHECK(m0 > 0);
+        CHECK(!rd->model().bars.empty());
+        CHECK(rd->view()->faceCount() > 100);
+        // ustun shablonini 12Ø25 ga almashtirish — massa oshadi
+        int colIdx = -1, n = 0;
+        for (const auto& tp : asiacad::bim::builtinRebarTemplates()) {
+            if (tp.id == "col_12x25") colIdx = n;
+            ++n;
+        }
+        CHECK(rd->sidebar()->activate(colIdx));
+        CHECK(rd->settings().byKind.at(asiacad::bim::ElemKind::Column).nMain == 12);
+        CHECK(rd->model().totalMass > m0);
+        const auto nr = doc.size();
+        for (auto* b : rd->findChildren<QPushButton*>())
+            if (b->text() == QString::fromStdString(loc.tr("gui.rb.todwg"))) b->click();
+        CHECK(doc.size() > nr + 20);
+        CHECK(doc.layer("ARM_VEDOMOST").has_value());
+        w.runLine("UNDO");
+        CHECK(doc.size() == nr);
+        rd->close();
+    }
     bd->close();
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

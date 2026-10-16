@@ -64,6 +64,16 @@ void BuildingDialog::buildUi() {
     auto* split = new QSplitter(Qt::Horizontal, this);
     root->addWidget(split, 1);
 
+    // ---- yon shablonlar paneli: bino tiplari
+    side_ = new TemplateSidebar(t("gui.side.title"), t("gui.side.search"), t("gui.side.apply"), t("gui.side.hint"), split);
+    side_->addSection(t("gui.side.typology"));
+    for (const char* id : {"frame9", "frame16", "office5", "cottage2", "school3"}) {
+        const QString nm = t((std::string("btpl.") + id).c_str());
+        side_->addTemplate(nm.section(QString::fromUtf8(" · "), 0, 0), nm.section(QString::fromUtf8(" · "), 1), QString::fromLatin1(id),
+                           QColor(217, 70, 106));
+    }
+    connect(side_, &TemplateSidebar::templateActivated, this, [this](const QVariant& v) { applyTypology(v.toString()); });
+
     // ---- chap: qatlamlar va parametrlar
     auto* scroll = new QScrollArea(split);
     scroll->setWidgetResizable(true);
@@ -175,22 +185,25 @@ void BuildingDialog::buildUi() {
     checks_->setWordWrap(true);
     tabs->addTab(pto_, t("gui.bim.pto"));
     tabs->addTab(checks_, t("gui.bim.checks"));
-    split->setSizes({380, 700, 460});
+    split->setSizes({250, 370, 660, 440});
 
     // ---- past
     auto* bottom = new QHBoxLayout;
     summary_ = new QLabel(this);
     summary_->setObjectName("title");
+    auto* toRebar = new QPushButton(t("gui.bim.rebar"), this);
     auto* toDwg = new QPushButton(t("gui.bim.totable"), this);
     toDwg->setObjectName("accent");
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     close->setFixedWidth(44);
     bottom->addWidget(summary_, 1);
+    bottom->addWidget(toRebar);
     bottom->addWidget(toDwg);
     bottom->addWidget(close);
     root->addLayout(bottom);
 
     connect(reread, &QPushButton::clicked, this, &BuildingDialog::reread);
+    connect(toRebar, &QPushButton::clicked, this, &BuildingDialog::rebarRequested);
     connect(close, &QPushButton::clicked, this, &QDialog::close);
     connect(toDwg, &QPushButton::clicked, this, [this] {
         const QString path = QDir::temp().filePath("asiacad-building.json");
@@ -238,6 +251,36 @@ void BuildingDialog::reread() {
 }
 
 void BuildingDialog::setFloors(int n) { floors_->setValue(n); }
+
+void BuildingDialog::applyTypology(const QString& id) {
+    struct T { const char* id; int floors; double h, slab, roof, ft, fover; bool strip; double stripW; const char *frame, *slabC, *found; };
+    static const T ts[] = {
+        {"frame9", 9, 3.0, 0.20, 0.22, 0.80, 0.6, false, 0.8, "B25", "B25", "B25"},
+        {"frame16", 16, 3.0, 0.22, 0.25, 1.20, 1.0, false, 0.8, "B30", "B25", "B30"},
+        {"office5", 5, 3.6, 0.22, 0.22, 0.70, 0.5, false, 0.8, "B25", "B25", "B25"},
+        {"cottage2", 2, 3.0, 0.18, 0.18, 0.50, 0.3, true, 0.6, "B20", "B20", "B20"},
+        {"school3", 3, 3.6, 0.22, 0.22, 0.70, 0.5, false, 0.8, "B30", "B30", "B25"}};
+    for (const auto& x : ts) {
+        if (id != QLatin1String(x.id)) continue;
+        updating_ = true;
+        floors_->setValue(x.floors);
+        height_->setValue(x.h);
+        slab_->setValue(x.slab);
+        roof_->setValue(x.roof);
+        ft_->setValue(x.ft);
+        fover_->setValue(x.fover);
+        strip_->setChecked(x.strip);
+        stripW_->setValue(x.stripW);
+        clsFrame_->setCurrentText(x.frame);
+        clsSlab_->setCurrentText(x.slabC);
+        clsFound_->setCurrentText(x.found);
+        updating_ = false;
+        showUpTo_->setRange(0, x.floors);
+        showUpTo_->setValue(x.floors);
+        recompute();
+        return;
+    }
+}
 
 std::map<std::string, ElemKind> BuildingDialog::layerMap() const {
     std::map<std::string, ElemKind> m;

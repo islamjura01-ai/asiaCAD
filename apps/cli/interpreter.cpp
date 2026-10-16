@@ -1,5 +1,6 @@
 #include "interpreter.h"
 
+#include <asiacad/bim/building.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
@@ -97,6 +98,7 @@ const char* commandSyntax(const std::string& c) {
         {"EXTEND", "sel p [p ...]"},
         {"FILLET", "p1 p2 [r]"},
         {"SEWER", "file.kan.json [x,y | -]"},
+        {"BUILDING", "[n] [H] [t] [x,y] | file.json [x,y]"},
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
@@ -448,6 +450,54 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         last_ = {i1, i2};
         if (arc) last_.push_back(arc->entityId());
         say("msg.fillet_done", {idStr(i1), idStr(i2), f4(filletR_)});
+    } else if (cmd == "BUILDING") {
+        bim::BuildingParams bp;
+        auto lm = bim::autoLayerMap(doc_);
+        std::size_t k = 0;
+        if (!a.empty() && extOf(a[0]) == "json") {  // GUI: parametrlar + qatlam xaritasi
+            std::ifstream f(a[0], std::ios::binary);
+            if (!f) throw Error("acad.err.open", {a[0]});
+            std::stringstream buf;
+            buf << f.rdbuf();
+            bim::paramsFromJson(buf.str(), bp, lm);
+            k = 1;
+        } else {
+            if (a.size() > 0 && a[0].find(',') == std::string::npos) bp.floors = static_cast<int>(parseNumber(a[k++]));
+            if (a.size() > k && a[k].find(',') == std::string::npos) bp.floorHeight = parseNumber(a[k++]);
+            if (a.size() > k && a[k].find(',') == std::string::npos) bp.slabT = parseNumber(a[k++]);
+        }
+        const auto model = bim::buildModel(bim::readPlan(doc_, lm), bp);
+        for (const auto& [ln, kk] : lm)
+            if (kk != bim::ElemKind::Ignore) say("bim.msg.layer", {ln, loc_.tr(std::string("bim.kind.") + bim::kindKey(kk))});
+        auto levelName = [&](int lv) { return lv == 0 ? loc_.tr("bim.level.found") : loc_.tr("bim.level.n", {std::to_string(lv)}); };
+        auto kindName = [&](bim::ElemKind kk) { return loc_.tr(std::string("bim.kind.") + bim::kindKey(kk)); };
+        for (const auto& r : model.pto)
+            say("bim.msg.row", {levelName(r.level), kindName(r.kind), std::to_string(r.count), std::format("{:.2f}", r.volume),
+                                std::format("{:.2f}", r.formwork), r.concrete});
+        for (const auto& [c, v] : model.byConcrete) say("bim.msg.concrete", {c, std::format("{:.2f}", v)});
+        for (const auto& is : model.issues)
+            out_ << "  " << loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(is.key, is.args) << '\n';
+        say("bim.msg.total", {std::to_string(bp.floors), std::format("{:.2f}", model.totalVolume), std::format("{:.2f}", model.totalFormwork),
+                              std::format("{:.3f}", model.heightTop)});
+        if (a.size() > k) {  // PTO jadvalini chizmaga
+            const Vec3 o = parsePoint(a[k]);
+            bim::PtoLabels L{loc_.tr("bim.tbl.title"), loc_.tr("gui.bim.col.level"), loc_.tr("gui.bim.col.elem"), loc_.tr("gui.bim.col.count"),
+                             loc_.tr("gui.bim.col.vol"), loc_.tr("gui.bim.col.form"), loc_.tr("gui.bim.col.class"), loc_.tr("gui.bim.total"),
+                             levelName, kindName};
+            auto es = bim::drawPtoTable(model, o, 0.25, L);
+            auto comp = std::make_unique<CompositeCommand>(cmd);
+            if (!doc_.layer("PTO")) comp->add(std::make_unique<SetLayerCommand>(Layer{"PTO"}));
+            std::vector<AddEntityCommand*> adds;
+            for (auto& e : es) {
+                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+                adds.push_back(c.get());
+                comp->add(std::move(c));
+            }
+            stack_.execute(std::move(comp));
+            last_.clear();
+            for (auto* c : adds) last_.push_back(c->entityId());
+            say("bim.msg.table", {std::to_string(last_.size())});
+        }
     } else if (cmd == "PIPES") {
         const auto& cat = civil::PipeCatalog::builtin();
         for (const auto& sp : cat.specs()) {

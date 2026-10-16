@@ -26,6 +26,12 @@ public:
     void showPipe(const civil::PipeSpec& spec, const QString& title);
     void showNetwork(const civil::SewerNetwork& net, const civil::SewerResult& res);
     void setDark(bool dark) { dark_ = dark; update(); }
+    // Umumiy sahna (bino modeli va boshqalar): vertikal prizmalar (teshikli), yozuvlar
+    void beginScene(const QString& title, const QString& subtitle);
+    void addPrism(const std::vector<P3>& outline, const std::vector<std::vector<P3>>& holes, double z0, double z1, const QColor& c,
+                  int alpha = 255);
+    void addLabel(const P3& at, const QString& text);
+    void endScene(bool keepView = false);
     void resetView();
     QSize sizeHint() const override { return {420, 320}; }
     int faceCount() const { return static_cast<int>(faces_.size()); }
@@ -43,7 +49,10 @@ private:
         QColor color;
         bool outline = false;
         int alpha = 255;
+        std::vector<std::vector<P3>> holes;  // teshiklar (OddEven)
+        int group = -1;                      // bitta jism (prizma) — chuqurlik bo'yicha birga saralanadi
     };
+    int groups_ = 0;
     struct Label {
         P3 at;
         QString text;

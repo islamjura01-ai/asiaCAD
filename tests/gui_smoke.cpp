@@ -2,6 +2,7 @@
 // to'liq tekshiriladi. ctest orqali QT_QPA_PLATFORM=offscreen bilan ishga tushadi.
 #include "main_window.h"
 #include "sewer_dialog.h"
+#include "building_dialog.h"
 
 #include <QPushButton>
 #include <QTableWidget>
@@ -297,6 +298,29 @@ int main(int argc, char** argv) {
     sd->setNetwork(net);
     CHECK(sd->result().errors() >= 1);
     sd->close();
+
+    // 20. Monolit bino menyusi: qatlamlar avtomatik, 3D, PTO jadvali chizmaga va undo
+    w.runLine("NEW !");
+    w.runLine("LAYER USTUN");
+    w.runLine("CLAYER USTUN");
+    w.runLine("PLINE 0,0 0.4,0 0.4,0.4 0,0.4 " + QString::fromStdString(loc.keywordName("CLOSE")));
+    w.runLine("COPY LAST 6,0 2");
+    w.runLine("LAYER PLITA");
+    w.runLine("CLAYER PLITA");
+    w.runLine("PLINE -0.3,-0.3 12.7,-0.3 12.7,0.7 -0.3,0.7 " + QString::fromStdString(loc.keywordName("CLOSE")));
+    BuildingDialog* bd = w.openBuilding();
+    bd->setFloors(4);
+    CHECK(bd->model().prisms.size() == 2 + 4 * (3 + 1));
+    CHECK(bd->model().totalVolume > 0);
+    CHECK(bd->view()->faceCount() > 50);
+    const auto nb = doc.size();
+    for (auto* b : bd->findChildren<QPushButton*>())
+        if (b->text() == QString::fromStdString(loc.tr("gui.bim.totable"))) b->click();
+    CHECK(doc.size() > nb + 30);
+    CHECK(doc.layer("PTO").has_value());
+    w.runLine("UNDO");
+    CHECK(doc.size() == nb);
+    bd->close();
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

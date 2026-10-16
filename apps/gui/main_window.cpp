@@ -2,6 +2,7 @@
 
 #include "command_palette.h"
 #include "sewer_dialog.h"
+#include "building_dialog.h"
 #include "icons.h"
 
 #include <asiacad/core/entities.h>
@@ -71,6 +72,7 @@ const ActDef kActs[] = {
     {"offset", "offset", "gui.act.offset", true},  {"trim", "trim", "gui.act.trim", true},
     {"extend", "extend", "gui.act.extend", true},  {"fillet", "fillet", "gui.act.fillet", true},
     {"sewer", "pipes", "gui.act.sewer", false},
+    {"building", "bim", "gui.act.building", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -193,7 +195,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.10"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.11"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -215,7 +217,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
             {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
             {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
@@ -271,6 +273,7 @@ void MainWindow::buildActions() {
     connect(act_["grid"], &QAction::toggled, this, [this](bool on) { view_->setGridVisible(on); });
     connect(act_["palette"], &QAction::triggered, this, [this] { palette_->open(view_); });
     connect(act_["sewer"], &QAction::triggered, this, [this] { openSewer(); });
+    connect(act_["building"], &QAction::triggered, this, [this] { openBuilding(); });
     // Asbob tugagach (Esc, Enter, buyruq bajarildi) — "Tanlash" tugmasi yonsin
     connect(view_, &Viewport::promptChanged, this, [this] {
         if (act_.contains(toolKey(view_->tool()))) act_[toolKey(view_->tool())]->setChecked(true);
@@ -291,7 +294,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimradius", "dimdiameter"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "building"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
         {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
@@ -376,7 +379,10 @@ void MainWindow::buildModuleBars() {
         grp->addAction(a);
         const QString key = m.key;
         connect(a, &QAction::triggered, this, [this, key, a] {
-            if (key == "gui.module.pipes") {
+            if (key == "gui.module.bim") {
+                openBuilding();
+                rail_->actions().first()->setChecked(true);
+            } else if (key == "gui.module.pipes") {
                 openSewer();
                 rail_->actions().first()->setChecked(true);
             } else if (key != "gui.module.drawing") {
@@ -777,6 +783,26 @@ SewerDialog* MainWindow::openSewer() {
     return sewer_;
 }
 
+BuildingDialog* MainWindow::openBuilding() {
+    if (!building_) {
+        building_ = new BuildingDialog(loc_, doc_, !theme_.lightCanvas, this);
+        building_->setStyleSheet(theme_.styleSheet);
+        connect(building_, &BuildingDialog::tableRequested, this, [this](const QString& path) {
+            const BBox b = doc_.extents(true);
+            const double x = b.valid() ? b.max.x + 3 : 0, y = b.valid() ? b.max.y : 0;
+            runLine(QStringLiteral("BUILDING \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
+                                                                 Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0)));
+            view_->zoomExtents();
+        });
+    } else {
+        building_->reread();
+    }
+    building_->show();
+    building_->raise();
+    building_->activateWindow();
+    return building_;
+}
+
 void MainWindow::activateTool(const QString& key) {
     if (act_.contains(key)) act_[key]->trigger();
 }
@@ -801,6 +827,7 @@ void MainWindow::startCommand(const QString& canonical) {
         return;
     }
     if (canonical == "SEWER") { openSewer(); return; }
+    if (canonical == "BUILDING") { openBuilding(); return; }
     if (canonical == "OPEN") { openFile(); return; }
     if (canonical == "SAVE") { saveFile(false); return; }
     if (canonical == "IMPORT") { importDxf(); return; }
@@ -848,7 +875,7 @@ void MainWindow::submitCommandLine() {
     const QString canon = QString::fromStdString(loc_.resolveCommand(toks.first().toStdString()));
     if (toks.size() == 1 && !canon.isEmpty() &&
         QStringList{"LINE", "PLINE", "CIRCLE", "ARC", "POINT", "TEXT", "MOVE", "COPY", "ROTATE", "ERASE", "OPEN", "SAVE", "IMPORT",
-                    "DIMLINEAR", "DIMALIGNED", "DIMRADIUS", "DIMDIAMETER", "OFFSET", "TRIM", "EXTEND", "FILLET", "SEWER"}.contains(canon)) {
+                    "DIMLINEAR", "DIMALIGNED", "DIMRADIUS", "DIMDIAMETER", "OFFSET", "TRIM", "EXTEND", "FILLET", "SEWER", "BUILDING"}.contains(canon)) {
         appendHistory("› " + text, theme_.accent);
         startCommand(canon);
         return;

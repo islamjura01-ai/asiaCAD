@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.10: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.11: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -37,7 +37,7 @@ include/asiacad/io/dxf_reader.h   DXF import R12–R2018, bitta undo qadami
 include/asiacad/io/acad_file.h    Native .acad (JSON v1): atomar saqlash + .bak, versiya nazorati
 include/asiacad/io/dxf_text.h     ANSI_1251/1252/1254/1250, DOS866, \U+, %%-kodlar, MTEXT formatlash
 apps/cli/                         buyruq interpretatori (6 til, Localizer orqali)
-tests/                            78 test + GUI tutun testi; tests/data — ezdxf bilan yaratilgan DXF fixture'lar
+tests/                            81 test + GUI tutun testi; tests/data — ezdxf bilan yaratilgan DXF fixture'lar
 ```
 
 ## Dizayn qarorlari
@@ -143,6 +143,17 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
   material va o'lcham, quduqlar jadvali (tanlangan 3D poliliniyadan — Z = yer belgisi), bo'laklar jadvali (har birida quvur
   tanlovi, nishablik, sarf), jonli tekshiruv, hajmlar, 3D: quvur (devor kesimi, raструб, gofra) va 3D: tarmoq.
   Namuna: `examples/k1_kocha.kan.json`.
+
+## Monolit bino (v0.11) — `src/bim/building.*`
+
+- Tayyor plan (DXF import yoki .acad) qatlamlari element turiga bog'lanadi; nomidan avtomatik taniladi:
+  USTUN/КОЛОННА/COLUMN, DEVOR/СТЕНА/WALL, PLITA/ПЛИТА/SLAB, TOM/ПОКРЫТИЕ, TESHIK/ПРОЕМ, KONTUR, FUNDAMENT, LENTA, PADBETONKA.
+  Ustun — yopiq poliliniya yoki aylana; devor — yopiq kontur yoki chiziq (qalinlik parametri); plita — kontur + teshiklar.
+- Padbetonka → fundament plitasi (yoki lenta + ustun ostida yostiq) → har qavat ustun, devor, plita → tom plitasi.
+  Ustun/devorlar plita ostigacha (ikki marta hisoblanmaydi).
+- PTO: tur × qavat bo'yicha soni, beton m³, qolip m²; beton sinflari bo'yicha jami. `BUILDING [n] [H] [t] [x,y]` —
+  jadvalni chizmaga (qatlam PTO). GUI: "Tarmoqlar → Monolit bino" (Modul rejimida "BIM"): qatlam xaritasi, parametrlar,
+  3D model (qavatlar bo'yicha ko'rsatish), PTO, tekshiruv. Namuna: `examples/bino_plan.acs`.
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

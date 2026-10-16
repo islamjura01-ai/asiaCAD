@@ -1,4 +1,5 @@
 // AsiaCAD core testlari (tashqi kutubxonasiz)
+#include <asiacad/bim/building.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -329,7 +330,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 46);
+    CHECK(loc.canonicalCommands().size() == 47);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -1652,6 +1653,73 @@ TEST(storm_flow_shnq_2_04_22) {
     CHECK(r.segments[0].maxFill == 1.0);  // yomg'ir tarmog'i to'liq kesimga
     const auto back = civil::fromJson(civil::toJson(n));
     CHECK(back.storm.enabled && back.manholes[1].areaHa == 2.0);
+}
+
+// ---------- Monolit bino ----------
+TEST(bim_guess_layers) {
+    CHECK(bim::guessKind("USTUN") == bim::ElemKind::Column);
+    CHECK(bim::guessKind("А-КОЛОННЫ") == bim::ElemKind::Column);
+    CHECK(bim::guessKind("S-WALL") == bim::ElemKind::Wall);
+    CHECK(bim::guessKind("Плита перекрытия") == bim::ElemKind::Slab);
+    CHECK(bim::guessKind("PADBETONKA") == bim::ElemKind::Lean);
+    CHECK(bim::guessKind("Ленточный фундамент") == bim::ElemKind::StripFooting);
+    CHECK(bim::guessKind("YOZUV") == bim::ElemKind::Ignore);
+}
+TEST(bim_model_volumes) {
+    Document doc;
+    auto add = [&](const char* layer, std::vector<Vec3> pts) {
+        auto e = std::make_unique<PolylineEntity>(std::move(pts), true);
+        e->setLayer(layer);
+        doc.add(std::move(e));
+    };
+    add("KONTUR", {{0, 0, 0}, {12, 0, 0}, {12, 6, 0}, {0, 6, 0}});
+    for (double x : {0.0, 6.0, 12.0})
+        for (double y : {0.0, 6.0}) add("USTUN", {{x - 0.2, y - 0.2, 0}, {x + 0.2, y - 0.2, 0}, {x + 0.2, y + 0.2, 0}, {x - 0.2, y + 0.2, 0}});
+    add("TESHIK", {{5, 2, 0}, {7, 2, 0}, {7, 4, 0}, {5, 4, 0}});
+    auto line = std::make_unique<LineEntity>(Vec3{0, 3, 0}, Vec3{4, 3, 0});
+    line->setLayer("DEVOR");
+    doc.add(std::move(line));
+    bim::BuildingParams p;
+    p.floors = 3;
+    p.floorHeight = 3.0;
+    const auto m = bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p);
+    auto vol = [&](bim::ElemKind k, int lv) {
+        for (const auto& r : m.pto) if (r.kind == k && r.level == lv) return r.volume;
+        return -1.0;
+    };
+    NEAR(vol(bim::ElemKind::Column, 2), 6 * 0.16 * 2.8);
+    NEAR(vol(bim::ElemKind::Column, 1), 6 * 0.16 * (2.8 + 0.3));    // fundament ustidan
+    NEAR(vol(bim::ElemKind::Slab, 1), (72 - 4) * 0.2);              // teshik ayirildi
+    NEAR(vol(bim::ElemKind::Roof, 3), (72 - 4) * 0.22);
+    NEAR(vol(bim::ElemKind::Wall, 1), 4 * 0.2 * 3.1);               // chiziq -> 0.2 m devor
+    NEAR(vol(bim::ElemKind::FoundationSlab, 0), 13 * 7 * 0.6);      // +0.5 m chiqish
+    NEAR(vol(bim::ElemKind::Lean, 0), 13.2 * 7.2 * 0.1);
+    NEAR(m.heightTop, 9.0);
+    CHECK(m.byConcrete.at("B7.5") > 0 && m.byConcrete.at("B25") > 0);
+    // lenta fundament
+    p.stripFoundation = true;
+    const auto ms = bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p);
+    CHECK(vol(bim::ElemKind::FoundationSlab, 0) > 0);
+    bool strip = false;
+    for (const auto& r : ms.pto) strip = strip || (r.kind == bim::ElemKind::StripFooting && r.count == 7);
+    CHECK(strip);
+    // JSON
+    std::map<std::string, bim::ElemKind> lm{{"USTUN", bim::ElemKind::Column}, {"X", bim::ElemKind::Wall}};
+    bim::BuildingParams q;
+    std::map<std::string, bim::ElemKind> lm2;
+    bim::paramsFromJson(bim::paramsToJson(p, lm), q, lm2);
+    CHECK(q.floors == 3 && q.stripFoundation && lm2 == lm);
+    // PTO jadvali
+    bim::PtoLabels L{"T", "a", "b", "c", "d", "e", "f", "TOTAL", nullptr, nullptr};
+    const auto tbl = bim::drawPtoTable(m, {0, 0, 0}, 0.25, L);
+    CHECK(tbl.size() > m.pto.size() * 6);
+}
+TEST(cli_building_command) {
+    const auto s = runScript("ru", {"ПОЛИЛИНИЯ 0,0 6,0 6,6 0,6 ЗАМКНУТЬ", "ЗДАНИЕ 2 3"});
+    CHECK(s.find("Ошибка") != std::string::npos || s.find("Предупреждение") != std::string::npos);  // слои не назначены
+    const auto u = runScript("uz", {"QATLAM USTUN", "JORIY USTUN", "POLICHIZIQ 0,0 0.4,0 0.4,0.4 0,0.4 YOPIQ", "BINO 2 3 0.2 20,10"});
+    CHECK(u.find("1-qavat · Ustun: 1 dona") != std::string::npos);
+    CHECK(u.find("PTO jadvali chizildi") != std::string::npos);
 }
 
 int main() {

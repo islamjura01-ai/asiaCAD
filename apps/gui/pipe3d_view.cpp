@@ -52,10 +52,10 @@ void Pipe3DView::cylinder(P3 a, P3 b, double r, int seg, const QColor& c, bool c
     }
     for (int i = 0; i < seg; ++i) {
         const int j = (i + 1) % seg;
-        faces_.push_back({{ra[i], ra[j], rb[j], rb[i]}, c, outline});
+        faces_.push_back({{ra[i], ra[j], rb[j], rb[i]}, c, outline, 255, {}});
     }
-    if (capA) faces_.push_back({std::vector<P3>(ra.rbegin(), ra.rend()), c.darker(110), outline});
-    if (capB) faces_.push_back({rb, c.darker(110), outline});
+    if (capA) faces_.push_back({std::vector<P3>(ra.rbegin(), ra.rend()), c.darker(110), outline, 255, {}});
+    if (capB) faces_.push_back({rb, c.darker(110), outline, 255, {}});
 }
 
 void Pipe3DView::ring(P3 a, P3 b, double ro, double ri, int seg, const QColor& c) {
@@ -65,7 +65,7 @@ void Pipe3DView::ring(P3 a, P3 b, double ro, double ri, int seg, const QColor& c
     for (int i = 0; i < seg; ++i) {
         const double t0 = 2 * kPI * i / seg, t1 = 2 * kPI * (i + 1) / seg;
         auto pt = [&](double r, double t) { return add(a, add(mul(u, r * std::cos(t)), mul(v, r * std::sin(t)))); };
-        faces_.push_back({{pt(ro, t0), pt(ro, t1), pt(ri, t1), pt(ri, t0)}, c, false});
+        faces_.push_back({{pt(ro, t0), pt(ro, t1), pt(ri, t1), pt(ri, t0)}, c, false, 255, {}});
     }
 }
 
@@ -166,10 +166,67 @@ void Pipe3DView::showNetwork(const civil::SewerNetwork& n, const civil::SewerRes
         const P3 nn{-dy * w, dx * w, 0};
         Face f{{{a.x + nn.x, a.y + nn.y, Z(a.rim)}, {b.x + nn.x, b.y + nn.y, Z(b.rim)}, {b.x - nn.x, b.y - nn.y, Z(b.rim)},
                 {a.x - nn.x, a.y - nn.y, Z(a.rim)}},
-               QColor(120, 170, 90), false, 70};
+               QColor(120, 170, 90), false, 70, {}};
         faces_.push_back(f);
     }
     center_ = {(minX + maxX) / 2, (minY + maxY) / 2, Z((minZ + maxZ) / 2)};
+    fit();
+    update();
+}
+
+// ---------------------------------------------------------------- umumiy sahna
+void Pipe3DView::beginScene(const QString& title, const QString& subtitle) {
+    faces_.clear();
+    groups_ = 0;
+    labels_.clear();
+    title_ = title;
+    subtitle_ = subtitle;
+}
+
+void Pipe3DView::addPrism(const std::vector<P3>& o, const std::vector<std::vector<P3>>& holes, double z0, double z1, const QColor& c,
+                          int alpha) {
+    if (o.size() < 3) return;
+    const int g = groups_++;
+    const std::size_t first = faces_.size();
+    auto sides = [&](const std::vector<P3>& ring, bool inner) {
+        for (std::size_t i = 0; i < ring.size(); ++i) {
+            const P3& a = ring[i];
+            const P3& b = ring[(i + 1) % ring.size()];
+            Face f{{{a.x, a.y, z0}, {b.x, b.y, z0}, {b.x, b.y, z1}, {a.x, a.y, z1}}, inner ? c.darker(115) : c, true, alpha, {}};
+            faces_.push_back(f);
+        }
+    };
+    sides(o, false);
+    for (const auto& h : holes) sides(h, true);
+    auto cap = [&](double z, const QColor& cc) {
+        Face f;
+        for (const auto& q : o) f.pts.push_back({q.x, q.y, z});
+        for (const auto& h : holes) {
+            std::vector<P3> hh;
+            for (const auto& q : h) hh.push_back({q.x, q.y, z});
+            f.holes.push_back(hh);
+        }
+        f.color = cc;
+        f.outline = true;
+        f.alpha = alpha;
+        faces_.push_back(f);
+    };
+    cap(z1, c.lighter(108));
+    cap(z0, c.darker(108));
+    for (std::size_t i = first; i < faces_.size(); ++i) faces_[i].group = g;
+}
+
+void Pipe3DView::addLabel(const P3& at, const QString& text) { labels_.push_back({at, text}); }
+
+void Pipe3DView::endScene(bool keepView) {
+    double minX = 1e300, maxX = -1e300, minY = 1e300, maxY = -1e300, minZ = 1e300, maxZ = -1e300;
+    for (const auto& f : faces_)
+        for (const auto& q : f.pts) {
+            minX = std::min(minX, q.x), maxX = std::max(maxX, q.x), minY = std::min(minY, q.y), maxY = std::max(maxY, q.y);
+            minZ = std::min(minZ, q.z), maxZ = std::max(maxZ, q.z);
+        }
+    if (minX <= maxX) center_ = {(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2};
+    if (!keepView) resetView();
     fit();
     update();
 }
@@ -244,17 +301,43 @@ void Pipe3DView::paintEvent(QPaintEvent*) {
         const double lam = std::abs(dot(nv, light));
         items.push_back({d, i, 0.38 + 0.62 * lam});
     }
-    std::sort(items.begin(), items.end(), [](const Item& x, const Item& y) { return x.depth > y.depth; });
+    // jism guruhlari: guruh markazining chuquligi bo'yicha, ichida — yuzalar bo'yicha
+    std::vector<double> gsum(static_cast<std::size_t>(std::max(groups_, 0)), 0.0), gcnt(gsum.size(), 0.0);
+    for (const auto& it : items)
+        if (const int g = faces_[it.idx].group; g >= 0 && g < groups_) {
+            gsum[static_cast<std::size_t>(g)] += it.depth;
+            gcnt[static_cast<std::size_t>(g)] += 1;
+        }
+    auto key = [&](const Item& it) {
+        const int g = faces_[it.idx].group;
+        return g >= 0 && g < groups_ ? gsum[static_cast<std::size_t>(g)] / gcnt[static_cast<std::size_t>(g)] : it.depth;
+    };
+    std::sort(items.begin(), items.end(), [&](const Item& x, const Item& y) {
+        const double kx = key(x), ky = key(y);
+        if (std::abs(kx - ky) > 1e-9) return kx > ky;
+        return x.depth > y.depth;
+    });
     for (const auto& it : items) {
         const auto& f = faces_[it.idx];
         QPolygonF poly;
         for (const auto& q : f.pts) poly << project(q);
+        QPainterPath path;
+        path.setFillRule(Qt::OddEvenFill);
+        path.addPolygon(poly);
+        path.closeSubpath();
+        for (const auto& h : f.holes) {
+            QPolygonF hp;
+            for (const auto& q : h) hp << project(q);
+            path.addPolygon(hp);
+            path.closeSubpath();
+        }
         QColor c = f.color;
         c.setRgbF(std::min(1.0, c.redF() * it.shade), std::min(1.0, c.greenF() * it.shade), std::min(1.0, c.blueF() * it.shade));
         c.setAlpha(f.alpha);
         p.setPen(f.outline ? QPen(c.darker(150), 0.6) : QPen(c, 0.6));
         p.setBrush(c);
-        p.drawPolygon(poly);
+        if (f.holes.empty()) p.drawPolygon(poly);
+        else p.drawPath(path);
     }
     // yozuvlar
     QFont fnt = font();

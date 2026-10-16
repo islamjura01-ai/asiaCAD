@@ -1,7 +1,7 @@
 {
 "format":"asiacad",
 "version":1,
-"generator":"AsiaCAD 0.10",
+"generator":"AsiaCAD 0.11",
 "nextId":44,
 "layers":[
 {"name":"0","color":7,"visible":true,"locked":false,"frozen":false},

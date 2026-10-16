@@ -16,8 +16,17 @@ namespace {
 constexpr double kPI = 3.14159265358979323846;
 
 // ---------------------------------------------------------------- normativ jadvallar
-// SNiP 2.04.03-85 "Kanalizatsiya. Tashqi tarmoqlar" (KMK 2.04.03 shu asosda). ShNQ bilan solishtirilmagan.
-const char* kRef = "SNiP 2.04.03-85 / KMK 2.04.03";
+// QMQ 2.04.03-19 "Kanalizatsiya. Tashqi tarmoqlar va inshootlar" — qiymatlar SNiP 2.04.03-85 dan, QMQ matni bilan
+// solishtirilmagan.
+const char* kRef = "QMQ 2.04.03-19 (SNiP 2.04.03-85)";
+const char* kStormRef = "SHNQ 2.04.22-25, 62-70";
+
+double lerp(const double* xs, const double* ys, int n, double x) {
+    if (x <= xs[0]) return ys[0];
+    for (int i = 1; i < n; ++i)
+        if (x <= xs[i]) return ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / (xs[i] - xs[i - 1]);
+    return ys[n - 1];
+}
 
 double maxFill(int dn, bool storm) {
     if (storm) return 1.0;  // yomg'ir tarmog'i to'liq kesimga hisoblanadi
@@ -123,6 +132,53 @@ double fillForFlow(double d, double q, double slope, double n) {
     return (lo + hi) / 2;
 }
 
+// ---------------------------------------------------------------- yomg'ir suvlari (SHNQ 2.04.22-25)
+double stormA(const StormInput& s) {
+    // A = q20·20^n·(1 + lgP / lg mr)^γ
+    const double lgmr = std::log10(std::max(1.0001, s.mr));
+    return s.q20 * std::pow(20.0, s.n) * std::pow(1 + std::log10(std::max(1e-6, s.P)) / lgmr, s.gamma);
+}
+double stormZImpervious(double A, double n) {
+    static const double as[] = {300, 400, 500, 600, 700, 800, 1000, 1200, 1500};
+    static const double lo[] = {0.32, 0.30, 0.29, 0.28, 0.27, 0.26, 0.25, 0.24, 0.23};  // n < 0.65
+    static const double hi[] = {0.33, 0.31, 0.30, 0.29, 0.28, 0.27, 0.26, 0.25, 0.24};  // n ≥ 0.65
+    return lerp(as, n < 0.65 ? lo : hi, 9, A);
+}
+double stormZmid(const StormInput& s) {
+    // 5-jadval: z qoplama koeffitsiyenti (birinchi tur — 6-jadvaldan)
+    const double z[7] = {stormZImpervious(stormA(s), s.n), 0.224, 0.145, 0.125, 0.090, 0.064, 0.038};
+    double sum = 0, w = 0;
+    for (int i = 0; i < 7; ++i) {
+        sum += z[i] * std::max(0.0, s.share[static_cast<std::size_t>(i)]);
+        w += std::max(0.0, s.share[static_cast<std::size_t>(i)]);
+    }
+    return w > 0 ? sum / w : z[0];
+}
+double stormBeta(double n) {
+    static const double ns[] = {0.40, 0.50, 0.60, 0.70};
+    static const double bs[] = {0.80, 0.75, 0.70, 0.65};
+    return lerp(ns, bs, 4, n);
+}
+double stormAreaK(double F) {
+    if (F < 500) return 1.0;
+    static const double fs[] = {500, 1000, 2000, 4000, 6000, 8000, 10000};
+    static const double ks[] = {0.95, 0.90, 0.85, 0.80, 0.70, 0.60, 0.55};
+    return lerp(fs, ks, 7, F);
+}
+double stormShortK(double t) {
+    if (t >= 10) return 1.0;
+    static const double ts[] = {5, 7, 10};
+    static const double ks[] = {0.8, 0.9, 1.0};
+    return lerp(ts, ks, 3, t);
+}
+double stormFlow(const StormInput& s, double F, double t) {
+    if (F <= 0) return 0;
+    t = std::max(t, 1.0);
+    const double A = stormA(s);
+    const double qr = stormZmid(s) * std::pow(A, 1.2) * F / std::pow(t, 1.2 * s.n - 0.1) * stormShortK(t) * stormAreaK(F);
+    return stormBeta(s.n) * qr;
+}
+
 // ---------------------------------------------------------------- hisob va tekshiruv
 SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
     SewerResult r;
@@ -145,6 +201,8 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
     r.manholes[0].invOut = r.manholes[0].invIn = invOut;
     const PipeSpec* prev = nullptr;
     std::map<std::string, QuantityRow> qty;
+    const bool useStorm = storm && n.storm.enabled;
+    double cumF = 0, flowTime = n.storm.tcon + n.storm.tcan;  // 11-formula: tr = tcon + tcan + tp
 
     for (std::size_t i = 0; i + 1 < nm; ++i) {
         const auto& a = n.manholes[i];
@@ -183,16 +241,26 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
         s.minSlope = minSlopeFor(p.dn);
         const double gSlope = std::max(s.slope, 1e-6);
         s.qFull = partialFlow(din, 1.0, gSlope, p.manningN, &s.vFull) * 1000.0;
-        if (sg.flowLs > 0) {
+        s.flowLs = sg.flowLs;
+        if (useStorm) {
+            cumF += n.manholes[i].areaHa;
+            s.stormF = cumF;
+            s.stormT = flowTime;
+            s.stormZ = stormZmid(n.storm);
+            s.flowLs = stormFlow(n.storm, cumF, flowTime);
+        }
+        if (s.flowLs > 0) {
+            const double qLs = s.flowLs;
             if (n.pressure) {
                 s.fill = 1.0;
-                s.velocity = sg.flowLs / 1000.0 / (kPI * din * din / 4);
+                s.velocity = qLs / 1000.0 / (kPI * din * din / 4);
             } else {
-                s.fill = fillForFlow(din, sg.flowLs / 1000.0, gSlope, p.manningN);
+                s.fill = fillForFlow(din, qLs / 1000.0, gSlope, p.manningN);
                 if (s.fill > 0 && s.fill <= 1.0) partialFlow(din, s.fill, gSlope, p.manningN, &s.velocity);
                 else s.velocity = s.vFull;
             }
         }
+        if (useStorm) flowTime += 0.017 * s.length / std::max(0.3, s.velocity > 0 ? s.velocity : s.vFull);  // 13-formula
         r.manholes[i + 1].invIn = s.invDown;
         r.manholes[i + 1].invOut = s.invDown;
         invOut = s.invDown;
@@ -209,9 +277,9 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
             if (s.length > s.maxSpacing + 1e-9)
                 add(Issue::Error, "sewer.chk.spacing", {sid, num(s.length), num(s.maxSpacing, 0), std::to_string(p.dn)}, si, -1);
         }
-        if (sg.flowLs > 0) {
+        if (s.flowLs > 0) {
             if (!n.pressure && s.fill > 1.0)
-                add(Issue::Error, "sewer.chk.capacity", {sid, num(sg.flowLs, 1), num(s.qFull, 1)}, si, -1);
+                add(Issue::Error, "sewer.chk.capacity", {sid, num(s.flowLs, 1), num(s.qFull, 1)}, si, -1);
             else if (!n.pressure && s.fill > s.maxFill + 1e-9)
                 add(Issue::Error, "sewer.chk.fill", {sid, num(s.fill), num(s.maxFill)}, si, -1);
             if (!n.pressure && s.velocity + 1e-9 < s.vMin)
@@ -226,6 +294,9 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
         if (prev && p.dn < prev->dn && !n.pressure)
             add(Issue::Error, "sewer.chk.dn_decrease", {sid, std::to_string(prev->dn), std::to_string(p.dn)}, si, -1);
         if (!p.verified) add(Issue::Info, "sewer.chk.unverified", {sid, p.id}, si, -1);
+        if (useStorm)
+            r.issues.push_back({Issue::Info, "sewer.chk.storm_flow", {sid, num(s.stormF, 2), num(s.stormT, 1), num(s.stormZ, 3), num(s.flowLs, 1)},
+                                kStormRef, si, -1});
         if (s.invDown > b.rim) add(Issue::Error, "sewer.chk.above_ground", {sid}, si, -1);
 
         // ---- miqdorlar
@@ -438,12 +509,20 @@ std::string toJson(const SewerNetwork& n) {
                       "\"pressure\": {},\n  \"startDepth\": {}, \"slope\": {}, \"frost\": {}, \"textHeight\": {}, \"vscale\": {},\n",
                       esc(n.name), esc(n.system), n.street ? "true" : "false", n.pressure ? "true" : "false", n.startDepth,
                       n.defaultSlope, n.frostDepth, n.textHeight, n.vScale);
+    {
+        const auto& st = n.storm;
+        os << std::format("  \"storm\": {{\"enabled\": {}, \"q20\": {}, \"n\": {}, \"mr\": {}, \"gamma\": {}, \"P\": {}, \"tcon\": {}, "
+                          "\"tcan\": {}, \"share\": [{}, {}, {}, {}, {}, {}, {}]}},\n",
+                          st.enabled ? "true" : "false", st.q20, st.n, st.mr, st.gamma, st.P, st.tcon, st.tcan, st.share[0], st.share[1],
+                          st.share[2], st.share[3], st.share[4], st.share[5], st.share[6]);
+    }
     os << "  \"manholes\": [\n";
     for (std::size_t i = 0; i < n.manholes.size(); ++i) {
         const auto& m = n.manholes[i];
         os << std::format("    {{\"name\": \"{}\", \"x\": {}, \"y\": {}, \"rim\": {}", esc(m.name), m.x, m.y, m.rim);
         if (m.invert) os << std::format(", \"invert\": {}", *m.invert);
         if (m.diameter > 0) os << std::format(", \"d\": {}", m.diameter);
+        if (m.areaHa > 0) os << std::format(", \"area\": {}", m.areaHa);
         os << (i + 1 < n.manholes.size() ? "},\n" : "}\n");
     }
     os << "  ],\n  \"segments\": [\n";
@@ -481,6 +560,20 @@ SewerNetwork fromJson(const std::string& text) {
     n.frostDepth = numv(root, "frost", 0.8);
     n.textHeight = numv(root, "textHeight", 1.0);
     n.vScale = numv(root, "vscale", 10);
+    if (const json::Value* st = root.find("storm"); st && st->isObject()) {
+        auto& s2 = n.storm;
+        s2.enabled = boolv(*st, "enabled", false);
+        s2.q20 = numv(*st, "q20", s2.q20);
+        s2.n = numv(*st, "n", s2.n);
+        s2.mr = numv(*st, "mr", s2.mr);
+        s2.gamma = numv(*st, "gamma", s2.gamma);
+        s2.P = numv(*st, "P", s2.P);
+        s2.tcon = numv(*st, "tcon", s2.tcon);
+        s2.tcan = numv(*st, "tcan", s2.tcan);
+        if (const json::Value* sh = st->find("share"); sh && sh->isArray())
+            for (std::size_t i = 0; i < 7 && i < sh->arr().size(); ++i)
+                if (sh->arr()[i].isNumber()) s2.share[i] = sh->arr()[i].num();
+    }
     const json::Value* ms = root.find("manholes");
     if (!ms || !ms->isArray()) throw Error("sewer.err.format", {"manholes"});
     for (const auto& v : ms->arr()) {
@@ -492,6 +585,7 @@ SewerNetwork fromJson(const std::string& text) {
         m.rim = numv(v, "rim", 0);
         if (const json::Value* iv = v.find("invert"); iv && iv->isNumber()) m.invert = iv->num();
         m.diameter = numv(v, "d", 0);
+        m.areaHa = numv(v, "area", 0);
         n.manholes.push_back(m);
     }
     if (const json::Value* ss = root.find("segments"); ss && ss->isArray()) {

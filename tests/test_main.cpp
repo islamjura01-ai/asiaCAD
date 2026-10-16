@@ -1624,6 +1624,36 @@ TEST(cli_sewer_command) {
     std::filesystem::remove(path);
 }
 
+TEST(storm_flow_shnq_2_04_22) {
+    civil::StormInput st;
+    st.enabled = true;  // q20=50, n=0.55, mr=60, γ=1.54, P=1
+    const double A = 50 * std::pow(20.0, 0.55);  // P=1 -> lgP=0
+    NEAR(civil::stormA(st), A);
+    NEAR(civil::stormZImpervious(250, 0.55), 0.32);    // 6-jadval, 300 dan kichik
+    NEAR(civil::stormZImpervious(450, 0.70), 0.305);   // 400..500 orasida, n ≥ 0.65
+    NEAR(civil::stormBeta(0.55), 0.725);               // 7-jadval interpolyatsiya
+    NEAR(civil::stormAreaK(1000), 0.90);               // 4-jadval
+    NEAR(civil::stormShortK(5), 0.8);                  // 63-band
+    const double q = 0.725 * 0.32 * std::pow(A, 1.2) * 2.0 / std::pow(10.0, 1.2 * 0.55 - 0.1);
+    NEAR(civil::stormFlow(st, 2.0, 10.0), q);
+    st.share = {0.5, 0, 0, 0, 0, 0, 0.5};              // yarmi gazon
+    NEAR(civil::stormZmid(st), (0.32 + 0.038) / 2);
+    // tarmoqda: sarf pastga qarab o'sadi, vaqt ortadi
+    civil::SewerNetwork n;
+    n.system = "K2";
+    n.storm.enabled = true;
+    n.startDepth = 2.0;
+    n.manholes = {{"D-1", 0, 0, 100, std::nullopt, 0, 1.5}, {"D-2", 50, 0, 99.8, std::nullopt, 0, 2.0}, {"D-3", 100, 0, 99.6, std::nullopt, 0, 0}};
+    n.segments = {{"RC-TS-500", 0.003, 0}, {"RC-TS-600", 0.003, 0}};
+    const auto r = civil::compute(n);
+    CHECK(r.segments[0].stormF == 1.5 && r.segments[1].stormF == 3.5);
+    CHECK(r.segments[1].stormT > r.segments[0].stormT);
+    CHECK(r.segments[1].flowLs > r.segments[0].flowLs && r.segments[0].flowLs > 0);
+    CHECK(r.segments[0].maxFill == 1.0);  // yomg'ir tarmog'i to'liq kesimga
+    const auto back = civil::fromJson(civil::toJson(n));
+    CHECK(back.storm.enabled && back.manholes[1].areaHa == 2.0);
+}
+
 int main() {
     for (auto& [name, fn] : registry()) {
         const int before = g_fail;

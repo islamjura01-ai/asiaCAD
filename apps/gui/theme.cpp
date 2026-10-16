@@ -51,6 +51,9 @@ QTabWidget::pane { border: 1px solid %6; border-radius: 6px; background: %2; top
 QTabBar::tab { background: %3; color: %5; padding: 6px 12px; margin-right: 2px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: 600; }
 QTabBar::tab:selected { background: %7; color: %8; }
 QSplitter::handle { background: transparent; width: 6px; }
+QScrollArea#sewerLeft, QWidget#sewerLeftBody { background: transparent; }
+QGroupBox { color: %4; border: 1px solid %6; border-radius: 8px; margin-top: 14px; padding-top: 8px; font-weight: 600; }
+QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
 QScrollBar:vertical { background: transparent; width: 10px; }
 QScrollBar:horizontal { background: transparent; height: 10px; }
 QScrollBar::handle:horizontal { background: %6; border-radius: 5px; min-width: 30px; }

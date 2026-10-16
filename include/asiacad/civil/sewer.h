@@ -2,9 +2,11 @@
 // AsiaCAD — o'z oqimli (va bosimli) kanalizatsiya tarmog'i: quduqlar zanjiri, quvur bo'laklari,
 // gidravlik hisob (Manning, qisman to'lish), normativ tekshiruv, plan va bo'ylama profil chizmasi.
 //
-// Normativ qiymatlar SNiP 2.04.03-85 / KMK 2.04.03 asosida (sewer.cpp boshidagi jadvallar).
-// ShNQ (2024+) matni bilan solishtirilmagan — har bir tekshiruv `ref` maydonida bandni ko'rsatadi,
+// Tarmoq normalari: QMQ 2.04.03-19 "Kanalizatsiya. Tashqi tarmoqlar va inshootlar" (SHNQ 2.04.22-25 1-band
+// havolasiga ko'ra amaldagi hujjat). Jadval qiymatlari SNiP 2.04.03-85 dan olingan — QMQ matni bilan solishtirilmagan,
 // UI ularni "tasdiqlanmagan" deb belgilaydi.
+// Yomg'ir (K2) sarfi: SHNQ 2.04.22-25, 62–70-bandlar — chegaraviy intensivlik usuli (8–13-formulalar, 3–7-jadvallar).
+#include <array>
 #include <asiacad/civil/pipe_catalog.h>
 #include <asiacad/core/entity.h>
 
@@ -22,6 +24,22 @@ struct Manhole {
     double rim = 0;                       // yer (lyuk) belgisi, m
     std::optional<double> invert;         // chiqish quvuri tubi belgisi (berilmasa — hisoblanadi)
     double diameter = 0;                  // ichki diametr, m (0 — normaga ko'ra avto)
+    double areaHa = 0;                    // shu quduqqa qo'shiladigan oqim maydoni, ga (yomg'ir tarmog'i)
+};
+
+// Yomg'ir suvlari hisobi (SHNQ 2.04.22-25). q20, n, mr, γ — hudud bo'yicha 1-rasm va 2-ilovadan kiritiladi.
+struct StormInput {
+    bool enabled = false;
+    double q20 = 50;       // 20 min, P=1 yil intensivligi, l/s·ga (1-rasm)
+    double n = 0.55;       // daraja ko'rsatkichi (2-ilova)
+    double mr = 60;        // yildagi o'rtacha yomg'irlar soni (2-ilova)
+    double gamma = 1.54;   // γ (2-ilova)
+    double P = 1.0;        // hisobiy intensivlikdan bir marta oshish davri, yil (3-jadval)
+    double tcon = 5;       // yuza konsentratsiya vaqti, min (69-band: 3–5 yoki 5–10)
+    double tcan = 0;       // ko'cha novlari bo'ylab oqish vaqti, min (12-formula)
+    // yuzalar ulushi (5-jadval tartibida): tom/asfalt, bruschatka/shag'al, xarsangtosh, ishlov berilmagan shag'al,
+    // shag'alli yo'lak, grunt, gazon — yig'indisi 1
+    std::array<double, 7> share{1, 0, 0, 0, 0, 0, 0};
 };
 
 struct Segment {
@@ -40,6 +58,7 @@ struct SewerNetwork {
     double frostDepth = 0.8;              // grunt muzlash chuqurligi, m (hudud bo'yicha kiriting)
     double textHeight = 1.0;              // chizma matni, m
     double vScale = 10;                   // profil: vertikal masshtab koeffitsienti
+    StormInput storm;                     // system == "K2" va enabled bo'lsa — sarf avtomatik
     std::vector<Manhole> manholes;        // oqim yo'nalishida
     std::vector<Segment> segments;        // manholes.size() - 1
 };
@@ -52,6 +71,8 @@ struct SegmentResult {
     double qFull = 0, vFull = 0;          // to'liq kesim: l/s, m/s
     double fill = 0, velocity = 0;        // hisobiy sarfda h/d va m/s (sarf berilsa)
     double maxFill = 0, vMin = 0, vMax = 0, maxSpacing = 0, minSlope = 0;
+    double flowLs = 0;                    // hisobga olingan sarf (berilgan yoki yomg'ir hisobidan), l/s
+    double stormF = 0, stormT = 0, stormZ = 0;  // yomg'ir: maydon ga, davomiylik min, z_mid
     const PipeSpec* spec = nullptr;
 };
 
@@ -94,6 +115,16 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat = PipeCatalog:
 double partialFlow(double d, double fill, double slope, double n, double* velocity = nullptr);
 // Berilgan sarf uchun to'lish darajasi h/d (0..1); sig'imdan oshsa 1.0 dan katta (−1 — hisoblab bo'lmaydi)
 double fillForFlow(double d, double q, double slope, double n);
+
+// Yomg'ir hisobi qismlari (sinov va UI uchun)
+double stormA(const StormInput& s);                    // 10-formula
+double stormZImpervious(double A, double n);           // 6-jadval (chiziqli interpolyatsiya)
+double stormZmid(const StormInput& s);                 // 5-jadval bo'yicha o'rtacha z
+double stormBeta(double n);                            // 7-jadval
+double stormAreaK(double F);                           // 4-jadval (F ≥ 500 ga)
+double stormShortK(double t);                          // 63-band (t < 10 min)
+// Hisobiy sarf q_cal = β·q_r, l/s (8–9-formulalar); F — ga, t — min
+double stormFlow(const StormInput& s, double F, double t);
 
 // Profil jadvali sarlavhalari (UI tilida beriladi)
 struct ProfileLabels {

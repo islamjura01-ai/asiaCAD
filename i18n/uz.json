@@ -183,6 +183,7 @@
 
     "core.no_selection": "Obyekt tanlanmagan",
     "core.not_found": "Obyekt topilmadi: #{0}",
+    "sewer.chk.storm_flow": "{0}-boʻlak: yomgʻir sarfi F={1} ga, t={2} min, z={3} → q={4} l/s",
     "sewer.msg.pipes_note": "* — namunaviy qiymat: loyihadan oldin standart jadvali boʻyicha tekshiring",
     "sewer.msg.segment": "{0}. {1}→{2}: {3}  L={4}  i={5}  tub {6}→{7}  Q(toʻliq)={8} l/s  v={9} m/s",
     "sewer.msg.summary": "Tarmoq {0}: {1} ta quduq, L={2} m; xato {3}, ogohlantirish {4}; {5} ta obyekt chizildi",
@@ -444,7 +445,7 @@
     "gui.sew.spec_info": "{0}\nTashqi Ø {1} mm · devor {2} mm · ichki Ø {3} mm\nMassa {4} kg/m · Manning n={5}\n{6}",
     "gui.sew.verified": "✓ standart jadvali bilan tekshirilgan",
     "gui.sew.unverified": "⚠ namunaviy qiymat — standart boʻyicha tekshiring",
-    "gui.sew.norm_note": "Normalar: SNiP 2.04.03-85 / KMK 2.04.03 asosida — ShNQ bilan tasdiqlanmagan",
+    "gui.sew.norm_note": "Normalar: QMQ 2.04.03-19 (qiymatlar SNiP 2.04.03-85 dan — QMQ matni bilan tasdiqlanmagan) · yomgʻir sarfi: SHNQ 2.04.22-25",
     "gui.sew.ok": "✓ Normaga mos",
     "gui.sew.qty_pipe": "{0}: {1} m, {2} kg",
     "gui.sew.qty_mh": "Quduq Ø{0} m: {1} ta",
@@ -456,6 +457,20 @@
     "gui.sew.sys.N": "N — bosimli",
     "gui.sew.need_pline": "Avval chizmada poliliniyani tanlang",
     "gui.sew.filter": "Kanalizatsiya tarmogʻi (*.kan.json)",
+    "gui.sew.storm": "Yomgʻir sarfi (SHNQ 2.04.22-25)",
+    "gui.sew.storm_note": "q20 — 1-rasm, n, mr, γ — 2-ilova (hudud boʻyicha), P — 3-jadval. Quduqlar jadvalida F — shu quduqqa qoʻshiladigan maydon.",
+    "gui.sew.P": "Oshish davri P, yil",
+    "gui.sew.tcon": "Yuza konsentratsiya vaqti, min",
+    "gui.sew.tcan": "Novlar boʻylab vaqt, min",
+    "gui.sew.surfaces": "Yuzalar ulushi, % (5-jadval)",
+    "gui.sew.col.area": "F, ga",
+    "gui.sew.surf.0": "Tom va asfaltbeton",
+    "gui.sew.surf.1": "Bruschatka, shagʻalli qoplama",
+    "gui.sew.surf.2": "Xarsangtosh yoʻl",
+    "gui.sew.surf.3": "Ishlov berilmagan shagʻal",
+    "gui.sew.surf.4": "Shagʻalli bogʻ yoʻlagi",
+    "gui.sew.surf.5": "Grunt (rejalangan)",
+    "gui.sew.surf.6": "Gazon",
     "gui.status.snap": "Bogʻlanish"
   }
 }

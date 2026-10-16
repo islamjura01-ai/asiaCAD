@@ -183,6 +183,7 @@
 
     "core.no_selection": "Nesne seçilmedi",
     "core.not_found": "Nesne bulunamadı: #{0}",
+    "sewer.chk.storm_flow": "Bölüm {0}: yağmur debisi F={1} ha, t={2} dk, z={3} → q={4} l/s",
     "sewer.msg.pipes_note": "* — örnek değer: projeden önce standarda göre doğrulayın",
     "sewer.msg.segment": "{0}. {1}→{2}: {3}  L={4}  i={5}  akar kot {6}→{7}  Q(dolu)={8} l/s  v={9} m/s",
     "sewer.msg.summary": "Hat {0}: {1} baca, L={2} m; hata {3}, uyarı {4}; {5} nesne çizildi",
@@ -444,7 +445,7 @@
     "gui.sew.spec_info": "{0}\nDış Ø {1} mm · et {2} mm · iç Ø {3} mm\nKütle {4} kg/m · Manning n={5}\n{6}",
     "gui.sew.verified": "✓ standart tablosuyla doğrulandı",
     "gui.sew.unverified": "⚠ örnek değer — standarda göre doğrulayın",
-    "gui.sew.norm_note": "Normlar: SNiP 2.04.03-85 / KMK 2.04.03 esaslı — ShNQ ile doğrulanmadı",
+    "gui.sew.norm_note": "Normlar: QMQ 2.04.03-19 (değerler SNiP 2.04.03-85'ten — QMQ metniyle doğrulanmadı) · yağmur debisi: ShNQ 2.04.22-25",
     "gui.sew.ok": "✓ Normlara uygun",
     "gui.sew.qty_pipe": "{0}: {1} m, {2} kg",
     "gui.sew.qty_mh": "Baca Ø{0} m: {1} adet",
@@ -456,6 +457,20 @@
     "gui.sew.sys.N": "N — basınçlı",
     "gui.sew.need_pline": "Önce çizimde çoklu çizgi seçin",
     "gui.sew.filter": "Kanalizasyon hattı (*.kan.json)",
+    "gui.sew.storm": "Yağmur debisi (ShNQ 2.04.22-25)",
+    "gui.sew.storm_note": "q20 — Şekil 1, n, mr, γ — Ek 2, P — Tablo 3. F — bacaya eklenen alan.",
+    "gui.sew.P": "Aşılma periyodu P, yıl",
+    "gui.sew.tcon": "Yüzey konsantrasyon süresi, dk",
+    "gui.sew.tcan": "Oluklar boyunca süre, dk",
+    "gui.sew.surfaces": "Yüzey payları, % (Tablo 5)",
+    "gui.sew.col.area": "F, ha",
+    "gui.sew.surf.0": "Çatı ve asfalt",
+    "gui.sew.surf.1": "Parke taş, mıcır",
+    "gui.sew.surf.2": "Arnavut kaldırımı",
+    "gui.sew.surf.3": "İşlenmemiş mıcır",
+    "gui.sew.surf.4": "Çakıllı bahçe yolu",
+    "gui.sew.surf.5": "Toprak (tesviye)",
+    "gui.sew.surf.6": "Çim",
     "gui.status.snap": "Yakalama"
   }
 }

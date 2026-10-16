@@ -18,6 +18,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QTabWidget>
@@ -34,7 +35,7 @@ namespace asiacad::gui {
 using namespace asiacad::civil;
 
 namespace {
-enum MhCol { MName, MX, MY, MRim, MInv, MD, MCount };
+enum MhCol { MName, MX, MY, MRim, MInv, MD, MArea, MCount };
 enum SgCol { SRoute, SPipe, SSlope, SFlow, SLen, SInvUp, SInvDn, SFill, SVel, SStatus, SCount };
 
 double toNum(const QString& s, bool* ok = nullptr) {
@@ -92,7 +93,15 @@ void SewerDialog::buildUi() {
     root->addWidget(split, 1);
 
     // ---- chap: parametrlar
-    auto* left = new QWidget(split);
+    auto* leftScroll = new QScrollArea(split);
+    leftScroll->setWidgetResizable(true);
+    leftScroll->setFrameShape(QFrame::NoFrame);
+    leftScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    leftScroll->setObjectName("sewerLeft");
+    leftScroll->setMinimumWidth(340);
+    auto* left = new QWidget;
+    left->setObjectName("sewerLeftBody");
+    leftScroll->setWidget(left);
     auto* lv = new QVBoxLayout(left);
     lv->setContentsMargins(0, 0, 6, 0);
     auto* form = new QFormLayout;
@@ -131,11 +140,47 @@ void SewerDialog::buildUi() {
     form->addRow(t("gui.sew.depth"), depth_);
     form->addRow(t("gui.sew.frost"), frost_);
     form->addRow(t("gui.sew.texth"), textH_);
+    for (auto* cb : {tpl_, system_, material_, size_}) {
+        cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        cb->setMinimumContentsLength(12);
+    }
+    street_->setText(t("gui.sew.street"));
     lv->addLayout(form);
     auto* applyAll = new QPushButton(t("gui.sew.apply"), left);
     auto* saveTpl = new QPushButton(t("gui.sew.savetpl"), left);
     lv->addWidget(applyAll);
     lv->addWidget(saveTpl);
+    // yomg'ir sarfi (K2) — SHNQ 2.04.22-25
+    storm_ = new QGroupBox(t("gui.sew.storm"), left);
+    storm_->setCheckable(true);
+    storm_->setChecked(false);
+    auto* sf = new QFormLayout(storm_);
+    q20_ = spin(5, 500, 5, 1, 50);
+    nPar_ = spin(0.3, 1.0, 0.01, 2, 0.55);
+    mr_ = spin(2, 300, 5, 0, 60);
+    gamma_ = spin(0.5, 3, 0.01, 2, 1.54);
+    period_ = spin(0.33, 20, 0.33, 2, 1.0);
+    tcon_ = spin(1, 30, 1, 1, 5);
+    tcan_ = spin(0, 60, 0.5, 1, 0);
+    sf->addRow("q20, l/s·ga", q20_);
+    sf->addRow("n", nPar_);
+    sf->addRow("mr", mr_);
+    sf->addRow(QString::fromUtf8("γ"), gamma_);
+    sf->addRow(t("gui.sew.P"), period_);
+    sf->addRow(t("gui.sew.tcon"), tcon_);
+    sf->addRow(t("gui.sew.tcan"), tcan_);
+    auto* stNote = new QLabel(t("gui.sew.storm_note"), storm_);
+    stNote->setWordWrap(true);
+    stNote->setObjectName("muted");
+    sf->addRow(stNote);
+    auto* surfTitle = new QLabel(t("gui.sew.surfaces"), storm_);
+    surfTitle->setObjectName("muted");
+    sf->addRow(surfTitle);
+    for (int i = 0; i < 7; ++i) {
+        share_[i] = spin(0, 100, 5, 0, i == 0 ? 100 : 0);
+        sf->addRow(t(("gui.sew.surf." + std::to_string(i)).c_str()), share_[i]);
+    }
+    lv->addWidget(storm_);
     auto* note = new QLabel(t("gui.sew.norm_note"), left);
     note->setWordWrap(true);
     note->setObjectName("muted");
@@ -150,7 +195,8 @@ void SewerDialog::buildUi() {
     mhTitle->setObjectName("title");
     mv->addWidget(mhTitle);
     mh_ = new QTableWidget(0, MCount, mid);
-    mh_->setHorizontalHeaderLabels({t("gui.sew.col.name"), "X", "Y", t("gui.sew.col.rim"), t("gui.sew.col.inv"), t("gui.sew.col.d")});
+    mh_->setHorizontalHeaderLabels({t("gui.sew.col.name"), "X", "Y", t("gui.sew.col.rim"), t("gui.sew.col.inv"), t("gui.sew.col.d"),
+                                    t("gui.sew.col.area")});
     mh_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     mh_->verticalHeader()->setVisible(false);
     mv->addWidget(mh_, 2);
@@ -192,7 +238,7 @@ void SewerDialog::buildUi() {
     split->setStretchFactor(0, 0);
     split->setStretchFactor(1, 3);
     split->setStretchFactor(2, 2);
-    split->setSizes({260, 860, 400});
+    split->setSizes({360, 780, 400});
 
     // ---- past: holat va tugmalar
     auto* bottom = new QHBoxLayout;
@@ -225,6 +271,11 @@ void SewerDialog::buildUi() {
     connect(closeB, &QPushButton::clicked, this, &QDialog::close);
     connect(mh_, &QTableWidget::itemChanged, this, [this] { if (!updating_) recompute(); });
     connect(segs_, &QTableWidget::itemChanged, this, [this] { if (!updating_) recompute(); });
+    connect(storm_, &QGroupBox::toggled, this, [this] { if (!updating_) recompute(); });
+    for (auto* sp : {q20_, nPar_, mr_, gamma_, period_, tcon_, tcan_})
+        connect(sp, &QDoubleSpinBox::valueChanged, this, [this] { if (!updating_) recompute(); });
+    for (auto* sp : share_)
+        connect(sp, &QDoubleSpinBox::valueChanged, this, [this] { if (!updating_) recompute(); });
     for (auto* s : {slope_, depth_, frost_, textH_})
         connect(s, &QDoubleSpinBox::valueChanged, this, [this] { if (!updating_) recompute(); });
     connect(street_, &QCheckBox::toggled, this, [this] { if (!updating_) recompute(); });
@@ -306,6 +357,7 @@ void SewerDialog::onTemplate(int i) {
     updating_ = true;
     system_->setCurrentIndex(std::max(0, system_->findData(QString::fromStdString(tp.system))));
     pressure_->setChecked(tp.system == "N");
+    storm_->setChecked(tp.system == "K2");
     street_->setChecked(tp.street);
     slope_->setValue(tp.slope);
     depth_->setValue(tp.startDepth);
@@ -363,6 +415,15 @@ SewerNetwork SewerDialog::network() const {
     n.defaultSlope = slope_->value();
     n.frostDepth = frost_->value();
     n.textHeight = textH_->value();
+    n.storm.enabled = storm_->isChecked() && n.system == "K2";
+    n.storm.q20 = q20_->value();
+    n.storm.n = nPar_->value();
+    n.storm.mr = mr_->value();
+    n.storm.gamma = gamma_->value();
+    n.storm.P = period_->value();
+    n.storm.tcon = tcon_->value();
+    n.storm.tcan = tcan_->value();
+    for (int i = 0; i < 7; ++i) n.storm.share[static_cast<std::size_t>(i)] = share_[i]->value() / 100.0;
     for (int r = 0; r < mh_->rowCount(); ++r) {
         auto txt = [&](int c) { return mh_->item(r, c) ? mh_->item(r, c)->text() : QString(); };
         Manhole m;
@@ -374,6 +435,7 @@ SewerNetwork SewerDialog::network() const {
         const double inv = toNum(txt(MInv), &ok);
         if (ok && !txt(MInv).trimmed().isEmpty()) m.invert = inv;
         m.diameter = toNum(txt(MD));
+        m.areaHa = toNum(txt(MArea));
         n.manholes.push_back(m);
     }
     for (int r = 0; r < segs_->rowCount(); ++r) {
@@ -396,6 +458,15 @@ void SewerDialog::setNetwork(const SewerNetwork& n) {
     slope_->setValue(n.defaultSlope);
     frost_->setValue(n.frostDepth);
     textH_->setValue(n.textHeight);
+    storm_->setChecked(n.storm.enabled);
+    q20_->setValue(n.storm.q20);
+    nPar_->setValue(n.storm.n);
+    mr_->setValue(n.storm.mr);
+    gamma_->setValue(n.storm.gamma);
+    period_->setValue(n.storm.P);
+    tcon_->setValue(n.storm.tcon);
+    tcan_->setValue(n.storm.tcan);
+    for (int i = 0; i < 7; ++i) share_[i]->setValue(n.storm.share[static_cast<std::size_t>(i)] * 100.0);
     mh_->setRowCount(0);
     for (const auto& m : n.manholes) {
         const int r = mh_->rowCount();
@@ -406,7 +477,15 @@ void SewerDialog::setNetwork(const SewerNetwork& n) {
         mh_->setItem(r, MRim, new QTableWidgetItem(fmt(m.rim, 2)));
         mh_->setItem(r, MInv, new QTableWidgetItem(m.invert ? fmt(*m.invert, 2) : QString()));
         mh_->setItem(r, MD, new QTableWidgetItem(m.diameter > 0 ? fmt(m.diameter, 2) : QString()));
+        mh_->setItem(r, MArea, new QTableWidgetItem(m.areaHa > 0 ? fmt(m.areaHa, 2) : QString()));
     }
+    // material/o'lcham tanlovini birinchi bo'lak quvuriga moslash
+    if (!n.segments.empty())
+        if (const PipeSpec* sp = PipeCatalog::builtin().find(n.segments.front().specId)) {
+            material_->setCurrentIndex(std::max(0, material_->findData(QString::fromLatin1(materialKey(sp->material)))));
+            fillSizes();
+            size_->setCurrentIndex(std::max(0, size_->findData(QString::fromStdString(sp->id))));
+        }
     segs_->setRowCount(0);
     syncSegmentsRows();
     for (int r = 0; r < segs_->rowCount() && r < static_cast<int>(n.segments.size()); ++r) {
@@ -438,7 +517,14 @@ void SewerDialog::recompute() {
             segs_->item(r, SLen)->setText(fmt(s.length));
             segs_->item(r, SInvUp)->setText(fmt(s.invUp));
             segs_->item(r, SInvDn)->setText(fmt(s.invDown));
-            const bool hasFlow = n.segments[ri].flowLs > 0;
+            const bool hasFlow = s.flowLs > 0;
+            if (n.storm.enabled) {  // sarf yomg'ir hisobidan — tahrirlanmaydi
+                segs_->item(r, SFlow)->setText(fmt(s.flowLs, 1));
+                segs_->item(r, SFlow)->setFlags(segs_->item(r, SFlow)->flags() & ~Qt::ItemIsEditable);
+                segs_->item(r, SFlow)->setToolTip(QStringLiteral("F=%1 ga, t=%2 min, z=%3").arg(fmt(s.stormF), fmt(s.stormT, 1), fmt(s.stormZ, 3)));
+            } else {
+                segs_->item(r, SFlow)->setFlags(segs_->item(r, SFlow)->flags() | Qt::ItemIsEditable);
+            }
             segs_->item(r, SFill)->setText(hasFlow ? fmt(s.fill) : QString());
             segs_->item(r, SVel)->setText(hasFlow ? fmt(s.velocity) : fmt(s.vFull) + QStringLiteral(" (Q=%1)").arg(fmt(s.qFull, 1)));
         }
@@ -528,6 +614,7 @@ void SewerDialog::addManhole() {
     mh_->setItem(r, MRim, new QTableWidgetItem(fmt(rim, 2)));
     mh_->setItem(r, MInv, new QTableWidgetItem(""));
     mh_->setItem(r, MD, new QTableWidgetItem(""));
+    mh_->setItem(r, MArea, new QTableWidgetItem(""));
     updating_ = false;
     recompute();
 }

@@ -37,7 +37,7 @@ include/asiacad/io/dxf_reader.h   DXF import R12–R2018, bitta undo qadami
 include/asiacad/io/acad_file.h    Native .acad (JSON v1): atomar saqlash + .bak, versiya nazorati
 include/asiacad/io/dxf_text.h     ANSI_1251/1252/1254/1250, DOS866, \U+, %%-kodlar, MTEXT formatlash
 apps/cli/                         buyruq interpretatori (6 til, Localizer orqali)
-tests/                            77 test + GUI tutun testi; tests/data — ezdxf bilan yaratilgan DXF fixture'lar
+tests/                            78 test + GUI tutun testi; tests/data — ezdxf bilan yaratilgan DXF fixture'lar
 ```
 
 ## Dizayn qarorlari
@@ -126,7 +126,13 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
   bosimli PE100 Ø160, yo'l ostidan po'lat g'ilof. O'z shablonlaringiz `pipe_templates.json` ga saqlanadi (menyudan).
 - **Hisob:** quduqlar zanjiri, quvur tubi belgilari (quduqda ustki yasovchi bo'yicha ulanadi), Manning bo'yicha to'liq va qisman
   to'lish (h/d, v), xandaq/qum to'shama/ko'mish hajmlari (taxminiy), quvur uzunligi va massasi, quduqlar soni.
-- **Norma tekshiruvi** (SNiP 2.04.03-85 / KMK 2.04.03 asosida, **ShNQ bilan tasdiqlanmagan**): min diametr (ko'cha 200, hovli 150),
+- **Yomg'ir (K2) sarfi — SHNQ 2.04.22-25, 62–70-bandlar:** chegaraviy intensivlik usuli
+  q_r = z_mid·A^1.2·F / t^(1.2n−0.1), A = q20·20^n·(1 + lgP/lg mr)^γ, q_cal = β·q_r; z — 5/6-jadval (yuzalar ulushi bo'yicha),
+  β — 7-jadval, K — 4-jadval (F ≥ 500 ga), t < 10 min tuzatmasi (63-band), t = tcon + tcan + 0.017·Σl/v (11–13-formulalar).
+  q20, n, mr, γ hudud bo'yicha 1-rasm va 2-ilovadan qo'lda kiritiladi (dasturda xarita yo'q). Quduqlarda F (ga) — qo'shiladigan maydon.
+  Namuna: `examples/k2_yomgir.kan.json`.
+- **Norma tekshiruvi** (QMQ 2.04.03-19 — SHNQ 2.04.22-25 ga ko'ra amaldagi tarmoq normasi; jadval qiymatlari SNiP 2.04.03-85 dan,
+  **QMQ matni bilan tasdiqlanmagan**): min diametr (ko'cha 200, hovli 150),
   min nishablik (Ø150 — 0.008, Ø200 — 0.007, kattalari 1/D — ogohlantirish), max to'lish, o'z-o'zini tozalash tezligi,
   max tezlik (metall 8, nometall 4 m/s), sig'im, quduqlar oralig'i (35/50/75/100/150/200 m), quvur ustidagi qatlam ≥ 0.7 m,
   muzlash chuqurligi, diametr kamayishi, quduq diametri. Xato — qizil qator.

@@ -15,6 +15,7 @@
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
+class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -94,6 +95,10 @@ private:
     QPlainTextEdit* qty_ = nullptr;
     QLabel* status_ = nullptr;
     QCheckBox* profile_ = nullptr;
+    QGroupBox* storm_ = nullptr;
+    QDoubleSpinBox *q20_ = nullptr, *nPar_ = nullptr, *mr_ = nullptr, *gamma_ = nullptr, *period_ = nullptr, *tcon_ = nullptr,
+                   *tcan_ = nullptr;
+    QDoubleSpinBox* share_[7] = {};
 };
 
 } // namespace asiacad::gui

@@ -1,6 +1,10 @@
 // GUI tutun testi: oyna ko'rsatilmaydi (offscreen), lekin asboblar -> Interpreter -> Document zanjiri
 // to'liq tekshiriladi. ctest orqali QT_QPA_PLATFORM=offscreen bilan ishga tushadi.
 #include "main_window.h"
+#include "sewer_dialog.h"
+
+#include <QPushButton>
+#include <QTableWidget>
 
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
@@ -261,6 +265,38 @@ int main(int argc, char** argv) {
     doc.forEach([&](const IEntity& e) { if (e.type() == EntityType::Arc) hasFilletArc = true; });
     CHECK(!hasFilletArc);
     v->cancelTool();
+
+    // 19. Kanalizatsiya menyusi: shablon, poliliniyadan quduqlar, jonli tekshiruv, chizish va undo
+    w.runLine("NEW !");
+    w.runLine("PLINE 0,0,100 40,0,99.8 85,0,99.6 120,10,99.4");
+    v->setSelection(doc.ids());
+    SewerDialog* sd = w.openSewer();
+    CHECK(sd != nullptr);
+    sd->selectTemplate(1);  // ko'cha tarmog'i PVX SN8 Ø200
+    auto clickBtn = [&](const char* key) {
+        const QString txt = QString::fromStdString(loc.tr(key));
+        for (auto* b : sd->findChildren<QPushButton*>())
+            if (b->text() == txt) { b->click(); return true; }
+        return false;
+    };
+    CHECK(clickBtn("gui.sew.frompline"));
+    auto net = sd->network();
+    CHECK(net.manholes.size() == 4 && std::abs(net.manholes[3].rim - 99.4) < 1e-9);
+    CHECK(net.segments.size() == 3 && net.segments[0].specId == "PVC-SN8-200");
+    CHECK(sd->segmentsTable()->rowCount() == 3);
+    CHECK(sd->result().errors() == 0);
+    CHECK(sd->pipeView()->faceCount() > 100);
+    const auto docBefore = doc.size();
+    CHECK(clickBtn("gui.sew.draw"));
+    CHECK(doc.size() > docBefore + 50);
+    CHECK(doc.layer("K1_PROFIL").has_value());
+    w.runLine("UNDO");
+    CHECK(doc.size() == docBefore);
+    // normadan chiqish -> xato soni
+    net.segments[1].slope = 0.002;
+    sd->setNetwork(net);
+    CHECK(sd->result().errors() >= 1);
+    sd->close();
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

@@ -361,7 +361,7 @@ std::unique_ptr<IEntity> makeEntity(const std::string& type, const EntityReader&
 } // namespace
 
 void writeAcad(const Document& doc, std::ostream& os) {
-    os << "{\n\"format\":\"asiacad\",\n\"version\":" << kAcadFormatVersion << ",\n\"generator\":\"AsiaCAD 0.9\",\n";
+    os << "{\n\"format\":\"asiacad\",\n\"version\":" << kAcadFormatVersion << ",\n\"generator\":\"AsiaCAD 0.10\",\n";
     os << "\"nextId\":" << doc.peekNextId() << ",\n\"layers\":[\n";
     bool first = true;
     for (const auto& [name, l] : doc.layers()) {

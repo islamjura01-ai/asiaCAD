@@ -1,4 +1,5 @@
 // AsiaCAD core testlari (tashqi kutubxonasiz)
+#include <asiacad/civil/sewer.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/grips.h>
@@ -328,7 +329,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 44);
+    CHECK(loc.canonicalCommands().size() == 46);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -1506,6 +1507,121 @@ TEST(cli_modify_commands_with_undo) {
     CHECK(s.find("Xato: Ikki xil chiziq (LINE) tanlang") != std::string::npos);
     CHECK(s.find("Xato: Nuqtada obyekt yoʻq: 500,500") != std::string::npos);
     CHECK(s.find("CIRCLE c=(100.0000, 0.0000, 0.0000) r=5.0000") != std::string::npos);  // undo aylanani qaytardi
+}
+
+// ---------- Quvurlar katalogi va kanalizatsiya ----------
+TEST(pipe_catalog_contents) {
+    const auto& c = civil::PipeCatalog::builtin();
+    CHECK(c.materials().size() == 7);
+    auto* ac = c.find("AC-BNT-200");  // GOST 1839-80 jadvali
+    CHECK(ac && ac->od == 211 && ac->wall == 11 && ac->mass() == 13.2 && ac->verified);
+    auto* pvc = c.find("PVC-SN8-200");  // SDR34
+    CHECK(pvc && std::abs(pvc->wall - 5.9) < 1e-9 && std::abs(pvc->id_mm() - 188.2) < 1e-9);
+    NEAR(pvc->mass(), 3.14159265358979 * (0.1 * 0.1 - 0.0941 * 0.0941) * 1400);  // zichlikdan
+    auto* di = c.find("DI-K9-300");  // e = 9(0.5+0.001·300) = 7.2
+    CHECK(di && std::abs(di->wall - 7.2) < 1e-9);
+    for (const auto& t : c.templates) CHECK(c.find(t.specId) != nullptr);
+    // foydalanuvchi shablonlari JSON orqali
+    civil::PipeTemplate u;
+    u.id = "u1";
+    u.name = "Mening \"shablonim\"";
+    u.specId = "PE-SDR17-160";
+    u.slope = 0.01;
+    const auto back = civil::PipeCatalog::templatesFromJson(civil::PipeCatalog::templatesToJson({u}));
+    CHECK(back.size() == 1 && back[0].name == u.name && back[0].user && std::abs(back[0].slope - 0.01) < 1e-12);
+}
+TEST(sewer_hydraulics_manning) {
+    // to'liq kesim: v = R^(2/3)·√i / n, R = D/4
+    double v = 0;
+    const double q = civil::partialFlow(0.2, 1.0, 0.005, 0.013, &v);
+    NEAR(v, std::pow(0.05, 2.0 / 3.0) * std::sqrt(0.005) / 0.013);
+    NEAR(q, v * 3.14159265358979 * 0.01);
+    // yarim to'lishda R = D/4 ham — tezlik bir xil, sarf yarmi
+    double vh = 0;
+    const double qh = civil::partialFlow(0.2, 0.5, 0.005, 0.013, &vh);
+    CHECK(std::abs(vh - v) < 1e-9 && std::abs(qh - q / 2) < 1e-9);
+    const double f = civil::fillForFlow(0.2, qh, 0.005, 0.013);
+    CHECK(std::abs(f - 0.5) < 1e-6);
+    CHECK(civil::fillForFlow(0.2, q * 2, 0.005, 0.013) > 1.0);
+}
+static civil::SewerNetwork demoNet() {
+    civil::SewerNetwork n;
+    n.startDepth = 1.8;
+    n.manholes = {{"K1-1", 0, 0, 100.0, std::nullopt, 0}, {"K1-2", 40, 0, 99.8, std::nullopt, 0}, {"K1-3", 85, 0, 99.6, std::nullopt, 0}};
+    n.segments = {{"PVC-SN8-200", 0.007, 3.0}, {"PVC-SN8-250", 0.006, 6.0}};
+    return n;
+}
+TEST(sewer_compute_inverts_and_checks) {
+    auto n = demoNet();
+    auto r = civil::compute(n);
+    CHECK(r.errors() == 0);
+    NEAR(r.segments[0].invUp, 98.2);
+    NEAR(r.segments[0].invDown, 98.2 - 0.28);
+    // K1-2 da Ø200 -> Ø250: ustki yasovchi bo'yicha (ichki 188.2 -> 235.4)
+    NEAR(r.manholes[1].invOut, 98.2 - 0.28 - (0.2354 - 0.1882));
+    NEAR(r.segments[1].invUp, r.manholes[1].invOut);
+    NEAR(r.totalLength, 85.0);
+    CHECK(r.manholes[0].diameter == 1.0 && r.manholeCount[1.0] == 3);
+    CHECK(r.trenchVolume > 0 && r.backfillVolume > 0 && r.backfillVolume < r.trenchVolume);
+    auto has = [&](const civil::SewerResult& rr, const std::string& key) {
+        for (const auto& i : rr.issues) if (i.key == key) return true;
+        return false;
+    };
+    // normadan chiqishlar: kichik nishablik, katta oraliq, sayoz, diametr kamayishi, hovli quvuri ko'chada
+    auto bad = demoNet();
+    bad.segments[0].slope = 0.004;
+    bad.manholes[1].x = 60;  // 60 m > 50 m (Ø200)
+    bad.segments[1].specId = "PVC-SN8-160";
+    bad.startDepth = 0.6;
+    auto rb = civil::compute(bad);
+    CHECK(has(rb, "sewer.chk.min_slope"));
+    CHECK(has(rb, "sewer.chk.spacing"));
+    CHECK(has(rb, "sewer.chk.cover"));
+    CHECK(has(rb, "sewer.chk.dn_decrease"));
+    CHECK(has(rb, "sewer.chk.min_dn"));
+    CHECK(rb.errors() >= 5);
+    // sig'imdan oshgan sarf
+    auto over = demoNet();
+    over.segments[0].flowLs = 500;
+    CHECK(has(civil::compute(over), "sewer.chk.capacity"));
+    // kichik quduq
+    auto mh = demoNet();
+    mh.manholes[1].diameter = 0.7;
+    CHECK(has(civil::compute(mh), "sewer.chk.manhole_d"));
+}
+TEST(sewer_json_roundtrip_and_drawing) {
+    auto n = demoNet();
+    n.manholes[2].invert = 97.0;
+    const auto back = civil::fromJson(civil::toJson(n));
+    CHECK(back.manholes.size() == 3 && back.segments.size() == 2);
+    CHECK(back.manholes[2].invert && std::abs(*back.manholes[2].invert - 97.0) < 1e-12);
+    CHECK(back.segments[1].specId == "PVC-SN8-250");
+    const auto r = civil::compute(n);
+    const auto plan = civil::drawPlan(n, r);
+    int circles = 0, lines = 0, texts = 0;
+    for (const auto& e : plan) {
+        circles += e->type() == EntityType::Circle;
+        lines += e->type() == EntityType::Line;
+        texts += e->type() == EntityType::Text;
+        CHECK(e->layer().rfind("K1_", 0) == 0);
+    }
+    CHECK(circles == 3 && lines == 2 && texts == 3 * 2 + 2 * 2);
+    const auto prof = civil::drawProfile(n, r, {500, 0, 0}, civil::ProfileLabels{});
+    CHECK(prof.size() > 40);
+    for (const auto& e : prof) CHECK(e->layer() == "K1_PROFIL");
+}
+TEST(cli_sewer_command) {
+    const std::string path = (std::filesystem::temp_directory_path() / "asiacad_test.kan.json").string();
+    {
+        std::ofstream f(path);
+        f << civil::toJson(demoNet());
+    }
+    const auto s = runScript("ru", {"КАНАЛИЗАЦИЯ " + path, "ОТМЕНИТЬ", "ТРУБЫ AC", "SEWER nofile.kan.json"});
+    CHECK(s.find("Сеть K1: колодцев 3, L=85.0000 м; ошибок 0") != std::string::npos);
+    CHECK(s.find("PVC SN8 Ø200×5.9") != std::string::npos);
+    CHECK(s.find("AC-BNT-400") != std::string::npos);
+    CHECK(s.find("Ошибка:") != std::string::npos);
+    std::filesystem::remove(path);
 }
 
 int main() {

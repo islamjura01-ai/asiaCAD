@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.9: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.10: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -37,7 +37,7 @@ include/asiacad/io/dxf_reader.h   DXF import R12–R2018, bitta undo qadami
 include/asiacad/io/acad_file.h    Native .acad (JSON v1): atomar saqlash + .bak, versiya nazorati
 include/asiacad/io/dxf_text.h     ANSI_1251/1252/1254/1250, DOS866, \U+, %%-kodlar, MTEXT formatlash
 apps/cli/                         buyruq interpretatori (6 til, Localizer orqali)
-tests/                            72 test + GUI tutun testi; tests/data — ezdxf bilan yaratilgan DXF fixture'lar
+tests/                            77 test + GUI tutun testi; tests/data — ezdxf bilan yaratilgan DXF fixture'lar
 ```
 
 ## Dizayn qarorlari
@@ -115,6 +115,28 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
 
 1. Chop etish (PLOT, A4–A0, masshtab), qatlam chiziq turlari, CHAMFER, poliliniya FILLET, yoyli uchni EXTEND
 2. Phase 2: Survey/Terrain — nuqtalar importi (CSV/GSI/SDR), TIN, gorizontallar, hajmlar
+
+## Quvurlar va kanalizatsiya (v0.10) — `src/civil/`
+
+- **Katalog** (`PIPES [material]`): PVX SN4/SN8 (EN 1401, devor = OD/SDR), PP gofra SN8, PE100 SDR17/SDR11 (GOST 18599),
+  asbest-sement BNT (GOST 1839-80 jadvali), po'lat (GOST 10704), cho'yan VChShG K9 (GOST ISO 2531, e = 9·(0.5+0.001·DN)),
+  temir-beton TS (GOST 6482). Har bir o'lcham: tashqi Ø, devor, ichki Ø, massa kg/m, Manning n.
+  `*` — namunaviy qiymat (PP, po'lat, temir-beton): loyihadan oldin standart/ishlab chiqaruvchi jadvali bilan solishtiring.
+- **Shablonlar:** hovli PVX Ø160, ko'cha PVX Ø200, kollektor PVX Ø315 / PP Ø300, asbest-sement ta'mir, yomg'ir K2 temir-beton Ø500,
+  bosimli PE100 Ø160, yo'l ostidan po'lat g'ilof. O'z shablonlaringiz `pipe_templates.json` ga saqlanadi (menyudan).
+- **Hisob:** quduqlar zanjiri, quvur tubi belgilari (quduqda ustki yasovchi bo'yicha ulanadi), Manning bo'yicha to'liq va qisman
+  to'lish (h/d, v), xandaq/qum to'shama/ko'mish hajmlari (taxminiy), quvur uzunligi va massasi, quduqlar soni.
+- **Norma tekshiruvi** (SNiP 2.04.03-85 / KMK 2.04.03 asosida, **ShNQ bilan tasdiqlanmagan**): min diametr (ko'cha 200, hovli 150),
+  min nishablik (Ø150 — 0.008, Ø200 — 0.007, kattalari 1/D — ogohlantirish), max to'lish, o'z-o'zini tozalash tezligi,
+  max tezlik (metall 8, nometall 4 m/s), sig'im, quduqlar oralig'i (35/50/75/100/150/200 m), quvur ustidagi qatlam ≥ 0.7 m,
+  muzlash chuqurligi, diametr kamayishi, quduq diametri. Xato — qizil qator.
+- **Chizma** (`SEWER fayl.kan.json [x,y | -]`): plan (quduqlar, quvurlar material rangida, oqim strelkasi, yozuvlar) va bo'ylama
+  profil (yer, quvur tubi/usti, quduqlar, jadval: belgilar, chuqurlik, nishablik ‰, masofa, quvur) — qatlamlar `K1_QUVUR`,
+  `K1_QUDUQ`, `K1_YOZUV`, `K1_PROFIL`; bitta undo qadami.
+- **GUI menyusi** ("Tarmoqlar" → "Kanalizatsiya", yoki Modul rejimida "Quvurlar"): bitta oynada shablon, tizim (K1/K2/K3/N),
+  material va o'lcham, quduqlar jadvali (tanlangan 3D poliliniyadan — Z = yer belgisi), bo'laklar jadvali (har birida quvur
+  tanlovi, nishablik, sarf), jonli tekshiruv, hajmlar, 3D: quvur (devor kesimi, raструб, gofra) va 3D: tarmoq.
+  Namuna: `examples/k1_kocha.kan.json`.
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

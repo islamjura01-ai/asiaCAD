@@ -2,7 +2,7 @@
 // AsiaCAD — native .acad format (JSON, v1).
 //
 // {
-//   "format": "asiacad", "version": 1, "generator": "AsiaCAD 0.9", "nextId": 42,
+//   "format": "asiacad", "version": 1, "generator": "AsiaCAD 0.10", "nextId": 42,
 //   "layers":   [ {"name":"0","color":7,"visible":true,"locked":false,"frozen":false}, ... ],
 //   "blocks":   [ {"name":"TREE","base":[1,1,0],"entities":[ ...obyektlar, id'siz... ]}, ... ],  // ichkilari avval
 //   "entities": [

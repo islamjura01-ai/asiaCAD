@@ -34,6 +34,7 @@ class QWidget;
 namespace asiacad::gui {
 
 class CommandPalette;
+class SewerDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -48,6 +49,7 @@ public:
     Viewport* viewport() const { return view_; }
     Document& document() { return doc_; }
     void activateTool(const QString& key);  // "line", "circle", ... (sinov va skriptlar uchun)
+    SewerDialog* openSewer();               // "Kanalizatsiya" menyusi (bitta nusxa, modal emas)
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -85,6 +87,7 @@ private:
     Theme theme_;
     Viewport* view_ = nullptr;
     CommandPalette* palette_ = nullptr;
+    SewerDialog* sewer_ = nullptr;
 
     QHash<QString, QAction*> act_;  // "line" -> QAction
     QTabWidget* ribbon_ = nullptr;

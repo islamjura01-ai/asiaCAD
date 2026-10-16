@@ -1,0 +1,18 @@
+{
+  "format": "asiacad-sewer", "version": 1,
+  "name": "K1", "system": "K1", "street": true, "pressure": false,
+  "startDepth": 1.8, "slope": 0.007, "frost": 0.8, "textHeight": 1.0, "vscale": 10,
+  "manholes": [
+    {"name": "K1-1", "x": 0,   "y": -40, "rim": 245.30},
+    {"name": "K1-2", "x": 40,  "y": -40, "rim": 245.12},
+    {"name": "K1-3", "x": 85,  "y": -40, "rim": 244.95},
+    {"name": "K1-4", "x": 130, "y": -40, "rim": 244.70},
+    {"name": "K1-5", "x": 172, "y": -48, "rim": 244.42}
+  ],
+  "segments": [
+    {"spec": "PVC-SN8-200", "slope": 0.007, "flow": 2.5},
+    {"spec": "PVC-SN8-200", "slope": 0.007, "flow": 4.0},
+    {"spec": "PVC-SN8-250", "slope": 0.006, "flow": 7.5},
+    {"spec": "PVC-SN8-250", "slope": 0.005, "flow": 9.0}
+  ]
+}

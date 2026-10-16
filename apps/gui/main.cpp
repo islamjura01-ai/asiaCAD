@@ -4,6 +4,7 @@
 //   --screenshot out.png [--size 1440x900] [--select-all] [--tool line] [--point x,y]... [--cursor x,y]
 //   [--cmd "LINE 0,0 10,10"]...
 #include "main_window.h"
+#include "sewer_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -11,6 +12,7 @@
 #include <QMessageBox>
 #include <QScreen>
 #include <QSurfaceFormat>
+#include <QFile>
 #include <QTimer>
 
 #include <cstdio>
@@ -47,7 +49,8 @@ int main(int argc, char** argv) {
     f.setPointSizeF(10);
     QApplication::setFont(f);
 
-    QString file, lang, mode, i18nDir, shot, size = "1440x900", tool, cursor, select, grip, value;
+    QString file, lang, mode, i18nDir, shot, size = "1440x900", tool, cursor, select, grip, value, sewerFile, sewerTab, sewerTpl, viewArg;
+    bool sewer = false;
     bool ortho = false, polar = false;
     QStringList points;
     QStringList cmds;
@@ -69,6 +72,11 @@ int main(int argc, char** argv) {
         else if (a == "--select") select = next();
         else if (a == "--grip") grip = next();
         else if (a == "--value") value = next();  // OFFSET masofasi / FILLET radiusi
+        else if (a == "--view") viewArg = next();  // cx,cy,piksel/birlik
+        else if (a == "--sewer") sewer = true;                 // Kanalizatsiya menyusi (skrinshot uni oladi)
+        else if (a == "--sewer-file") { sewer = true; sewerFile = next(); }
+        else if (a == "--sewer-tab") sewerTab = next();
+        else if (a == "--sewer-tpl") sewerTpl = next();
         else if (a == "--ortho") ortho = true;
         else if (a == "--polar") polar = true;
         else file = a;
@@ -94,6 +102,7 @@ int main(int argc, char** argv) {
     if (!shot.isEmpty()) {
         QTimer::singleShot(300, &w, [&] {
             w.viewport()->zoomExtents();
+            if (const auto v = viewArg.split(','); v.size() == 3) w.viewport()->setView({v[0].toDouble(), v[1].toDouble(), 0}, v[2].toDouble());
             if (selectAll) w.viewport()->setSelection(w.document().ids());
             if (!select.isEmpty()) {
                 std::vector<asiacad::EntityId> ids;
@@ -104,6 +113,15 @@ int main(int argc, char** argv) {
             if (polar) w.viewport()->setPolar(true);
             if (const auto gi = grip.split(','); gi.size() == 2) w.viewport()->beginGrip(gi[0].toULongLong(), gi[1].toInt());
             if (!tool.isEmpty()) w.activateTool(tool);
+            if (sewer) {
+                auto* d = w.openSewer();
+                if (!sewerTpl.isEmpty()) d->selectTemplate(sewerTpl.toInt());
+                if (!sewerFile.isEmpty()) {
+                    QFile f(sewerFile);
+                    if (f.open(QIODevice::ReadOnly)) d->setNetwork(asiacad::civil::fromJson(f.readAll().toStdString()));
+                }
+                if (!sewerTab.isEmpty()) d->showTab(sewerTab.toInt());
+            }
             if (!value.isEmpty()) {
                 w.viewport()->setOffsetDistance(value.toDouble());
                 w.viewport()->setFilletRadius(value.toDouble());
@@ -122,7 +140,10 @@ int main(int argc, char** argv) {
                 for (QWidget* c : w.findChildren<QWidget*>())
                     if (c->isVisible() && c->minimumSizeHint().width() > 500)
                         std::fprintf(stderr, "%s %s %d\n", c->metaObject()->className(), qPrintable(c->objectName()), c->minimumSizeHint().width());
-            w.grab().save(shot);
+            QWidget* target = &w;
+            for (QWidget* tl : QApplication::topLevelWidgets())
+                if (sewer && tl->isVisible() && tl->inherits("asiacad::gui::SewerDialog")) target = tl;
+            target->grab().save(shot);
             QApplication::exit(0);
         });
     }

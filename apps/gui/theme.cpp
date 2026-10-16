@@ -42,7 +42,18 @@ QStatusBar QLabel { color: %5; font-family: 'DejaVu Sans Mono', monospace; }
 QStatusBar QToolButton { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 7px; }
 QLabel#muted { color: %5; }
 QLabel#title { font-weight: 800; font-size: 14px; }
+QTableWidget, QTableView { background: %2; color: %4; gridline-color: %6; border: 1px solid %6; border-radius: 6px;
+  selection-background-color: %3; selection-color: %4; }
+QTableCornerButton::section { background: %2; border: 0; }
+QAbstractSpinBox { background: %11; color: %4; border: 1px solid %6; border-radius: 8px; padding: 4px 6px; }
+QCheckBox { color: %4; spacing: 6px; }
+QTabWidget::pane { border: 1px solid %6; border-radius: 6px; background: %2; top: -1px; }
+QTabBar::tab { background: %3; color: %5; padding: 6px 12px; margin-right: 2px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: 600; }
+QTabBar::tab:selected { background: %7; color: %8; }
+QSplitter::handle { background: transparent; width: 6px; }
 QScrollBar:vertical { background: transparent; width: 10px; }
+QScrollBar:horizontal { background: transparent; height: 10px; }
+QScrollBar::handle:horizontal { background: %6; border-radius: 5px; min-width: 30px; }
 QScrollBar::handle:vertical { background: %6; border-radius: 5px; min-height: 30px; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
 )")

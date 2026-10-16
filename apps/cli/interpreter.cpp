@@ -1,5 +1,6 @@
 #include "interpreter.h"
 
+#include <asiacad/civil/sewer.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/grips.h>
@@ -7,12 +8,14 @@
 #include <asiacad/core/modify.h>
 #include <asiacad/core/error.h>
 #include <asiacad/core/snap.h>
+#include <asiacad/i18n/json.h>
 #include <asiacad/i18n/utf8.h>
 #include <asiacad/io/acad_file.h>
 #include <asiacad/io/dxf_reader.h>
 #include <asiacad/io/dxf_writer.h>
 
 #include <format>
+#include <fstream>
 #include <map>
 #include <sstream>
 
@@ -93,6 +96,8 @@ const char* commandSyntax(const std::string& c) {
         {"TRIM", "sel p [p ...]"},
         {"EXTEND", "sel p [p ...]"},
         {"FILLET", "p1 p2 [r]"},
+        {"SEWER", "file.kan.json [x,y | -]"},
+        {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -443,6 +448,78 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         last_ = {i1, i2};
         if (arc) last_.push_back(arc->entityId());
         say("msg.fillet_done", {idStr(i1), idStr(i2), f4(filletR_)});
+    } else if (cmd == "PIPES") {
+        const auto& cat = civil::PipeCatalog::builtin();
+        for (const auto& sp : cat.specs()) {
+            if (!a.empty() && a[0] != civil::materialKey(sp.material)) continue;
+            out_ << std::format("  {:<18} {:<24} DN{:<5} {:>6.1f} x {:<5.1f} mm  {:>7.2f} kg/m  n={:.3f}{}\n", sp.id, sp.standard, sp.dn,
+                                sp.od, sp.wall, sp.mass(), sp.manningN, sp.verified ? "" : "  *");
+        }
+        say("sewer.msg.pipes_note");
+    } else if (cmd == "SEWER") {
+        need(a, 1, cmd);
+        std::ifstream f(a[0], std::ios::binary);
+        if (!f) throw Error("acad.err.open", {a[0]});
+        std::stringstream buf;
+        buf << f.rdbuf();
+        civil::SewerNetwork net;
+        try {
+            net = civil::fromJson(buf.str());
+        } catch (const json::ParseError& ex) {
+            throw Error("sewer.err.format", {ex.what()});
+        }
+        const auto res = civil::compute(net);
+        // natijalar va tekshiruvlar
+        for (std::size_t i = 0; i < res.segments.size(); ++i) {
+            const auto& sg = res.segments[i];
+            if (!sg.spec) continue;
+            say("sewer.msg.segment", {std::to_string(i + 1), net.manholes[i].name, net.manholes[i + 1].name, sg.spec->label(),
+                                      f4(sg.length), std::format("{:.4f}", sg.slope), std::format("{:.2f}", sg.invUp),
+                                      std::format("{:.2f}", sg.invDown), std::format("{:.1f}", sg.qFull),
+                                      std::format("{:.2f}", sg.vFull)});
+        }
+        for (const auto& is : res.issues) {
+            const char* lv = is.level == civil::Issue::Error ? "sewer.lvl.error" : is.level == civil::Issue::Warning ? "sewer.lvl.warning" : "sewer.lvl.info";
+            out_ << "  " << loc_.tr(lv) << ": " << loc_.tr(is.key, is.args) << '\n';
+        }
+        // chizish: plan + (ixtiyoriy) profil
+        std::vector<std::unique_ptr<IEntity>> es = civil::drawPlan(net, res);
+        if (a.size() < 2 || a[1] != "-") {
+            Vec3 o;
+            if (a.size() > 1) o = parsePoint(a[1]);
+            else {
+                BBox b = doc_.extents(true);
+                for (const auto& e : es) b.expand(e->bbox());
+                o = {b.max.x + 20 * net.textHeight + 26 * net.textHeight, b.min.y, 0};
+            }
+            civil::ProfileLabels lb{loc_.tr("sewer.prof.ground"), loc_.tr("sewer.prof.invert"), loc_.tr("sewer.prof.depth"),
+                                    loc_.tr("sewer.prof.slope"), loc_.tr("sewer.prof.distance"), loc_.tr("sewer.prof.pipe"),
+                                    loc_.tr("sewer.prof.manhole"), loc_.tr("sewer.prof.datum")};
+            auto pr = civil::drawProfile(net, res, o, lb);
+            for (auto& e : pr) es.push_back(std::move(e));
+        }
+        auto comp = std::make_unique<CompositeCommand>(cmd);
+        const int colors[] = {30, 7, 7, 8};
+        int li = 0;
+        for (const auto& ln : civil::sewerLayers(net)) {
+            if (!doc_.layer(ln)) {
+                Layer l{ln};
+                l.color = colors[li];
+                comp->add(std::make_unique<SetLayerCommand>(l));
+            }
+            ++li;
+        }
+        std::vector<AddEntityCommand*> adds;
+        for (auto& e : es) {
+            auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+            adds.push_back(c.get());
+            comp->add(std::move(c));
+        }
+        stack_.execute(std::move(comp));
+        last_.clear();
+        for (auto* c : adds) last_.push_back(c->entityId());
+        say("sewer.msg.summary", {net.name, std::to_string(net.manholes.size()), f4(res.totalLength), std::to_string(res.errors()),
+                                  std::to_string(res.warnings()), std::to_string(last_.size())});
     } else if (cmd == "DIMLINEAR" || cmd == "DIMALIGNED") {
         need(a, 3, cmd);
         const Vec3 p1 = parsePoint(a[0]), p2 = parsePoint(a[1]), loc = parsePoint(a[2]);

@@ -196,7 +196,7 @@ void RebarDialog::buildUi() {
     ch->setContentsMargins(0, 0, 0, 0);
     clsMain_ = new QComboBox(clsW);
     clsStir_ = new QComboBox(clsW);
-    for (const char* c : {"A240", "A400", "A500C", "A600", "B500"}) {
+    for (const char* c : {"A240", "A300", "A400", "A600", "A800", "A500C"}) {
         clsMain_->addItem(c);
         clsStir_->addItem(c);
     }

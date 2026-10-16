@@ -1760,7 +1760,7 @@ TEST(rebar_build_model) {
     CHECK(rm.nodes > 0 && rm.wireKg > 0 && rm.chairs > 0);
     // himoya qatlami va ustun Ø tekshiruvi
     auto bad = rs;
-    bad.byKind[bim::ElemKind::Column].cover = 0.015;
+    bad.byKind[bim::ElemKind::Column].cover = 0.010;  // 10 + Ø8 = 18 < 20 (376b)
     bad.byKind[bim::ElemKind::Column].d1 = 0.010;
     const auto rb = bim::buildRebar(bm, p, bad);
     bool cover = false, cold = false;
@@ -1769,6 +1769,57 @@ TEST(rebar_build_model) {
         cold |= is.key == "rebar.chk.col_d";
     }
     CHECK(cover && cold);
+}
+
+TEST(rebar_shnq_2_03_01_24) {
+    // 12-jadval
+    NEAR(bim::concreteRbShnq("B25"), 14.5);
+    NEAR(bim::concreteRbShnq("B7.5"), 4.5);
+    NEAR(bim::concreteRbShnq("B15"), 8.5);
+    CHECK(bim::concreteRbShnq("X") == 0);
+    // 36-jadval: A400 Ø16, B25 — cho'zilgan (0,9·365/14,5 + 11)·d, siqilgan (0,65·365/14,5 + 8)·d
+    CHECK(std::abs(bim::requiredLapShnq("A400", 0.016, "B25", true) - (0.9 * 365 / 14.5 + 11) * 0.016) < 1e-9);
+    CHECK(std::abs(bim::requiredLapShnq("A400", 0.016, "B25", false) - (0.65 * 365 / 14.5 + 8) * 0.016) < 1e-9);
+    CHECK(std::abs(bim::requiredLapShnq("A400", 0.006, "B25", true) - 0.25) < 1e-9);  // lmin 250 mm
+    // standart shablonlar B25 da xatosiz; B15 da plita nahlyostkasi 40d yetmaydi; A500C — ogohlantirish
+    Document doc;
+    auto add = [&](const char* layer, std::vector<Vec3> pts) {
+        auto e = std::make_unique<PolylineEntity>(std::move(pts), true);
+        e->setLayer(layer);
+        doc.add(std::move(e));
+    };
+    add("USTUN", {{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.4, 0}, {0, 0.4, 0}});
+    add("PLITA", {{-3, -3, 0}, {3, -3, 0}, {3, 3, 0}, {-3, 3, 0}});
+    bim::BuildingParams p;
+    p.floors = 2;
+    const auto bm = bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p);
+    auto rs = bim::defaultRebarSettings();
+    auto has = [](const bim::RebarModel& m, const char* key) {
+        for (const auto& is : m.issues) if (is.key == key) return true;
+        return false;
+    };
+    const auto ok = bim::buildRebar(bm, p, rs);
+    bool anyErr = false;
+    for (const auto& is : ok.issues) anyErr |= is.error;
+    CHECK(!anyErr);
+    auto p15 = p;
+    p15.classSlab = "B15";
+    CHECK(has(bim::buildRebar(bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p15), p15, rs), "rebar.chk.lap"));
+    auto r5 = rs;
+    r5.byKind[bim::ElemKind::Column].clsMain = "A500C";
+    CHECK(has(bim::buildRebar(bm, p, r5), "rebar.chk.cls"));
+    // 425: nahlyostka zonasida xomut <= 10d; 412: ustun yuzida sterjenlar orasi <= 400 mm
+    auto rl = rs;
+    rl.byKind[bim::ElemKind::Column].sStirEnd = 0.2;
+    CHECK(has(bim::buildRebar(bm, p, rl), "rebar.chk.stir_lap"));
+    Document big;
+    auto e = std::make_unique<PolylineEntity>(std::vector<Vec3>{{0, 0, 0}, {0.6, 0, 0}, {0.6, 0.6, 0}, {0, 0.6, 0}}, true);
+    e->setLayer("USTUN");
+    big.add(std::move(e));
+    const auto bmb = bim::buildModel(bim::readPlan(big, bim::autoLayerMap(big)), p);
+    CHECK(has(bim::buildRebar(bmb, p, rs), "rebar.chk.col_face"));  // 4Ø16, 0,6 m: ~0,5 m oraliq
+    // 37-jadval: 0,6×0,6 da 4Ø16 = 0,22% ≥ 0,20% (λ≈17) — OK; 12Ø25 da yo'q
+    CHECK(!has(bim::buildRebar(bm, p, rs), "rebar.chk.mu"));
 }
 
 TEST(rebar_json_roundtrip) {

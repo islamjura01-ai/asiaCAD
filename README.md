@@ -161,8 +161,11 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
   ustun — bo'ylama sterjenlar + xomutlar (uchlarida zich), keyingi qavatga nahlyostka; devor — ikki yuza + shpilkalar;
   plita/tom — to'rlar kontur va teshiklar bo'yicha kesiladi. Savdo uzunligi 11,7 m dan oshsa nahlyostka qo'shiladi.
 - Ведомость: pozitsiya, Ø, sinf, uzunlik, soni, massa; Ø bo'yicha jami; bog'lash simi, stul, shpilka.
-- Tekshiruv (SP 63.13330 / ShNQ 2.03.01-24 asosida, tasdiqlanmagan): himoya qatlami, ustun Ø ≥ 12, xomut qadami/Ø,
-  plita va devor qadami, armaturalash foizi.
+- Tekshiruv — ShNQ 2.03.01-24 (22.07.2024 dan, QMQ 2.03.01-96 o'rniga), 8-bob:
+  himoya qatlami (376, 378-b.), ustun Ø 12…40 (409, 411), sterjenlar orasi ≤ 400 (412), qo'shimcha xomut (428),
+  xomut qadami Rsc bo'yicha 500/15d yoki 400/12d (423), nahlyostkada ≤ 10d (425), xomut Ø ≥ 0,25d va 5 mm (434),
+  plita qadami 200 / 1,5h / 400 (415, 418), nahlyostka uzunligi 36-jadval + Rb (12-jadval) + Rs (21-jadval),
+  minimal armaturalash 37-jadval × 2 (406, λ = H/i). A500C ShNQ'da yo'q — ogohlantirish, SP 63 qiymatlari; standart sinf A400.
 - `REBAR [file.json] [x,y]` (uz ARMATURA, ru АРМАТУРА) — vedomostni chizmaga (qatlam ARM_VEDOMOST).
 - GUI: "Tarmoqlar → Armatura" yoki "Monolit bino → Armatura (3D)": yon tomonda shablonlar paneli (12 ta tayyor +
   o'zingiz saqlaganlar), element turi parametrlari, 3D karkas (Ø bo'yicha rang, tur/qavat filtri, shaffof beton).

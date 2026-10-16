@@ -5,7 +5,7 @@
 //   Ustun   — bo'ylama sterjenlar (burchak + oraliq), xomutlar (uchlarida zichlashtirilgan), keyingi qavatga nahlyostka
 //   Devor   — vertikal va gorizontal sterjenlar (ikki yuzada), shpilkalar m² bo'yicha
 // Natija: 3D sterjenlar, ведомость (pozitsiya, Ø, sinf, uzunlik, soni, massa), Ø va sinf bo'yicha jami,
-// bog'lash simi (tugunlar × sim uzunligi), normativ tekshiruv (SP 63.13330 / ShNQ 2.03.01-24 asosida, tasdiqlanmagan).
+// bog'lash simi (tugunlar × sim uzunligi), normativ tekshiruv — ShNQ 2.03.01-24, 8-bob (376–434-bandlar, 21, 36, 37-jadvallar).
 #include <asiacad/bim/building.h>
 
 #include <map>
@@ -20,7 +20,7 @@ struct RebarTemplate {
     // umumiy
     double cover = 0.025;   // himoya qatlami (sterjen sirtigacha), m
     double lapD = 40;       // nahlyostka uzunligi, Ø lar soni
-    std::string clsMain = "A500C", clsStir = "A240";
+    std::string clsMain = "A400", clsStir = "A240";  // ShNQ 2.03.01-24, 21-jadval
     // to'r (plita/fundament/lenta) va devor: d1/s1 — pastki X yoki vertikal; d2/s2 — pastki Y yoki gorizontal
     double d1 = 0.012, s1 = 0.2, d2 = 0.012, s2 = 0.2;
     bool topMesh = true;    // yuqori to'r (plita/fundament) yoki ikkinchi yuza (devor)
@@ -66,7 +66,7 @@ struct RebarIssue {
 struct RebarModel {
     std::vector<Bar> bars;                      // 3D ko'rinish uchun (shpilka va stullar kirmaydi)
     std::vector<ScheduleRow> schedule;
-    std::map<std::string, double> massByDia;    // "Ø12 A500C" -> kg
+    std::map<std::string, double> massByDia;    // "Ø12 A400" -> kg
     double totalMass = 0;                       // kg
     double wireKg = 0;                          // bog'lash simi
     long nodes = 0;                             // bog'lanadigan tugunlar
@@ -81,7 +81,10 @@ struct RebarSettings {
     double wireKgPerM = 0.00888;                // Ø1.2 mm termik ishlov berilgan sim, kg/m
 };
 
-double barMassPerM(double d);                   // kg/m (7850 kg/m³)
+double barMassPerM(double d);
+// ShNQ 2.03.01-24: 12-jadval Rb (og'ir beton, MPa; noma'lum sinf — 0) va 451-band/36-jadval nahlyostka uzunligi, m
+double concreteRbShnq(const std::string& cls);
+double requiredLapShnq(const std::string& steel, double d, const std::string& concrete, bool tension);                   // kg/m (7850 kg/m³)
 std::vector<RebarTemplate> builtinRebarTemplates();
 RebarSettings defaultRebarSettings();           // har bir tur uchun birinchi mos shablon
 

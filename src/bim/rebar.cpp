@@ -5,8 +5,10 @@
 #include <asiacad/i18n/json.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
+#include <set>
 #include <sstream>
 
 namespace asiacad::bim {
@@ -70,7 +72,52 @@ double signedArea(const std::vector<Vec3>& v) {
     return a / 2;
 }
 
-const char* kRef = "SP 63.13330 / ShNQ 2.03.01-24";
+// ---- ShNQ 2.03.01-24 "Beton va temir-beton konstruksiyalar" (22.07.2024 dan kuchda, QMQ 2.03.01-96 o'rniga)
+// 12-jadval: og'ir beton, birinchi guruh chegaraviy holatlari, Rb, MPa
+double concreteRb(const std::string& cls) {
+    static const std::pair<double, double> t[] = {{3.5, 2.1}, {5, 2.8}, {7.5, 4.5}, {10, 6.0}, {12.5, 7.5}, {15, 8.5}, {20, 11.5},
+                                                  {25, 14.5}, {30, 17.0}, {35, 19.5}, {40, 22.0}, {45, 25.0}, {50, 27.5}, {55, 30.0},
+                                                  {60, 33.0}, {70, 37.0}, {80, 41.0}, {90, 44.0}, {100, 47.5}};
+    std::string c = cls;
+    std::replace(c.begin(), c.end(), ',', '.');
+    std::size_t i = 0;
+    while (i < c.size() && !(std::isdigit(static_cast<unsigned char>(c[i])))) ++i;
+    if (i >= c.size()) return 0;
+    double v = 0;
+    try { v = std::stod(c.substr(i)); } catch (...) { return 0; }
+    for (const auto& [b, rb] : t)
+        if (std::abs(b - v) < 1e-6) return rb;
+    return 0;
+}
+// 21-jadval: Rs (bo'ylama), Rsc, MPa. inNorm=false — sinf ShNQ'da yo'q (SP 63.13330 qiymati olinadi)
+struct SteelR { double rs, rsc; bool inNorm, smooth; };
+SteelR steelR(const std::string& cls, double d) {
+    if (cls == "A240") return {225, 225, true, true};
+    if (cls == "A300") return {280, 280, true, false};
+    if (cls == "A400") return d <= 0.008 + 1e-9 ? SteelR{355, 355, true, false} : SteelR{365, 365, true, false};
+    if (cls == "A600") return {510, 450, true, false};
+    if (cls == "A800") return {680, 500, true, false};
+    if (cls == "A1000") return {815, 500, true, false};
+    if (cls == "A500C" || cls == "A500") return {435, 400, false, false};  // SP 63.13330, 6.14-jadval
+    if (cls == "B500" || cls == "B500C") return {435, 380, false, false};
+    return {365, 365, false, false};
+}
+// 36-jadval, 451-band: ustma-ust tutashuv (nahlyostka) uzunligi, m
+double requiredLap(const std::string& steel, double d, double Rb, bool tension) {
+    const SteelR r = steelR(steel, d);
+    double w, dl, lam, lmin;
+    if (!r.smooth) { w = tension ? 0.90 : 0.65; dl = tension ? 11 : 8; lam = tension ? 20 : 15; lmin = tension ? 0.25 : 0.20; }
+    else { w = tension ? 1.55 : 1.00; dl = tension ? 11 : 8; lam = tension ? 20 : 15; lmin = tension ? 0.25 : 0.20; }
+    const double l = Rb > 0 ? (w * r.rs / Rb + dl) * d : 0;
+    return std::max({l, lam * d, lmin});
+}
+// 37-jadval (markazdan tashqari siqilgan), 406-band: kontur bo'yicha bir tekis — ikki baravar, to'liq kesimga; %
+double minMuColumn(double lambda) {
+    const double v = lambda < 17 ? 0.05 : lambda <= 35 ? 0.10 : lambda <= 83 ? 0.20 : 0.25;
+    return 2 * v;
+}
+
+const char* kRef = "ShNQ 2.03.01-24";
 
 } // namespace
 
@@ -91,6 +138,10 @@ const char* roleKey(BarRole r) {
 }
 
 double barMassPerM(double d) { return kPI * d * d / 4 * 7850.0; }
+double concreteRbShnq(const std::string& cls) { return concreteRb(cls); }
+double requiredLapShnq(const std::string& steel, double d, const std::string& concrete, bool tension) {
+    return requiredLap(steel, d, concreteRb(concrete), tension);
+}
 
 std::vector<RebarTemplate> builtinRebarTemplates() {
     std::vector<RebarTemplate> v;
@@ -179,29 +230,72 @@ RebarModel buildRebar(const BuildingModel& bm, const BuildingParams& bp, const R
         m.bars.push_back(b);
     };
 
-    // ---- normativ tekshiruv (bir marta har tur uchun)
+    // ---- normativ tekshiruv: ShNQ 2.03.01-24, 8-bob "Konstruktiv talablar" (har tur uchun bir marta)
+    auto mm = [](double v) { return std::format("{:.0f}", v * 1000); };
+    double colSideMin = 1e9;
+    for (const auto& pr : bm.prisms)
+        if (pr.kind == ElemKind::Column && pr.outline.size() >= 3)
+            for (std::size_t i = 0; i < pr.outline.size(); ++i)
+                colSideMin = std::min(colSideMin, pr.outline[i].distanceTo(pr.outline[(i + 1) % pr.outline.size()]));
+    if (colSideMin > 1e8) colSideMin = 0.4;
+    std::set<std::string> clsWarned;
     for (const auto& [k, t] : rs.byKind) {
         const std::string name = kindKey(k);
-        if ((k == ElemKind::Slab || k == ElemKind::Roof || k == ElemKind::Wall) && t.cover < 0.020 - 1e-9)
-            issue(true, "rebar.chk.cover", {name, std::format("{:.0f}", t.cover * 1000), "20"});
-        if (k == ElemKind::Column && t.cover < 0.025 - 1e-9) issue(true, "rebar.chk.cover", {name, std::format("{:.0f}", t.cover * 1000), "25"});
-        if ((k == ElemKind::FoundationSlab || k == ElemKind::StripFooting) && t.cover < 0.035 - 1e-9)
-            issue(true, "rebar.chk.cover", {name, std::format("{:.0f}", t.cover * 1000), "35"});
-        if (k == ElemKind::Column) {
-            if (t.d1 < 0.012 - 1e-9) issue(true, "rebar.chk.col_d", {std::format("{:.0f}", t.d1 * 1000)});
-            const double smax = std::min(15 * t.d1, 0.5);
-            if (t.sStir > smax + 1e-9) issue(true, "rebar.chk.stir_step", {std::format("{:.0f}", t.sStir * 1000), std::format("{:.0f}", smax * 1000)});
-            const double dmin = std::max(0.006, t.d1 / 4);
-            if (t.dStir < dmin - 1e-9) issue(true, "rebar.chk.stir_d", {std::format("{:.0f}", t.dStir * 1000), std::format("{:.0f}", dmin * 1000)});
-            if (t.nMain < 4) issue(true, "rebar.chk.col_n", {std::to_string(t.nMain)});
-        }
+        for (const auto& c : {t.clsMain, t.clsStir})
+            if (!steelR(c, t.d1).inNorm && clsWarned.insert(c).second) issue(false, "rebar.chk.cls", {c});
+        const std::string& conc = k == ElemKind::Column || k == ElemKind::Wall ? bp.classFrame
+                                : k == ElemKind::Slab || k == ElemKind::Roof ? bp.classSlab : bp.classFound;
+        const double Rb = concreteRb(conc);
+        auto cover = [&](double have, double need, const char* clause) {
+            if (have < need - 1e-9) issue(true, "rebar.chk.cover", {name, mm(have), mm(need), clause});
+        };
         if (k == ElemKind::Slab || k == ElemKind::Roof) {
             const double h = k == ElemKind::Roof ? bp.roofT : bp.slabT;
+            cover(t.cover, std::max(h <= 0.1 ? 0.010 : 0.015, t.d1), "376a");
+            // 418-band: h <= 150 — 200 mm; h > 150 — 1,5h; 415-band: tayanchdan o'tadiganlar <= 400 mm
             const double smax = h <= 0.15 ? 0.2 : std::min(1.5 * h, 0.4);
-            for (double s : {t.s1, t.s2})
-                if (s > smax + 1e-9) issue(true, "rebar.chk.slab_step", {name, std::format("{:.0f}", s * 1000), std::format("{:.0f}", smax * 1000)});
+            for (double sx : {t.s1, t.s2, t.s3, t.s4})
+                if (sx > smax + 1e-9) {
+                    issue(true, "rebar.chk.slab_step", {name, mm(sx), mm(smax)});
+                    break;
+                }
+        } else if (k == ElemKind::Wall) {
+            cover(t.cover + t.d2, std::max(bp.wallT <= 0.1 ? 0.010 : 0.015, t.d1), "376a");
+            if (t.cover < std::max(bp.wallT < 0.25 ? 0.010 : 0.015, t.d2) - 1e-9)
+                issue(true, "rebar.chk.cover_tr", {name, mm(t.cover), mm(std::max(bp.wallT < 0.25 ? 0.010 : 0.015, t.d2))});
+            if (t.s1 > 0.4 + 1e-9) issue(false, "rebar.chk.wall_step", {mm(t.s1)});
+        } else if (k == ElemKind::Column) {
+            cover(t.cover + t.dStir, std::max(0.020, t.d1), "376b");
+            const double trMin = std::max(colSideMin < 0.25 ? 0.010 : 0.015, t.dStir);
+            if (t.cover < trMin - 1e-9) issue(true, "rebar.chk.cover_tr", {name, mm(t.cover), mm(trMin)});
+            if (t.d1 < 0.012 - 1e-9) issue(true, "rebar.chk.col_d", {mm(t.d1)});                     // 411
+            if (t.d1 > 0.040 + 1e-9) issue(true, "rebar.chk.col_dmax", {mm(t.d1)});                  // 409
+            if (t.nMain < 4) issue(true, "rebar.chk.col_n", {std::to_string(t.nMain)});
+            // 423-band: to'qilgan karkas; Rsc <= 400 — 500 mm va 15d; Rsc >= 450 — 400 mm va 12d
+            const double rsc = steelR(t.clsMain, t.d1).rsc;
+            const double smax = rsc >= 450 ? std::min(0.4, 12 * t.d1) : std::min(0.5, 15 * t.d1);
+            if (t.sStir > smax + 1e-9) issue(true, "rebar.chk.stir_step", {mm(t.sStir), mm(smax), rsc >= 450 ? "400 / 12d" : "500 / 15d"});
+            // 425-band: nahlyostka joyida <= 10d
+            if (t.sStirEnd > 10 * t.d1 + 1e-9) issue(true, "rebar.chk.stir_lap", {mm(t.sStirEnd), mm(10 * t.d1)});
+            // 434-band: xomut Ø >= 0,25d va >= 5 mm
+            const double dmin = std::max(0.005, t.d1 / 4);
+            if (t.dStir < dmin - 1e-9) issue(true, "rebar.chk.stir_d", {mm(t.dStir), std::format("{:.1f}", dmin * 1000)});
+        } else if (k == ElemKind::FoundationSlab || k == ElemKind::StripFooting) {
+            cover(t.cover, std::max(bp.leanT > 0 ? 0.035 : 0.070, t.d1), bp.leanT > 0 ? "376v (padbetonka)" : "376v");
+            const double smax = std::min(1.5 * bp.foundT, 0.4);
+            for (double sx : {t.s1, t.s2, t.s3, t.s4})
+                if (sx > smax + 1e-9) {
+                    issue(true, "rebar.chk.slab_step", {name, mm(sx), mm(smax)});
+                    break;
+                }
         }
-        if (k == ElemKind::Wall && t.s1 > 0.4 + 1e-9) issue(false, "rebar.chk.wall_step", {std::format("{:.0f}", t.s1 * 1000)});
+        // 451-band, 36-jadval: nahlyostka uzunligi (ustun/devor — siqilgan, qolganlari — cho'zilgan betonda)
+        if (Rb > 0) {
+            const bool tension = !(k == ElemKind::Column || k == ElemKind::Wall);
+            const double need = requiredLap(t.clsMain, t.d1, Rb, tension);
+            if (t.lapD * t.d1 < need - 1e-6)
+                issue(true, "rebar.chk.lap", {name, mm(t.lapD * t.d1), mm(need), std::format("{:.0f}", std::ceil(need / t.d1)), conc});
+        }
     }
 
     std::map<int, double> slabTop;  // qavat -> plita qalinligi (nahlyostka hisobida)
@@ -269,8 +363,38 @@ RebarModel buildRebar(const BuildingModel& bm, const BuildingParams& bp, const R
                 }
                 m.nodes += static_cast<long>(zz.size() * pos.size());
             }
+            // 37-jadval, 406-band: minimal armaturalash (l0 = qavat balandligi deb olinadi)
             const double as = pos.size() * kPI * t.d1 * t.d1 / 4, ac = std::abs(signedArea(o));
-            if (ac > 0 && as / ac < 0.001 && lv == 1) issue(false, "rebar.chk.mu", {std::format("{:.2f}", as / ac * 100), "0.10"});
+            double imin;
+            if (o.size() == 4) {
+                const double s0 = o[0].distanceTo(o[1]), s1 = o[1].distanceTo(o[2]);
+                imin = std::min(s0, s1) / std::sqrt(12.0);
+            } else imin = std::sqrt(ac / kPI) / 2;
+            const double lambda = imin > 0 ? bp.floorHeight / imin : 0;
+            const double muMin = minMuColumn(lambda);
+            auto once = [&](bool e, const char* key, std::vector<std::string> args) {
+                for (const auto& is : m.issues)
+                    if (is.key == key && is.args == args) return;
+                issue(e, key, std::move(args));
+            };
+            if (ac > 0 && as / ac * 100 < muMin - 1e-9)
+                once(true, "rebar.chk.mu", {std::format("{:.2f}", as / ac * 100), std::format("{:.2f}", muMin), std::format("{:.0f}", lambda)});
+            // 412-band: bo'ylama sterjenlar o'qlari orasidagi masofa <= 400 mm; 428-band: yuz > 400 mm va > 4 sterjen — qo'shimcha xomut
+            if (o.size() == 4) {
+                const auto r = insetRect(o, inset);
+                for (int i = 0; i < 4; ++i) {
+                    const Vec3 a = r[static_cast<std::size_t>(i)], b = r[static_cast<std::size_t>((i + 1) % 4)];
+                    int onFace = 0;
+                    for (const auto& p : pos) {
+                        const double dd = std::abs((b - a).x * (p - a).y - (b - a).y * (p - a).x) / std::max(1e-9, a.distanceTo(b));
+                        if (dd < 1e-4) ++onFace;
+                    }
+                    const double gap = onFace > 1 ? a.distanceTo(b) / (onFace - 1) : a.distanceTo(b);
+                    if (gap > 0.4 + 1e-9) once(true, "rebar.chk.col_face", {std::format("{:.0f}", gap * 1000)});
+                    if (o[static_cast<std::size_t>(i)].distanceTo(o[static_cast<std::size_t>((i + 1) % 4)]) > 0.4 + 1e-9 && onFace > 4)
+                        once(false, "rebar.chk.crosstie", {std::to_string(onFace)});
+                }
+            }
         } else if (pr.kind == ElemKind::Wall) {
             const auto& o = pr.outline;
             if (o.size() != 4) continue;

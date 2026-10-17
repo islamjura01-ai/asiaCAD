@@ -10,6 +10,7 @@
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
+#include "drive_dialog.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -17,6 +18,8 @@
 #include <asiacad/io/xlsx.h>
 
 #include <QPushButton>
+#include <QListWidget>
+#include <QToolButton>
 #include <QTableWidget>
 
 #include <asiacad/core/dimension.h>
@@ -661,6 +664,66 @@ int main(int argc, char** argv) {
         CHECK(cr->model().length > 1000);
         if (cr->model().length <= 1000) std::printf("  koridor L=%.1f, kesim %zu\n", cr->model().length, cr->model().sec.size());
         cr->close();
+    }
+
+    // 26. Haydash (Drive): koridor bo'ylab, feature line tanlab, shahar va bino ichida
+    {
+        w.runLine(QStringLiteral("OPEN \"%1/yol.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
+        CorridorDialog* cd = w.openCorridor();
+        cd->applyAssembly(asiacad::civil::builtinAssemblies()[1]);
+        w.viewport()->setSelection({});
+        DriveDialog* dd = w.openDrive();
+        CHECK(std::abs(dd->path().length() - 600) < 1);
+        CHECK(dd->scene().tris.size() > 1000);
+        CHECK(!dd->sight().issues.empty());             // PK3 dagi o'tkir qavariq sinish
+        dd->view()->resize(900, 560);
+        dd->view()->renderNow();
+        CHECK(dd->view()->drawnTriangles() > 100);
+        dd->setStation(100);
+        dd->step(1.0);
+        CHECK(std::abs(dd->station() - (100 + 60 / 3.6)) < 1e-6);
+        dd->checks()->item(0)->setSelected(true);
+        emit dd->checks()->itemClicked(dd->checks()->item(0));
+        CHECK(std::abs(dd->station() - std::max(0.0, dd->sight().issues.front().s0 - 20)) < 1e-6);
+        // feature line tanlansa — kontekst tugmasi va u bo'ylab
+        w.viewport()->setSelection({121});
+        auto* ctx = w.viewport()->findChild<QToolButton*>();
+        CHECK(ctx && !ctx->isHidden());
+        dd = w.openDrive();
+        CHECK(std::abs(dd->path().length() - 600) < 1);
+        dd->close();
+        cd->close();
+
+        // shahar: ko'cha o'qi bo'ylab (yer yo'q — tekis maydon), tezlik
+        w.runLine("NEW !");
+        w.runLine("CITY 4 3 9-16");
+        w.viewport()->setSelection({1});
+        dd = w.openDrive();
+        CHECK(dd->path().length() > 300);
+        CHECK(dd->scene().tris.size() > 1000);
+        dd->setStation(120);
+        dd->view()->resize(1000, 600);
+        QElapsedTimer tm;
+        tm.start();
+        dd->view()->renderNow();
+        CHECK(tm.elapsed() < 1500);
+        CHECK(dd->view()->drawnTriangles() > 50);
+        dd->close();
+
+        // bino ichida piyoda: o'qlar to'ri, bino modeli, 2D yo'l
+        w.runLine("NEW !");
+        w.runLine("GRID 6x5,4.5 6x3");
+        BuildingDialog* bd = w.openBuilding();
+        w.runLine("PLINE 3,9 27,9 27,15");
+        const auto pid = w.document().ids().back();
+        w.viewport()->setSelection({pid});
+        dd = w.openDrive();
+        CHECK(std::abs(dd->path().length() - 30) < 1e-6);
+        CHECK(std::abs(dd->path().zAt(10) - bd->model().prisms.front().z0) < 50);  // qavat sathida
+        dd->view()->renderNow();
+        CHECK(dd->view()->drawnTriangles() > 50);
+        dd->close();
+        bd->close();
     }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

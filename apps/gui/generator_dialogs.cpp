@@ -93,6 +93,7 @@ void PlanPreview::paintEvent(QPaintEvent*) {
         if (l == "PLITA") return QColor(110, 160, 230);
         if (l.find("O'Q") != std::string::npos) return QColor(240, 80, 80);
         if (l == "KOCHA_CHETI") return QColor(150, 150, 150);
+        if (l == "KOCHA_YUZA") return QColor(0, 0, 0, 0);
         if (l == "KVARTAL") return QColor(90, 170, 110);
         if (l == "SHAHAR_BINO") return QColor(220, 190, 120);
         if (l == "YOZUV" || l == "LOYIHA" || l == "PIKET" || l == "SHAHAR_YOZUV") return dark_ ? QColor(170, 175, 185) : QColor(90, 90, 100);

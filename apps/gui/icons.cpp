@@ -62,6 +62,9 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "corridor") {  // yig'ma: o'q, polosalar, qiyaliklar
         P({{2, 19}, {6, 13}, {10, 12}, {14, 12}, {18, 13}, {22, 19}}); L(12, 4, 12, 12); L(10, 6, 14, 6); dot(6, 13); dot(18, 13);
     }
+    else if (n == "drive") {  // rul
+        C(12, 12, 9); C(12, 12, 2.5); L(3.5, 10.5, 9.6, 11.2); L(14.4, 11.2, 20.5, 10.5); L(12, 14.5, 12, 21);
+    }
     else if (n == "city") {  // kvartal binolari: har xil balandlik
         R(3, 11, 5, 10, 0.5); R(10, 4, 5, 17, 0.5); R(17, 8, 4, 13, 0.5); L(2, 21, 22, 21);
     }

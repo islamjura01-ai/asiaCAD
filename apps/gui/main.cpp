@@ -12,6 +12,7 @@
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
+#include "drive_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -67,6 +68,9 @@ int main(int argc, char** argv) {
     bool city = false;
     int cityTpl = -1;
     QString scratch;
+    bool drive = false;
+    int driveMode = -1, driveSrc = -1;
+    double driveAt = -1;
     int asmIndex = -1, station = -1;
     QStringList sheetArgs, kjArgs;
     QString rebarKind;
@@ -99,6 +103,10 @@ int main(int argc, char** argv) {
         else if (a == "--road") road = true;
         else if (a == "--waterway") waterway = true;
         else if (a == "--corridor") corridor = true;
+        else if (a == "--drive") drive = true;                   // Haydash oynasi (tanlangan chiziq yoki koridor bo'ylab)
+        else if (a == "--drive-mode") driveMode = next().toInt();
+        else if (a == "--drive-src") driveSrc = next().toInt();
+        else if (a == "--drive-at") driveAt = next().toDouble();
         else if (a == "--city") city = true;                     // Shahar mavzesi oynasi
         else if (a == "--city-tpl") cityTpl = next().toInt();    // shablon raqami (0 dan)
         else if (a == "--scratch") scratch = next();             // "0 dan" oynasi: building | road | waterway | util
@@ -174,6 +182,12 @@ int main(int argc, char** argv) {
                 if (cityTpl >= 0) cd->sidebar()->activate(cityTpl);
             }
             if (!scratch.isEmpty()) w.openScratch(scratch);
+            if (drive) {
+                auto* dd = w.openDrive();
+                if (driveSrc >= 0) dd->setSource(driveSrc);
+                if (driveMode >= 0) dd->setMode(driveMode);
+                if (driveAt >= 0) dd->setStation(driveAt);
+            }
             if (waterway) {
                 auto* wd = w.openWaterway();
                 if (!sewerTab.isEmpty()) wd->showTab(sewerTab.toInt());
@@ -221,13 +235,14 @@ int main(int argc, char** argv) {
             QWidget* target = &w;
             for (QWidget* tl : QApplication::topLevelWidgets())
                 if ((sewer && tl->isVisible() && tl->inherits("asiacad::gui::SewerDialog")) ||
-                    (building > 0 && !rebar && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
+                    (building > 0 && !rebar && !drive && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
                     (rebar && tl->isVisible() && tl->inherits("asiacad::gui::RebarDialog")) ||
                     (util && tl->isVisible() && tl->inherits("asiacad::gui::UtilityDialog")) ||
                     (road && tl->isVisible() && tl->inherits("asiacad::gui::RoadDialog")) ||
                     (waterway && tl->isVisible() && tl->inherits("asiacad::gui::WaterwayDialog")) ||
-                    (corridor && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")) ||
+                    (corridor && !drive && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")) ||
                     (city && tl->isVisible() && tl->inherits("asiacad::gui::CityDialog")) ||
+                    (drive && tl->isVisible() && tl->inherits("asiacad::gui::DriveDialog")) ||
                     (!scratch.isEmpty() && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
                     target = tl;
             target->grab().save(shot);

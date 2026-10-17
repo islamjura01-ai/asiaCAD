@@ -11,6 +11,7 @@
 #include <asiacad/civil/waterway.h>
 #include <asiacad/civil/corridor.h>
 #include <asiacad/civil/generators.h>
+#include <asiacad/civil/drive.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/grips.h>
@@ -122,6 +123,7 @@ const char* commandSyntax(const std::string& c) {
         {"ALIGN", "file.json"},
         {"UTILNET", "file.json"},
         {"CITY", "[nx ny] [floors min-max] [x,y] | file.json"},
+        {"DRIVE", "sel [V=km/h] [EYE=m] [OBJ=m] [STEP=m]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -963,6 +965,57 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
                                  std::format("{:.0f}", r.gfa), std::format("{:.2f}", r.far()), std::format("{:.2f}", r.streetLength / 1000)});
             if (!gp) out_ << "  " << loc_.tr("sewer.lvl.warning") << ": " << loc_.tr("gen.warn.city_ground", {std::format("{:.2f}", c.ground)}) << '\n';
         }
+    } else if (cmd == "DRIVE") {
+        // DRIVE — tanlangan chiziq bo'ylab haydash tahlili: ko'rinish masofasi (profil + 3D to'siqlar) va talab
+        need(a, 1, cmd);
+        const IEntity* curve = nullptr;
+        for (EntityId id : parseSelection(a[0]))
+            if (const IEntity* e = doc_.find(id); e && (dynamic_cast<const ICurve*>(e) != nullptr)) { curve = e; break; }
+        if (!curve) throw Error("drive.err.nocurve", {});
+        civil::SightParams sp;
+        for (std::size_t k = 1; k < a.size(); ++k) {
+            const std::string up = utf8::toUpper(a[k]);
+            const auto eq = up.find('=');
+            if (eq == std::string::npos) throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+            const std::string key = up.substr(0, eq);
+            const double v = parseNumber(a[k].substr(eq + 1));
+            if (key == "V") sp.speedKmh = v;
+            else if (key == "EYE") sp.eyeH = v;
+            else if (key == "OBJ") sp.objH = v;
+            else if (key == "STEP") sp.step = std::max(1.0, v);
+            else throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+        }
+        civil::DrivePath path;
+        std::string src;
+        if (civil::curveHasZ(*curve)) {
+            path = civil::makeDrivePath(*curve, 1.0);
+            src = "drive.z.line";
+        } else {
+            // 2D o'q: yo'l loyiha profili (yozuvlardan), bo'lmasa — yer yuzasi
+            const auto rm = civil::buildRoad(doc_, civil::autoRoadLayers(doc_), civil::defaultRoadParams());
+            if (civil::guessRoadLayer(curve->layer()) == civil::RoadLayer::Axis && rm.designPoints > 0 && rm.st.size() >= 2) {
+                std::vector<Vec3> pts;
+                for (const auto& t : rm.st) pts.push_back({t.x, t.y, t.design});
+                path = civil::makeDrivePath(pts, 1.0);
+                src = "drive.z.road";
+            } else if (auto g = civil::groundFromDoc(doc_)) {
+                path = civil::makeDrivePath(*curve, 1.0, g);
+                src = "drive.z.ground";
+            } else {
+                throw Error("drive.err.noz", {});
+            }
+        }
+        const auto scene = civil::sceneFromDocument(doc_);
+        const auto r = civil::sightAnalysis(path, scene, sp);
+        double zmin = 1e18, zmax = -1e18;
+        for (const auto& q : path.p) { zmin = std::min(zmin, q.z); zmax = std::max(zmax, q.z); }
+        say("drive.msg.summary", {std::format("{:.1f}", path.length()), std::format("{:.2f}", zmin), std::format("{:.2f}", zmax),
+                                  std::format("{:.1f}", r.maxGrade * 1000), loc_.tr(src)});
+        say("drive.msg.sight", {std::format("{:g}", sp.speedKmh), std::format("{:.0f}", r.required), std::format("{:.1f}", r.minD),
+                                civil::pk(r.minAt), std::to_string(scene.tris.size())});
+        for (const auto& i : r.issues)
+            out_ << "  " << loc_.tr("sewer.lvl.error") << ": "
+                 << loc_.tr("drive.chk.sight", {civil::pk(i.s0), civil::pk(i.s1), std::format("{:.1f}", i.minD), std::format("{:.0f}", r.required)}) << '\n';
     } else if (cmd == "WATERWAY") {
         // WATERWAY — suv yo'li (quvur, beton kanal, ariq, lotok): tahlil; Q= sarf; SEC= shablon raqami; + — 3D; x,y — profil
         auto p = civil::defaultWwParams();

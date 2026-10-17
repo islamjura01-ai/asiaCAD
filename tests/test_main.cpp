@@ -11,6 +11,7 @@
 #include <asiacad/civil/waterway.h>
 #include <asiacad/civil/corridor.h>
 #include <asiacad/civil/generators.h>
+#include <asiacad/civil/drive.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -341,7 +342,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 58);
+    CHECK(loc.canonicalCommands().size() == 59);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2715,4 +2716,97 @@ TEST(gen_city_large_and_ground) {
     d2.add(std::move(t));
     auto gf2 = civil::groundFromDoc(d2, &cnt);
     CHECK(cnt == 1 && gf2 && std::abs(gf2(100, 100) - 412.3) < 1e-9);
+}
+
+// ---------------------------------------------------------------- Drive tahlili
+TEST(drive_sight_profile_crest) {
+    CHECK(std::abs(civil::requiredStoppingSight(60) - 85) < 1e-9);
+    CHECK(std::abs(civil::requiredStoppingSight(70) - 117.5) < 1e-9);
+    // tekis to'g'ri yo'l: ko'rinish — chegaragacha
+    {
+        auto p = civil::makeDrivePath({{0, 0, 450}, {1000, 0, 450}}, 1.0);
+        NEAR(p.length(), 1000);
+        civil::SightParams sp;
+        auto r = civil::sightAnalysis(p, {}, sp);
+        CHECK(r.issues.empty());
+        CHECK(std::abs(r.samples.front().profile - 400) < 1e-6);
+    }
+    // qavariq vertikal egri R=2000: S = √(2R)(√h1 + √h2) ≈ 97.6 m
+    {
+        std::vector<Vec3> pts;
+        for (int x = -400; x <= 400; ++x) pts.push_back({static_cast<double>(x), 0, 500 - x * x / 4000.0});
+        auto p = civil::makeDrivePath(pts, 1.0);
+        civil::SightParams sp;
+        sp.step = 10;
+        sp.speedKmh = 80;  // talab 150 m — yetmaydi
+        auto r = civil::sightAnalysis(p, {}, sp);
+        const double theory = std::sqrt(4000.0) * (std::sqrt(1.2) + std::sqrt(0.2));
+        double atApex = 0;
+        for (const auto& sm : r.samples)
+            if (std::abs(sm.s - 350) < 1e-6) atApex = sm.profile;  // ko'z x=-50, nishon x≈+48 — ikkalasi egrida
+        CHECK(std::abs(atApex - theory) < 3);
+        CHECK(!r.issues.empty());
+        CHECK(r.minD < 110);
+        sp.speedKmh = 50;  // talab 75 m — yetadi
+        CHECK(civil::sightAnalysis(p, {}, sp).issues.empty());
+    }
+}
+
+TEST(drive_sight_horizontal_obstacle) {
+    // R=100 aylana yo'l, ichki tomonda 5 m da uzluksiz devor: S = 2R·acos((R−m)/R) ≈ 63.5 m
+    std::vector<Vec3> pts;
+    for (int i = 0; i <= 360; ++i) {
+        const double a = i * 3.14159265358979 / 180;
+        pts.push_back({100 * std::cos(a), 100 * std::sin(a), 400});
+    }
+    auto p = civil::makeDrivePath(pts, 1.0);
+    civil::DriveScene sc;
+    std::vector<Vec3> ring;
+    for (int i = 0; i < 360; i += 2) {
+        const double a = i * 3.14159265358979 / 180;
+        ring.push_back({95 * std::cos(a), 95 * std::sin(a), 0});
+    }
+    for (std::size_t i = 0; i < ring.size(); ++i) {   // devor (yupqa) — halqa bo'ylab
+        const auto& a = ring[i];
+        const auto& b = ring[(i + 1) % ring.size()];
+        sc.addQuad({a.x, a.y, 398}, {b.x, b.y, 398}, {b.x, b.y, 405}, {a.x, a.y, 405}, 0xaaaaaa);
+    }
+    civil::SightParams sp;
+    sp.step = 20;
+    auto r = civil::sightAnalysis(p, sc, sp);
+    const double theory = 2 * 100 * std::acos(0.95);
+    CHECK(std::abs(r.samples[3].total - theory) < 4);
+    CHECK(r.samples[3].profile > 300);
+    CHECK(!r.issues.empty());  // 60 km/soat: talab 85 m
+    sp.obstacles3d = false;
+    CHECK(civil::sightAnalysis(p, sc, sp).issues.empty());
+    // kamera: ko'z yo'l ustida, nishon oldinda
+    const auto cam = civil::driveCamera(p, 10, 1.2, 30);
+    CHECK(std::abs(cam.eye.z - 401.2) < 1e-9 && cam.target.distanceTo(cam.eye) > 25);
+}
+
+TEST(drive_scene_from_city_and_corridor) {
+    civil::CitySpec c;
+    c.nx = 2; c.ny = 2;
+    auto city = civil::generateCity(c);
+    Document d;
+    for (auto& e : city.entities) {
+        if (!d.layer(e->layer())) d.addLayer(Layer{e->layer()});
+        d.add(std::move(e));
+    }
+    const auto sc = civil::sceneFromDocument(d);
+    CHECK(sc.tris.size() == city.buildings.size() * 12);   // 4 devor × 2 + 2 qopqoq × 2
+    CHECK(sc.segs.empty());                                 // massiv qirralari prizmaga aylangan
+    const auto r = loadAcad(std::string(ASIACAD_EXAMPLES_DIR) + "/yol.acad");
+    auto p = civil::defaultCorridorParams();
+    p.assemblies = {civil::builtinAssemblies()[1]};
+    auto cor = civil::buildCorridor(r.doc, p);
+    const auto cs = civil::sceneFromCorridor(cor);
+    CHECK(cs.tris.size() > 200 && cs.segs.size() > 50);
+    const auto& s5 = cor.sec[5];
+    double z = 0;
+    CHECK(civil::corridorSurfaceZ(cor, s5.x, s5.y, z) && std::abs(z - s5.design) < 1e-6);
+    // yo'l ustidagi nuqta (o'ngga 3 m): ko'ndalang nishablik bilan pastroq
+    CHECK(civil::corridorSurfaceZ(cor, s5.x + s5.dy * 3, s5.y - s5.dx * 3, z) && z < s5.design && z > s5.design - 0.2);
+    CHECK(!civil::corridorSurfaceZ(cor, s5.x + s5.dy * 500, s5.y - s5.dx * 500, z));
 }

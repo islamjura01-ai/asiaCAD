@@ -43,6 +43,7 @@ class RoadDialog;
 class WaterwayDialog;
 class CorridorDialog;
 class CityDialog;
+class DriveDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -65,6 +66,7 @@ public:
     WaterwayDialog* openWaterway();         // "Suv yo'li" menyusi (quvur, kanal, ariq, lotok)
     CorridorDialog* openCorridor();         // "Koridor": yig'malar + qismlar palitrasi (Civil 3D Corridor kabi)
     CityDialog* openCity();                 // "Shahar mavzesi" — 0 dan: ko'chalar, kvartallar, binolar
+    DriveDialog* openDrive();               // "Haydash" (Drive): tanlangan chiziq bo'ylab 3D ichida yurish va ko'rinish tahlili
     QDialog* openScratch(const QString& module);  // "0 dan chizish": building | road | waterway | corridor | util
     void locate(double x, double y);        // tuzatish: chizmada joyni ko'rsatish
 
@@ -112,6 +114,8 @@ private:
     WaterwayDialog* waterway_ = nullptr;
     CorridorDialog* corridor_ = nullptr;
     CityDialog* city_ = nullptr;
+    DriveDialog* drive_ = nullptr;
+    QToolButton* driveCtx_ = nullptr;  // chiziq tanlanganda viewport ustida "▶ Haydash"
 
     QHash<QString, QAction*> act_;  // "line" -> QAction
     QTabWidget* ribbon_ = nullptr;

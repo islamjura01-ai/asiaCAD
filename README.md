@@ -312,6 +312,23 @@ import qilingan va AsiaCAD tayyorlagan chizma — bitta yo'ldan o'tadi va bir xi
 * Burilish yoyi sig'masa radius kamaytiriladi va ogohlantiriladi; o'zi oqar quvurda teskari nishablik va sayoz quduq — ogohlantirish.
 * Binolar orasidagi oraliq balandlikdan kichik bo'lsa — ogohlantirish (insolyatsiya/yong'in me'yorlari bilan tekshirilmagan).
 
+## Haydash (Drive) tahlili — `civil/drive`, `DRIVE`
+
+Civil 3D "Analyze → Drive" kabi: chiziq (feature line, 3D poliliniya, o'q) tanlansa viewport ustida **▶ Haydash** chiqadi
+(lentada: Tahlil → Haydash). 3D model ichida birinchi shaxs ko'rinishida yuriladi — yo'lda, shahar ko'chasida, bino ichida.
+
+* Rejimlar: avtomobil (ko'z 1.2 m), yuk mashinasi (2.3 m), piyoda — bino ichi (1.7 m, 5 km/soat), dron.
+* Balandlik manbai: chiziq Z, koridor yuzasi (har qanday nuqtada — polosa o'qi bo'ylab ham), yer (syomka), bino qavati, doimiy belgi.
+* Sahna: chizmadagi 3D chiziqlar, ikki sathli konturlar (bino massivlari), koridor yuzasi (asfalt, yo'lak, kesma/to'kma qiyaligi,
+  suv), bino modeli (ustun, devor, plita), yer yuzasi, yerga yotqizilgan 2D chiziqlar.
+* Dasturiy z-bufer rasterlovchi (perspektiva, yaqin tekislik qirqimi, tuman) — bino ichida ham to'g'ri ko'rinish, OpenGL shart emas.
+* **Ko'rinish masofasi**: ko'zdan yo'l ustidagi to'siqqacha (0.2 m) — bo'ylama profil (qavariq egri) va 3D to'siqlar
+  (kesma qiyaligi, binolar, devorlar; XY to'r bilan nur kesishuvi). Talab — SNiP 2.05.02-85 10-jadval bo'yicha
+  (tasdiqlanmagan). Kamchilik oraliqlari ro'yxatda, kichik xaritada va profil grafigida qizil; bosilsa o'sha joyga o'tiladi.
+  Tekshiruv: qavariq egri R=2000 da nazariy √(2R)(√h1+√h2) ≈ 97.6 m, egri ichidagi devor — 2R·acos((R−m)/R).
+* Boshqaruv: sichqoncha — atrofga qarash, Bo'sh joy — yurish/to'xtash, ← → — siljish, W/S — tezlik, yon siljish — o'ng polosa.
+* CLI: `DRIVE id [V=80] [EYE=1.2] [OBJ=0.2] [STEP=10]` — ko'rinish masofasi hisoboti.
+
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 
 Qt 6.4+ topilsa avtomatik yig'iladi (`-DASIACAD_BUILD_GUI=OFF` — o'chirish). Ubuntu: `apt install qt6-base-dev`,

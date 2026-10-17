@@ -474,12 +474,14 @@ CityResult generateCity(const CitySpec& c, const std::function<double(double, do
         const double x = c.x0 + c.street / 2 + i * pitchX;
         add(out, std::make_unique<LineEntity>(Vec3{x, c.y0, 0}, Vec3{x, c.y0 + D, 0}), "KOCHA_O'Q");
         for (double s : {-hc, hc}) add(out, std::make_unique<LineEntity>(Vec3{x + s, c.y0, 0}, Vec3{x + s, c.y0 + D, 0}), "KOCHA_CHETI");
+        rect(out, x - hc, c.y0, x + hc, c.y0 + D, "KOCHA_YUZA");
         r.streetLength += D;
     }
     for (int j = 0; j <= c.ny; ++j) {
         const double y = c.y0 + c.street / 2 + j * pitchY;
         add(out, std::make_unique<LineEntity>(Vec3{c.x0, y, 0}, Vec3{c.x0 + W, y, 0}), "KOCHA_O'Q");
         for (double s : {-hc, hc}) add(out, std::make_unique<LineEntity>(Vec3{c.x0, y + s, 0}, Vec3{c.x0 + W, y + s, 0}), "KOCHA_CHETI");
+        rect(out, c.x0, y - hc, c.x0 + W, y + hc, "KOCHA_YUZA");
         r.streetLength += W;
     }
     // binolar: kvartal ichida chekinishdan keyin qatorlar (uzun tomoni X bo'ylab), markazlashtirilgan

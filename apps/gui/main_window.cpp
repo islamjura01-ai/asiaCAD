@@ -9,8 +9,10 @@
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
+#include "drive_dialog.h"
 #include "icons.h"
 
+#include <asiacad/civil/drive.h>
 #include <asiacad/core/entities.h>
 
 #include <functional>
@@ -87,6 +89,7 @@ const ActDef kActs[] = {
     {"waterway", "waterway", "gui.act.waterway", false},
     {"corridor", "corridor", "gui.act.corridor", false},
     {"city", "city", "gui.act.city", false},
+    {"drive", "drive", "gui.act.drive", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -183,6 +186,24 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
         coords_->setText(QStringLiteral("X %1   Y %2").arg(x, 0, 'f', 3).arg(y, 0, 'f', 3));
     });
     connect(view_, &Viewport::selectionChanged, this, &MainWindow::refreshProperties);
+    // kontekst: bitta chiziq (feature line) tanlansa — viewport ustida "▶ Haydash" (Civil 3D kontekst lentasi kabi)
+    driveCtx_ = new QToolButton(view_);
+    driveCtx_->setObjectName("accent");
+    driveCtx_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    driveCtx_->setCursor(Qt::PointingHandCursor);
+    driveCtx_->hide();
+    connect(driveCtx_, &QToolButton::clicked, this, [this] { openDrive(); });
+    connect(view_, &Viewport::selectionChanged, this, [this] {
+        const auto& sel = view_->selection();
+        bool curve = false;
+        if (sel.size() == 1)
+            if (const IEntity* e = doc_.find(sel.front())) curve = dynamic_cast<const ICurve*>(e) && !dynamic_cast<const CircleEntity*>(e);
+        driveCtx_->setText(t("gui.drv.ctx"));
+        driveCtx_->adjustSize();
+        driveCtx_->move(view_->width() - driveCtx_->width() - 14, 12);
+        driveCtx_->setVisible(curve);
+        if (curve) driveCtx_->raise();
+    });
     connect(view_, &Viewport::textRequested, this, [this](const Vec3& at) {
         QDialog dlg(this);
         dlg.setWindowTitle(t("gui.text.title"));
@@ -231,7 +252,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
             {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
             {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
@@ -294,6 +315,7 @@ void MainWindow::buildActions() {
     connect(act_["waterway"], &QAction::triggered, this, [this] { openWaterway(); });
     connect(act_["corridor"], &QAction::triggered, this, [this] { openCorridor(); });
     connect(act_["city"], &QAction::triggered, this, [this] { openCity(); });
+    connect(act_["drive"], &QAction::triggered, this, [this] { openDrive(); });
     // Asbob tugagach (Esc, Enter, buyruq bajarildi) — "Tanlash" tugmasi yonsin
     connect(view_, &Viewport::promptChanged, this, [this] {
         if (act_.contains(toolKey(view_->tool()))) act_[toolKey(view_->tool())]->setChecked(true);
@@ -314,7 +336,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimradius", "dimdiameter"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
         {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
@@ -1002,6 +1024,100 @@ QDialog* MainWindow::openScratch(const QString& module) {
     return d;
 }
 
+// "Haydash": tanlangan chiziq (feature line) bo'ylab — bo'lmasa ochiq Koridor/Yo'l o'qi bo'ylab. Sahna: chizmadagi 3D, koridor yuzasi,
+// bino modeli, yer. Balandlik manbalari: chiziq Z, koridor yuzasi, yer, bino qavatlari, doimiy belgi.
+DriveDialog* MainWindow::openDrive() {
+    std::vector<Vec3> pts;
+    QString title;
+    bool lineZ = false;
+    for (EntityId id : view_->selection())
+        if (const IEntity* e = doc_.find(id); e && dynamic_cast<const ICurve*>(e) && !dynamic_cast<const CircleEntity*>(e)) {
+            const auto dp = civil::makeDrivePath(*e, 1.0);
+            pts = dp.p;
+            lineZ = civil::curveHasZ(*e);
+            title = QString::fromStdString(e->layer());
+            break;
+        }
+    if (pts.empty() && corridor_ && corridor_->model().sec.size() >= 2) {
+        for (const auto& sc : corridor_->model().sec) pts.push_back({sc.x, sc.y, sc.design});
+        lineZ = true;
+        title = t("gui.act.corridor");
+    }
+    if (pts.empty() && road_ && road_->model().st.size() >= 2) {
+        for (const auto& st : road_->model().st) pts.push_back({st.x, st.y, st.design});
+        lineZ = true;
+        title = t("gui.act.road");
+    }
+    if (!drive_) {
+        drive_ = new DriveDialog(loc_, this);
+        drive_->setStyleSheet(theme_.styleSheet);
+    }
+    // balandlik manbalari
+    std::vector<DriveSource> src;
+    int def = -1;
+    if (lineZ) { src.push_back({t("drive.z.line"), {}}); def = 0; }
+    if (corridor_ && corridor_->model().sec.size() >= 2) {
+        const civil::Corridor* c = &corridor_->model();
+        src.push_back({t("drive.z.corridor"), [c](double x, double y) {
+                           double z;
+                           return civil::corridorSurfaceZ(*c, x, y, z) ? z : std::nan("");
+                       }});
+        if (def < 0) def = static_cast<int>(src.size()) - 1;
+    }
+    const auto ground = civil::groundFromDoc(doc_);
+    if (ground) {
+        src.push_back({t("drive.z.ground"), ground});
+        if (def < 0) def = static_cast<int>(src.size()) - 1;
+    }
+    if (building_) {
+        const auto& m = building_->model();
+        std::map<int, double> top;  // daraja -> yuqori sirt
+        for (const auto& pr : m.prisms)
+            if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::FoundationSlab)
+                top[pr.level] = top.count(pr.level) ? std::max(top[pr.level], pr.z1) : pr.z1;
+        for (const auto& [lvl, z] : top) {
+            const double zz = z;
+            DriveSource d{t("drive.z.floor", {QString::number(lvl + 1), QString::number(z, 'f', 2)}), [zz](double, double) { return zz; }};
+            d.walk = true;
+            src.push_back(d);
+            if (def < 0 && !lineZ) def = static_cast<int>(src.size()) - 1;
+        }
+    }
+    src.push_back({t("drive.z.const"), {}, true});
+    if (def < 0) def = static_cast<int>(src.size()) - 1;
+    // sahna
+    civil::DriveScene sc = civil::sceneFromDocument(doc_);
+    if (corridor_) sc.append(civil::sceneFromCorridor(corridor_->model()));
+    if (building_)
+        for (const auto& pr : building_->model().prisms) {
+            std::uint32_t col = 0xd6d1c6;
+            if (pr.kind == bim::ElemKind::Column) col = 0xb3aca0;
+            else if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::Roof) col = 0xc2beb6;
+            else if (pr.kind == bim::ElemKind::FoundationSlab || pr.kind == bim::ElemKind::Lean) col = 0x958f85;
+            sc.addPrism(pr.outline, pr.z0, pr.z1, col);
+        }
+    if (!pts.empty()) {
+        // yer: syomkadan; bo'lmasa — sahnaning eng past sathida tekis maydon (shahar, bino)
+        std::function<double(double, double)> gz = ground;
+        if (!gz) {
+            double z0 = 1e18;
+            for (const auto& q : pts) z0 = std::min(z0, q.z);
+            if (!sc.tris.empty()) z0 = sc.bounds().min.z;
+            gz = [z0](double, double) { return z0; };
+        }
+        sc.append(civil::groundAround(pts, gz, 300, 8));
+        sc.append(civil::drapeLinework(doc_, pts, 300, gz));
+    }
+    drive_->setScene(std::move(sc));
+    drive_->setSources(src, def);
+    drive_->setPath(pts, title);
+    drive_->show();
+    drive_->raise();
+    drive_->activateWindow();
+    if (pts.empty()) statusBar()->showMessage(t("gui.drv.nopath"), 6000);
+    return drive_;
+}
+
 void MainWindow::locate(double x, double y) {
     const double ppu = std::max(1.0, std::min(view_->width(), view_->height()) / 60.0);  // ~60 m ko'rinadi
     view_->setView({x, y, 0}, ppu);
@@ -1036,6 +1152,7 @@ void MainWindow::startCommand(const QString& canonical) {
     if (canonical == "SEWER") { openSewer(); return; }
     if (canonical == "BUILDING") { openBuilding(); return; }
     if (canonical == "CITY") { openCity(); return; }
+    if (canonical == "DRIVE") { openDrive(); return; }
     if (canonical == "GRID") { openScratch("building"); return; }
     if (canonical == "ALIGN") { openScratch("road"); return; }
     if (canonical == "UTILNET") { openScratch("util"); return; }

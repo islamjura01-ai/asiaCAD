@@ -2308,8 +2308,15 @@ TEST(kj_single_file_project) {
     };
     NEAR(vol(bim::ElemKind::FoundationSlab), 14 * 8 * 0.4);
     NEAR(vol(bim::ElemKind::Slab), 14 * 8 * 0.2);
-    NEAR(vol(bim::ElemKind::Column), 6 * 0.25 * (2.8 + 0.15));
-    NEAR(vol(bim::ElemKind::Wall), 0.4 * 4 * 2.95);
+    NEAR(vol(bim::ElemKind::Column), 6 * 0.25 * 2.8);       // ±0.000 = fundament usti (chizmadagi izoh)
+    NEAR(vol(bim::ElemKind::Wall), 0.4 * 4 * 2.8);
+    // absolyut belgilar: ±0,000 по ГП 484,20
+    CHECK(r.datumKnown && r.datumFromDrawing);
+    NEAR(r.datum, 484.2);
+    NEAR(r.foundTop, 0.0);
+    for (const auto& pr : r.bm.prisms)
+        if (pr.kind == bim::ElemKind::Slab) { NEAR(pr.z1, 484.2 + 3.0); NEAR(pr.z0, 484.2 + 2.8); }
+    NEAR(r.bm.heightTop, 487.2);
     std::map<std::pair<int, long>, int> n;   // (rol, Ø mm) -> soni
     for (const auto& b : r.bars) n[{static_cast<int>(b.role) * 1000 + static_cast<int>(b.kind), std::lround(b.d * 1000)}]++;
     auto cnt = [&](bim::ElemKind k, bim::BarRole ro, long d) { return n[{static_cast<int>(ro) * 1000 + static_cast<int>(k), d}]; };
@@ -2325,8 +2332,8 @@ TEST(kj_single_file_project) {
     CHECK(outlets == 24 && inCols == 24);
     for (const auto& b : r.bars)
         if (b.kind == bim::ElemKind::Column && b.role == bim::BarRole::Main && b.level == 0) {
-            NEAR(b.pts[0].z, kp.foundTop - kp.outletIn);
-            NEAR(b.pts[1].z, kp.foundTop + kp.outletOut);
+            NEAR(b.pts[0].z, 484.2 - kp.outletIn);
+            NEAR(b.pts[1].z, 484.2 + kp.outletOut);
         }
     int stir = 0;
     for (const auto& b : r.bars) stir += b.role == bim::BarRole::Stirrup;
@@ -2335,6 +2342,32 @@ TEST(kj_single_file_project) {
     for (const auto& i : r.issues) err |= i.error;
     CHECK(!err);
     CHECK(r.totalMass > 1000);
+    // qo'lda kiritilgan ±0.000 va geodezik bog'lash
+    bim::KjParams k2;
+    k2.datumAuto = false;
+    k2.datum = 500.0;
+    k2.originX = 1000;
+    k2.originY = 2000;
+    k2.rotDeg = 90;
+    const auto r2 = bim::buildKjProject(*ls.doc, ls.dims, k2);
+    NEAR(r2.datum, 500.0);
+    bool differs = false;
+    for (const auto& i : r2.issues) differs |= i.key == "kj.chk.datum_differs";
+    CHECK(differs);
+    for (const auto& pr : r2.bm.prisms)
+        if (pr.kind == bim::ElemKind::FoundationSlab) {
+            BBox b;
+            for (const auto& q : pr.outline) b.expand(q);
+            NEAR(b.min.x, 1000 - 7.0);   // lokal Y [-1, 7] -> X = 1000 - y
+            NEAR(b.max.y, 2000 + 13.0);  // lokal X [-1, 13] -> Y = 2000 + x
+            NEAR(pr.z1, 500.0);
+        }
+    bim::DatumInfo d;
+    CHECK(bim::parseDatumText("\xC2\xB1" "0.000 = 448.200 abs.", d) && std::abs(d.abs - 448.2) < 1e-9 && d.ref == 0);
+    CHECK(bim::parseDatumText("0,000 \xD1\x81\xD0\xBE\xD0\xBE\xD1\x82\xD0\xB2\xD0\xB5\xD1\x82\xD1\x81\xD1\x82\xD0\xB2\xD1\x83\xD0\xB5\xD1\x82 "
+                              "\xD0\xB0\xD0\xB1\xD1\x81. 101,35", d) && std::abs(d.abs - 101.35) < 1e-9);
+    CHECK(!bim::parseDatumText("\xC2\xB1" "0.000", d));
+    CHECK(!bim::parseDatumText("23.12.2025 = 0.000", d));
 }
 
 TEST(kj_auto_scale_text_height) {

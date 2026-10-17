@@ -124,6 +124,17 @@ void BuildingDialog::buildUi() {
     stripW_ = dspin(0.3, 5, 0.05, 2, d.stripWidth);
     lean_ = dspin(0.03, 0.5, 0.01, 2, d.leanT);
     wallT_ = dspin(0.08, 1.5, 0.01, 2, d.wallT);
+    zeroAbs_ = dspin(-500, 9000, 0.01, 3, d.zeroAbs);
+    zeroAuto_ = new QCheckBox(t("gui.kj.datum_auto"), left);
+    zeroAuto_->setChecked(d.zeroAbsAuto);
+    {
+        auto* row = new QWidget(left);
+        auto* h = new QHBoxLayout(row);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->addWidget(zeroAbs_, 1);
+        h->addWidget(zeroAuto_);
+        form->addRow(t("gui.kj.datum"), row);
+    }
     form->addRow(t("gui.bim.floors"), floors_);
     form->addRow(t("gui.bim.height"), height_);
     form->addRow(t("gui.bim.slab"), slab_);
@@ -243,6 +254,12 @@ void BuildingDialog::buildUi() {
     });
     for (auto* s : {height_, slab_, roof_, ftop_, ft_, fover_, stripW_, lean_, wallT_})
         connect(s, &QDoubleSpinBox::valueChanged, this, [this] { if (!updating_) recompute(); });
+    connect(zeroAbs_, &QDoubleSpinBox::valueChanged, this, [this] {
+        if (updating_) return;
+        zeroAuto_->setChecked(false);  // qo'lda kiritildi (toggled -> recompute)
+        recompute();
+    });
+    connect(zeroAuto_, &QCheckBox::toggled, this, [this] { if (!updating_) recompute(); });
     connect(strip_, &QCheckBox::toggled, this, [this] { if (!updating_) recompute(); });
     for (auto* c : {clsLean_, clsFound_, clsFrame_, clsSlab_})
         connect(c, &QComboBox::currentIndexChanged, this, [this] { if (!updating_) recompute(); });
@@ -283,6 +300,8 @@ void BuildingDialog::setParams(const bim::BuildingParams& p, const std::map<std:
     slab_->setValue(p.slabT);
     roof_->setValue(p.roofT);
     ftop_->setValue(p.foundTop);
+    zeroAbs_->setValue(p.zeroAbs);
+    zeroAuto_->setChecked(p.zeroAbsAuto);
     ft_->setValue(p.foundT);
     fover_->setValue(p.foundOverhang);
     strip_->setChecked(p.stripFoundation);
@@ -355,6 +374,8 @@ bim::BuildingParams BuildingDialog::params() const {
     p.slabT = slab_->value();
     p.roofT = roof_->value();
     p.foundTop = ftop_->value();
+    p.zeroAbs = zeroAbs_->value();
+    p.zeroAbsAuto = zeroAuto_->isChecked();
     p.foundT = ft_->value();
     p.foundOverhang = fover_->value();
     p.stripFoundation = strip_->isChecked();
@@ -406,6 +427,12 @@ void BuildingDialog::recompute() {
         checks_->addItem(it);
     }
     if (model_.issues.empty()) checks_->addItem(t("gui.bim.ok"));
+    if (model_.zeroAbsKnown && zeroAuto_->isChecked() && std::abs(zeroAbs_->value() - model_.zeroAbs) > 1e-9) {
+        const bool was = updating_;
+        updating_ = true;
+        zeroAbs_->setValue(model_.zeroAbs);  // chizmadan olingan qiymat ko'rinsin
+        updating_ = was;
+    }
     summary_->setText(t("gui.bim.summary", {QString::number(p.floors), QString::number(model_.prisms.size()), f2(model_.totalVolume),
                                             f2(model_.totalFormwork), QString::number(model_.heightTop, 'f', 3)}));
     render();

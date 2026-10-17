@@ -83,6 +83,8 @@ private:
     bim::KjParams kp_;
     bool projectMode_ = false;
     QWidget* kjBox_ = nullptr;
+    QDoubleSpinBox *kjDatum_ = nullptr, *kjX0_ = nullptr, *kjY0_ = nullptr, *kjRot_ = nullptr;
+    QCheckBox *kjDatumAuto_ = nullptr, *kjFTopAuto_ = nullptr;
     QDoubleSpinBox *kjFTop_ = nullptr, *kjFT_ = nullptr, *kjCover_ = nullptr, *kjIn_ = nullptr, *kjOut_ = nullptr;
     QComboBox* kind_ = nullptr;
     QFormLayout* form_ = nullptr;

@@ -247,7 +247,7 @@ void recomputeRoad(RoadModel& m, const RoadParams& p) {
         if (l.asphalt && m.asphaltArea == 0) m.asphaltArea = 2 * wPav * m.length;
     }
     // ---- tekshiruv
-    if (m.groundPoints == 0) issue(false, "road.chk.no_ground", {fc(p.ground)}, 0);
+    if (m.groundPoints == 0) issue(true, "road.chk.no_ground", {fc(p.ground)}, 0);
     if (m.designPoints == 0) issue(false, "road.chk.no_design", {fc(p.raise)}, 0);
     for (std::size_t i = 0; i + 1 < m.st.size();) {
         if (std::abs(m.st[i].grade) > p.cat.maxGrade + 1e-9) {

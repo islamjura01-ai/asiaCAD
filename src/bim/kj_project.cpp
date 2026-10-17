@@ -553,8 +553,19 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         if (concrete.empty()) concrete = "B25";
     }
     r.concrete = concrete;
-    const double fTop = p.foundTop, fBot = p.foundTop - p.foundT;
-    issue(false, "kj.chk.found_assumed", {std::format("{:.3f}", fTop), std::format("{:.2f}", p.foundT)});
+    // ±0.000 absolyut belgisi va u nimaga tengligi (fundament usti / toza pol)
+    const auto dat = findDatum(doc);
+    if (dat) { r.datumText = dat->text; r.datumFromDrawing = true; }
+    r.datum = p.datumAuto && dat ? dat->abs : p.datum;
+    r.datumKnown = (p.datumAuto && dat) || !p.datumAuto || p.datum != 0;
+    if (dat && !p.datumAuto && std::abs(dat->abs - p.datum) > 0.005)
+        issue(false, "kj.chk.datum_differs", {std::format("{:.3f}", p.datum), std::format("{:.3f}", dat->abs)});
+    if (!r.datumKnown) issue(true, "kj.chk.no_datum");
+    const bool fTopFromDatum = p.foundTopAuto && dat && dat->ref == 1;
+    const double fTop = fTopFromDatum ? 0.0 : p.foundTop, fBot = fTop - p.foundT;
+    r.foundTop = fTop;
+    if (fTopFromDatum) issue(false, "kj.chk.found_t_assumed", {std::format("{:.2f}", p.foundT)});
+    else issue(false, "kj.chk.found_assumed", {std::format("{:.3f}", fTop), std::format("{:.2f}", p.foundT)});
 
     Ctx cx{p, r, fTop, fBot, slabTop, slabTop - slabT, "A400", {}};
 
@@ -888,6 +899,35 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
     if (!slabRings.empty()) prism(ElemKind::Slab, 1, slabRings, slabTop - slabT, slabTop, concrete);
     r.bm.heightTop = slabTop;
     computePto(r.bm);
+    // ---- absolyut belgilar va geodezik bog'lash (PTO hajmlari o'zgarmaydi)
+    {
+        r.georef = p.originX != 0 || p.originY != 0 || p.rotDeg != 0;
+        const double a = p.rotDeg * 3.14159265358979323846 / 180, ca = std::cos(a), sa = std::sin(a);
+        auto xf = [&](Vec3& q) {
+            const double x = q.x, y = q.y;
+            q.x = p.originX + x * ca - y * sa;
+            q.y = p.originY + x * sa + y * ca;
+            q.z += r.datum;
+        };
+        auto xf2 = [&](Vec3& q) {  // prizma konturi: z ishlatilmaydi
+            const double z = q.z;
+            xf(q);
+            q.z = z;
+        };
+        for (auto& pr : r.bm.prisms) {
+            for (auto& q : pr.outline) xf2(q);
+            for (auto& h : pr.holes)
+                for (auto& q : h) xf2(q);
+            pr.z0 += r.datum;
+            pr.z1 += r.datum;
+        }
+        for (auto& b : r.bars)
+            for (auto& q : b.pts) xf(q);
+        r.bm.heightTop += r.datum;
+        r.bm.zeroAbs = r.datum;
+        r.bm.zeroAbsKnown = r.datumKnown;
+        if (!r.georef) issue(false, "kj.chk.local_xy");
+    }
     if (foundRings.empty()) issue(true, "kj.chk.no_found");
     if (columns.empty()) issue(false, "kj.chk.no_columns");
     // ustunlar plita ichidami

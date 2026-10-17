@@ -829,6 +829,15 @@ void checkUtilities(UtilModel& m, const UtilParams& p) {
     auto issue = [&](bool e, const char* k, std::vector<std::string> a, int line, double x, double y) {
         m.issues.push_back({e, k, std::move(a), line, x, y});
     };
+    // balandliklar real (absolyut) bo'lishi shart: yer nuqtalari, quduq belgilari yoki 3D Z yo'q bo'lsa —
+    // hamma narsa shartli yer sathidan (p.ground) hisoblangan: xato
+    if (!m.lines.empty() && m.groundPoints == 0) {
+        bool real = false;
+        for (const auto& n : m.nodes) real = real || n.labeled;
+        for (const auto& ln : m.lines)
+            for (const auto& v : ln.v) real = real || v.src == UtilVertex::FromZ || v.src == UtilVertex::FromLabel || v.src == UtilVertex::Manual;
+        if (!real) issue(true, "util.chk.no_ground", {std::format("{:.2f}", p.ground)}, -1, m.lines[0].v[0].x, m.lines[0].v[0].y);
+    }
     for (std::size_t i = 0; i < m.lines.size(); ++i) {
         const auto& ln = m.lines[i];
         const int li = static_cast<int>(i);

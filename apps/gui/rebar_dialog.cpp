@@ -164,8 +164,16 @@ void RebarDialog::buildUi() {
             sp->setSingleStep(step);
             sp->setDecimals(dec);
             sp->setValue(val);
-            connect(sp, &QDoubleSpinBox::valueChanged, this, [this] {
+            connect(sp, &QDoubleSpinBox::valueChanged, this, [this, sp] {
                 if (updating_) return;
+                if (sp == kjDatum_) kjDatumAuto_->setChecked(false);   // qo'lda kiritildi
+                if (sp == kjFTop_) kjFTopAuto_->setChecked(false);
+                kp_.datumAuto = kjDatumAuto_->isChecked();
+                kp_.datum = kjDatum_->value();
+                kp_.foundTopAuto = kjFTopAuto_->isChecked();
+                kp_.originX = kjX0_->value();
+                kp_.originY = kjY0_->value();
+                kp_.rotDeg = kjRot_->value();
                 kp_.foundTop = kjFTop_->value();
                 kp_.foundT = kjFT_->value();
                 kp_.cover = kjCover_->value();
@@ -175,12 +183,45 @@ void RebarDialog::buildUi() {
             });
             return sp;
         };
+        kjDatum_ = kspin(-500, 9000, 0.01, 3, kp_.datum);
+        kjDatumAuto_ = new QCheckBox(t("gui.kj.datum_auto"), kjBox_);
+        kjDatumAuto_->setChecked(kp_.datumAuto);
+        kjFTopAuto_ = new QCheckBox(t("gui.kj.datum_auto"), kjBox_);
+        kjFTopAuto_->setChecked(kp_.foundTopAuto);
+        for (auto* cb : {kjDatumAuto_, kjFTopAuto_})
+            connect(cb, &QCheckBox::toggled, this, [this] {
+                if (updating_) return;
+                kp_.datumAuto = kjDatumAuto_->isChecked();
+                kp_.foundTopAuto = kjFTopAuto_->isChecked();
+                recompute();
+            });
+        kjX0_ = kspin(-1e7, 1e7, 1, 3, kp_.originX);
+        kjY0_ = kspin(-1e7, 1e7, 1, 3, kp_.originY);
+        kjRot_ = kspin(-360, 360, 0.1, 4, kp_.rotDeg);
         kjFTop_ = kspin(-20, 20, 0.05, 3, kp_.foundTop);
         kjFT_ = kspin(0.1, 3, 0.05, 2, kp_.foundT);
         kjCover_ = kspin(0.01, 0.1, 0.005, 3, kp_.cover);
         kjIn_ = kspin(0, 3, 0.05, 2, kp_.outletIn);
         kjOut_ = kspin(0, 5, 0.05, 2, kp_.outletOut);
-        kf->addRow(t("gui.kj.ftop"), kjFTop_);
+        {
+            auto* row = new QWidget(kjBox_);
+            auto* h = new QHBoxLayout(row);
+            h->setContentsMargins(0, 0, 0, 0);
+            h->addWidget(kjDatum_, 1);
+            h->addWidget(kjDatumAuto_);
+            kf->addRow(t("gui.kj.datum"), row);
+        }
+        kf->addRow(t("gui.kj.x0"), kjX0_);
+        kf->addRow(t("gui.kj.y0"), kjY0_);
+        kf->addRow(t("gui.kj.rot"), kjRot_);
+        {
+            auto* row = new QWidget(kjBox_);
+            auto* h = new QHBoxLayout(row);
+            h->setContentsMargins(0, 0, 0, 0);
+            h->addWidget(kjFTop_, 1);
+            h->addWidget(kjFTopAuto_);
+            kf->addRow(t("gui.kj.ftop"), row);
+        }
         kf->addRow(t("gui.kj.ft"), kjFT_);
         kf->addRow(t("gui.kj.cover"), kjCover_);
         kf->addRow(t("gui.kj.out_in"), kjIn_);
@@ -516,6 +557,13 @@ void RebarDialog::recompute() {
             break;
         }
         if (kjBox_) kjBox_->setVisible(projectMode_);
+        if (projectMode_ && kjDatum_) {  // qo'llanilgan qiymatlar (chizmadan olingan bo'lsa ham) maydonlarda ko'rinsin
+            const bool was = updating_;
+            updating_ = true;
+            kjDatum_->setValue(kj_.datum);
+            kjFTop_->setValue(kj_.foundTop);
+            updating_ = was;
+        }
         if (projectMode_) {
             bm_ = kj_.bm;
             rm_ = {};
@@ -587,6 +635,13 @@ void RebarDialog::recompute() {
     totals_->addItem(t("rebar.role.CHAIR") + ": " + QString::number(rm_.chairs));
     totals_->addItem(t("rebar.role.TIE") + ": " + QString::number(rm_.ties));
     if (source_ && source_->currentIndex() == 1 && projectMode_) {
+        {
+            auto* it = new QListWidgetItem(kj_.datumKnown ? t("gui.kj.abs", {QString::number(kj_.datum, 'f', 3), QString::number(kj_.datum + kj_.foundTop, 'f', 3),
+                                                                         QString::number(kj_.datum + kj_.slabTop, 'f', 3)})
+                                                          : t("gui.kj.rel"));
+            it->setForeground(kj_.datumKnown ? QColor(80, 200, 120) : QColor(232, 70, 80));
+            totals_->addItem(it);
+        }
         totals_->addItem(t("gui.kj.concrete", {f1(bm_.totalVolume), f1(bm_.totalFormwork)}));
         for (const auto& r : bm_.pto)
             totals_->addItem(QStringLiteral("  %1: %2 — %3 m³")

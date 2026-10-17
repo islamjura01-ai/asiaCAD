@@ -65,7 +65,8 @@ private:
     QTableWidget* layers_ = nullptr;
     QSpinBox* floors_ = nullptr;
     QDoubleSpinBox *height_ = nullptr, *slab_ = nullptr, *roof_ = nullptr, *ftop_ = nullptr, *ft_ = nullptr, *fover_ = nullptr,
-                   *stripW_ = nullptr, *lean_ = nullptr, *wallT_ = nullptr;
+                   *stripW_ = nullptr, *lean_ = nullptr, *wallT_ = nullptr, *zeroAbs_ = nullptr;
+    QCheckBox* zeroAuto_ = nullptr;
     QCheckBox* strip_ = nullptr;
     QComboBox *clsLean_ = nullptr, *clsFound_ = nullptr, *clsFrame_ = nullptr, *clsSlab_ = nullptr;
     QSlider* showUpTo_ = nullptr;

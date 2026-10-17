@@ -55,7 +55,15 @@ struct KjView {
 };
 
 struct KjParams {
-    double foundTop = -0.15;       // fundament plitasi usti (pol pirogi ostida), m
+    // Balandliklar: chizma ichida nisbiy (±0.000), 3D va chizmaga chiqarishda — absolyut (Boltiq): z + datum.
+    // datumAuto — "За относительную отметку ±0,000 по ГП 484,20 ..." yozuvidan; topilmasa datum (0 — xato beriladi).
+    bool datumAuto = true;
+    double datum = 0;
+    // Plan: o'qlar bo'yicha lokal (X — "1" o'qidan, Y — "А" o'qidan). Geodezik bog'lash: "1"/"А" kesishmasining
+    // koordinatasi va lokal X o'qining burilishi (soat strelkasiga qarshi, gradus). Berilmasa — lokal.
+    double originX = 0, originY = 0, rotDeg = 0;
+    bool foundTopAuto = true;      // "±0,000 ... верх фундаментной плиты" — fundament usti 0; aks holda foundTop
+    double foundTop = -0.15;       // fundament plitasi usti (nisbiy), m
     double foundT = 0.40;          // fundament qalinligi, m
     double leanT = 0.10;           // beton tayyorlov (B7.5)
     double cover = 0.04;           // himoya qatlami (sterjen o'qigacha emas — sirtigacha), m
@@ -77,7 +85,13 @@ struct KjProject {
     double totalMass = 0;
     std::vector<SpecRow> spec;     // chizmadagi spetsifikatsiya jadvallari
     double specMass = 0;
-    double slabTop = 0, slabT = 0; // qo'llanilgan
+    double slabTop = 0, slabT = 0; // qo'llanilgan (nisbiy)
+    double foundTop = 0;           // qo'llanilgan (nisbiy)
+    double datum = 0;              // ±0.000 absolyut belgisi; bm/bars z = nisbiy + datum
+    bool datumKnown = false;       // chizmadan yoki foydalanuvchidan
+    bool datumFromDrawing = false;
+    std::string datumText;
+    bool georef = false;           // originX/Y berilgan
     std::string concrete;
     std::vector<RebarIssue> issues;
 };

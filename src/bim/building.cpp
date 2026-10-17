@@ -242,6 +242,7 @@ PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& l
         for (const auto& sl : in.slabs) inSlab = inSlab || inside(sl, pt);
         if (inSlab) { in.slabT = v; break; }
     }
+    if (auto d = findDatum(doc)) in.zeroAbs = d->abs;
     // belgi: eng ko'p uchragan (teng bo'lsa — eng balandi)
     int best = 0;
     for (const auto& [lv, n] : levels)
@@ -391,6 +392,24 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
     }
     if (p.slabT < 0.06) issue(true, "bim.chk.thin_slab", {std::format("{:.2f}", p.slabT)});
 
+    // ---- absolyut belgilar: barcha prizmalar ±0.000 + zeroAbs (Boltiq) — syomka bilan bir tizimda
+    {
+        std::optional<double> fromDrawing;
+        if (fp.foundation && fp.foundation->zeroAbs) fromDrawing = fp.foundation->zeroAbs;
+        for (const auto& [k, pl] : fp.floors)
+            if (!fromDrawing && pl.zeroAbs) fromDrawing = pl.zeroAbs;
+        if (!fromDrawing && typical.zeroAbs) fromDrawing = typical.zeroAbs;
+        m.zeroAbs = p.zeroAbsAuto && fromDrawing ? *fromDrawing : p.zeroAbs;
+        m.zeroAbsKnown = (p.zeroAbsAuto && fromDrawing) || (!p.zeroAbsAuto) || p.zeroAbs != 0;
+        if (fromDrawing && !p.zeroAbsAuto && std::abs(*fromDrawing - p.zeroAbs) > 0.005)
+            issue(false, "bim.chk.datum_differs", {std::format("{:.3f}", p.zeroAbs), std::format("{:.3f}", *fromDrawing)});
+        if (!m.zeroAbsKnown) issue(false, "bim.chk.no_datum");
+        for (auto& pr : m.prisms) {
+            pr.z0 += m.zeroAbs;
+            pr.z1 += m.zeroAbs;
+        }
+        m.heightTop += m.zeroAbs;
+    }
     computePto(m);
     return m;
 }
@@ -417,6 +436,60 @@ void computePto(BuildingModel& m) {
 
 bool parseLevelText(const std::string& s, double& v) { return parseLevel(s, v); }
 
+bool parseDatumText(const std::string& text, DatumInfo& d) {
+    std::string u = utf8::toUpper(text);
+    for (auto& c : u)
+        if (c == ',') c = '.';
+    const auto zero = u.find("0.000");
+    const auto zero2 = u.find("0.00");
+    if (zero == std::string::npos && zero2 == std::string::npos) return false;
+    auto has = [&](std::initializer_list<const char*> ks) {
+        for (const char* k : ks)
+            if (u.find(utf8::toUpper(k)) != std::string::npos) return true;
+        return false;
+    };
+    if (!has({"АБС", "ГП", "=", "СООТВЕТ", "БАЛТ", "ABS", "BALT", "MUTLAK", "KOT", "MUTLOQ", "BOLTIQ"})) return false;
+    // nol belgisidan keyingi birinchi kasrli son (sana "23.12.2025" emas)
+    const std::size_t from = (zero != std::string::npos ? zero + 5 : zero2 + 4);
+    for (std::size_t i = from; i < u.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(u[i])) || (i > 0 && (std::isdigit(static_cast<unsigned char>(u[i - 1])) || u[i - 1] == '.'))) continue;
+        std::size_t j = i;
+        while (j < u.size() && std::isdigit(static_cast<unsigned char>(u[j]))) ++j;
+        if (j >= u.size() || u[j] != '.') continue;
+        std::size_t k = j + 1;
+        while (k < u.size() && std::isdigit(static_cast<unsigned char>(u[k]))) ++k;
+        const std::size_t dec = k - j - 1;
+        if (dec < 1 || dec > 3 || (k < u.size() && u[k] == '.' && k + 1 < u.size() && std::isdigit(static_cast<unsigned char>(u[k + 1])))) { i = k; continue; }
+        double v = std::stod(u.substr(i, k - i));
+        if (i > 0 && u[i - 1] == '-') v = -v;
+        if (std::abs(v) < 1 || std::abs(v) > 9000) { i = k; continue; }
+        d.abs = v;
+        d.text = text;
+        d.ref = 0;
+        if (has({"ВЕРХ", "TEMEL ÜST", "USTI"}) && has({"ФУНДАМЕНТ", "TEMEL", "FUNDAMENT"})) d.ref = 1;
+        else if (has({"ЧИСТ", "БИТИРИЛ", "TOZA", "BITMIŞ"}) && has({"ПОЛ", "DÖŞEME", "POL"})) d.ref = 2;
+        return true;
+    }
+    return false;
+}
+
+std::optional<DatumInfo> findDatum(const Document& doc) {
+    std::optional<DatumInfo> out;
+    std::function<void(const IEntity&)> visit = [&](const IEntity& e) {
+        if (out) return;
+        if (auto* ins = dynamic_cast<const InsertEntity*>(&e)) {
+            for (const auto& part : ins->explode()) visit(*part);
+            return;
+        }
+        if (auto* t = dynamic_cast<const TextEntity*>(&e)) {
+            DatumInfo d;
+            if (parseDatumText(t->text(), d)) out = d;
+        }
+    };
+    doc.forEach([&](const IEntity& e) { visit(e); });
+    return out;
+}
+
 std::string paramsToJson(const BuildingParams& p, const std::map<std::string, ElemKind>& lm) {
     auto esc = [](const std::string& x) {
         std::string o;
@@ -429,9 +502,9 @@ std::string paramsToJson(const BuildingParams& p, const std::map<std::string, El
     std::ostringstream os;
     os << std::format("{{\n  \"format\": \"asiacad-building\", \"version\": 1,\n  \"floors\": {}, \"H\": {}, \"slab\": {}, \"roof\": {}, "
                       "\"foundTop\": {}, \"foundT\": {}, \"foundOver\": {}, \"strip\": {}, \"stripW\": {}, \"lean\": {}, "
-                      "\"leanOver\": {}, \"wallT\": {},\n  \"classes\": [\"{}\", \"{}\", \"{}\", \"{}\"],\n  \"layers\": {{",
+                      "\"leanOver\": {}, \"wallT\": {}, \"zeroAbs\": {}, \"zeroAbsAuto\": {},\n  \"classes\": [\"{}\", \"{}\", \"{}\", \"{}\"],\n  \"layers\": {{",
                       p.floors, p.floorHeight, p.slabT, p.roofT, p.foundTop, p.foundT, p.foundOverhang, p.stripFoundation ? "true" : "false",
-                      p.stripWidth, p.leanT, p.leanOverhang, p.wallT, esc(p.classLean), esc(p.classFound), esc(p.classFrame), esc(p.classSlab));
+                      p.stripWidth, p.leanT, p.leanOverhang, p.wallT, p.zeroAbs, p.zeroAbsAuto ? "true" : "false", esc(p.classLean), esc(p.classFound), esc(p.classFrame), esc(p.classSlab));
     bool first = true;
     for (const auto& [l, k] : lm) {
         os << (first ? "" : ", ") << std::format("\"{}\": \"{}\"", esc(l), kindKey(k));
@@ -465,6 +538,8 @@ void paramsFromJson(const std::string& text, BuildingParams& p, std::map<std::st
     p.leanT = num("lean", p.leanT);
     p.leanOverhang = num("leanOver", p.leanOverhang);
     p.wallT = num("wallT", p.wallT);
+    p.zeroAbs = num("zeroAbs", p.zeroAbs);
+    if (const json::Value* v = root.find("zeroAbsAuto"); v && v->isBool()) p.zeroAbsAuto = v->boolean();
     if (const json::Value* c = root.find("classes"); c && c->isArray() && c->arr().size() == 4) {
         std::string* dst[4] = {&p.classLean, &p.classFound, &p.classFrame, &p.classSlab};
         for (int i = 0; i < 4; ++i)

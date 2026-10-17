@@ -39,6 +39,10 @@ struct BuildingParams {
     double leanT = 0.10;          // padbetonka qalinligi, m
     double leanOverhang = 0.10;   // padbetonka fundamentdan chiqishi, m
     double wallT = 0.20;          // chiziq bilan berilgan devor qalinligi, m
+    // ±0.000 ning absolyut belgisi (Boltiq tizimi). zeroAbsAuto — chizmadagi yozuvdan ("±0,000 по ГП 484,20"),
+    // topilmasa zeroAbs. 3D model, chizmaga chiqarish va syomka bilan solishtirish — absolyut belgilarda.
+    double zeroAbs = 0;
+    bool zeroAbsAuto = true;
     std::string classLean = "B7.5", classFound = "B25", classFrame = "B25", classSlab = "B25";
 };
 
@@ -61,6 +65,7 @@ struct PlanInput {
     std::vector<std::pair<Vec3, Vec3>> wallLines;  // markaz chiziqlari (wallT bilan)
     double slabT = 0;                       // qolip chizmasidagi "h=200" / "δ=200" (0 — parametrdan)
     std::optional<double> levelTop;         // qolip chizmasidagi plita usti belgisi "+3.000"
+    std::optional<double> zeroAbs;          // "±0,000 = 484,20 абс." — nisbiy nolning absolyut (Boltiq) belgisi
     bool empty() const { return columns.empty() && walls.empty() && wallLines.empty() && slabs.empty() && foundations.empty() && strips.empty(); }
 };
 
@@ -94,7 +99,9 @@ struct BuildingModel {
     std::vector<PtoRow> pto;                // tur × qavat
     std::map<std::string, double> byConcrete;  // sinf -> m³
     double totalVolume = 0, totalFormwork = 0;
-    double heightTop = 0;                   // tom usti belgisi
+    double heightTop = 0;                   // tom usti belgisi (absolyut)
+    double zeroAbs = 0;                     // qo'llanilgan ±0.000 absolyut belgisi (prizmalar z — absolyut)
+    bool zeroAbsKnown = false;              // chizmadan yoki foydalanuvchidan; false — balandliklar nisbiy
     std::vector<BuildingIssue> issues;
 };
 
@@ -104,6 +111,16 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
 void computePto(BuildingModel& m);
 // "+3.050", "-0,150", "±0.000" (uch kasrli belgi)
 bool parseLevelText(const std::string& s, double& v);
+// Nisbiy nolning absolyut belgisi: "За относительную отметку ±0,000 по ГП 484,20 принят уровень верха фундаментной плиты",
+// "±0.000 = 484.200 абс.", "±0.00 = 484.20 kotu", "0.000 соответствует абсолютной отметке 484.20".
+// ref: 1 — ±0.000 = fundament plitasi usti, 2 — toza pol, 0 — aytilmagan
+struct DatumInfo {
+    double abs = 0;
+    int ref = 0;
+    std::string text;
+};
+bool parseDatumText(const std::string& text, DatumInfo& d);
+std::optional<DatumInfo> findDatum(const Document& doc);
 
 // Parametrlar + qatlam xaritasi JSON'da (GUI -> BUILDING buyrug'i). Xato bo'lsa Error.
 std::string paramsToJson(const BuildingParams& p, const std::map<std::string, ElemKind>& layerMap);

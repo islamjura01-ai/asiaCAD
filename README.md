@@ -220,6 +220,17 @@ Har bir menyuda **"Chizmalar"** paneli: bir nechta DXF/.acad fayl, har biriga va
   ("Поз." | "Наименование" | "Кол." | "Масса"). 3D sterjenlar shu qavat plitasida (pastki/yuqori, himoya qatlami bilan).
   Taqqoslash: chizmadagi soni ↔ spetsifikatsiya, Ø mosligi, umumiy massa. Namuna: `examples/bino_qolip/kj_plita_1_2.dxf`.
 
+## Absolyut balandliklar (Boltiq) — barcha 3D modellarda
+
+Syomka tahlili bilan bir tizimda ishlash uchun 3D model balandliklari **absolyut**:
+- **Bino / KJ:** chizmadagi izohdan "За относительную отметку ±0,000 по ГП 484,20 принят уровень верха фундаментной плиты"
+  (shuningdek "±0.000 = 484.200 абс.", "0,000 соответствует абс. 101,35", turkcha "kotu") — ±0.000 ning absolyut belgisi va
+  u nimaga tengligi (fundament usti / toza pol). Prizmalar va sterjenlar z = nisbiy + datum. Topilmasa — **xato**
+  ("balandliklar nisbiy"), qiymat qo'lda kiritiladi; chizmadagidan farq qilsa — ogohlantirish.
+- **KJ plan XY:** o'qlar bo'yicha lokal; geodezik bog'lash — "1"/"А" kesishmasi X, Y va burilish burchagi.
+- **Yer osti tarmoqlari / yo'l:** yer nuqtalari, quduq belgilari yoki 3D Z bo'lmasa — **xato** (shartli yer sathi
+  ishlatilganini aniq ko'rsatadi).
+
 ## Turkiya/NetCAD kanalizatsiya loyihasi (v0.15)
 
 "ATIKSU UYGULAMA" kabi NetCAD planlari to'g'ridan-to'g'ri o'qiladi: `ET1_ASU_Borular` (quvur, bir nechta parallel chiziq →

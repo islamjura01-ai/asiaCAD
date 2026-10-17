@@ -45,6 +45,7 @@ outline(0)
 columns(0)
 msp.add_text('%%C16AIII, ш.200', height=300).set_placement((1000, 1500))
 msp.add_text('бетон кл. В30', height=300).set_placement((1000, -1200))
+msp.add_text('1. За относительную отметку ±0,000 по ГП 484,20 принят уровень верха фундаментной плиты.', height=300).set_placement((-1500, -3500))
 
 view(S, 'Схема расположения выпусков фундаментной плиты')
 columns(S)

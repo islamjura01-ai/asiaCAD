@@ -111,7 +111,7 @@ const char* commandSyntax(const std::string& c) {
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
         {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD in out"},
         {"UTIL", "[file.json] [+]"},
-        {"KJ", "file.dxf [fTop] [fT]"},
+        {"KJ", "file.dxf [fTop|-] [fT] [abs±0.000]"},
         {"ROAD", "[file.json] [+] [x,y]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
@@ -650,8 +650,9 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         const auto ls = civil::loadSheet(sf);
         if (!ls.error.empty()) throw Error("acad.err.open", {a[0]});
         bim::KjParams kp;
-        if (a.size() > 1) kp.foundTop = parseNumber(a[1]);
+        if (a.size() > 1 && a[1] != "-") { kp.foundTop = parseNumber(a[1]); kp.foundTopAuto = false; }
         if (a.size() > 2) kp.foundT = parseNumber(a[2]);
+        if (a.size() > 3) { kp.datum = parseNumber(a[3]); kp.datumAuto = false; }
         const auto r = bim::buildKjProject(*ls.doc, ls.dims, kp);
         int used = 0;
         for (const auto& v : r.views) used += v.kind != bim::KjViewKind::Other;
@@ -661,7 +662,9 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             say("kj.msg.view", {loc_.tr(std::string("kj.view.") + bim::kjViewKey(v.kind)), v.title, std::format("{:g}", v.scale),
                                 std::to_string(v.columns + v.walls + v.dots + v.bars)});
         }
-        say("kj.msg.levels", {std::format("{:+.3f}", kp.foundTop), std::format("{:.2f}", kp.foundT), std::format("{:+.3f}", r.slabTop),
+        say("kj.msg.datum", {std::format("{:.3f}", r.datum), r.datumFromDrawing && kp.datumAuto ? " — " + r.datumText : std::string{},
+                             std::format("{:.3f}", r.datum + r.foundTop), std::format("{:.3f}", r.datum + r.slabTop)});
+        say("kj.msg.levels", {std::format("{:+.3f}", r.foundTop), std::format("{:.2f}", kp.foundT), std::format("{:+.3f}", r.slabTop),
                               std::format("{:.2f}", r.slabT)});
         say("kj.msg.concrete", {std::format("{:.1f}", r.bm.totalVolume), r.concrete, std::format("{:.1f}", r.bm.totalFormwork)});
         for (const auto& row : r.bm.pto)

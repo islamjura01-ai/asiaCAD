@@ -4,6 +4,7 @@
 #include <asiacad/io/dxf_reader.h>
 #include <asiacad/io/dxf_text.h>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <fstream>
@@ -772,6 +773,23 @@ private:
     }
 
     void dimension(const Raw& r, const Ctx& c) {
+        if (c.depth == 0) {
+            DxfDimInfo d;
+            d.style = r.find(3) ? dxftext::decodeUnicodeEscapes(dxftext::toUtf8(trim(*r.find(3)), cp_)) : std::string{};
+            d.text = r.find(1) ? dxftext::decodeTextControlCodes(dxftext::toUtf8(*r.find(1), cp_)) : std::string{};
+            d.kind = r.inum(70) & 7;
+            d.p1 = r.pt(13);
+            d.p2 = r.pt(14);
+            d.loc = r.pt(10);
+            if (c.hasT) { d.p1 = c.t.apply(d.p1); d.p2 = c.t.apply(d.p2); d.loc = c.t.apply(d.loc); }
+            if (auto it = res_.dimStyleLfac.find(utf8::toUpper(d.style)); it != res_.dimStyleLfac.end()) d.lfac = it->second;
+            for (std::size_t i = 0; i + 1 < r.g.size(); ++i)  // XDATA ACAD DSTYLE: 1070 144, 1040 qiymat
+                if (r.g[i].code == 1070 && trim(r.g[i].value) == "144" && r.g[i + 1].code == 1040) {
+                    const double v = parseNum(r.g[i + 1].value);
+                    if (v != 0) d.lfac = std::abs(v);
+                }
+            res_.dims.push_back(std::move(d));
+        }
         auto name = r.find(2);
         const Block* b = name ? findBlock(*name) : nullptr;
         if (!b) {
@@ -880,6 +898,11 @@ DxfImportResult readDxf(std::string_view text, const DxfImportOptions& opt) {
     for (const auto& r : tableRaws) {
         if (r.type == "TABLE") { table = r.find(2) ? trim(*r.find(2)) : std::string_view{}; continue; }
         if (r.type == "ENDTAB") { table = {}; continue; }
+        if (table == "DIMSTYLE" && r.type == "DIMSTYLE") {
+            const double lf = r.num(144, 1.0);
+            res.dimStyleLfac[utf8::toUpper(decodeName(r.find(2).value_or("")))] = lf != 0 ? std::abs(lf) : 1.0;
+            continue;
+        }
         if (table != "LAYER" || r.type != "LAYER") continue;
         Layer l;
         l.name = decodeName(r.find(2).value_or(""));
@@ -919,6 +942,15 @@ DxfImportResult readDxf(std::string_view text, const DxfImportOptions& opt) {
     auto nodes = groupNodes(entityRaws);
     Converter conv(opt, res, cp, blocks);
     conv.run(nodes);
+    {
+        std::vector<double> hs;
+        for (const auto& e : res.entities)
+            if (e->type() == EntityType::Text) hs.push_back(static_cast<const TextEntity&>(*e).height());
+        if (!hs.empty()) {
+            std::nth_element(hs.begin(), hs.begin() + hs.size() / 2, hs.end());
+            res.medianTextHeight = hs[hs.size() / 2];
+        }
+    }
     for (const auto& name : conv.usedLayers())
         if (seenLayers.insert(name).second) res.layers.push_back(Layer{name});
     return res;

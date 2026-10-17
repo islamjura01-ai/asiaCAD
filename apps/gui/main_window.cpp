@@ -201,7 +201,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.14"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.15"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();

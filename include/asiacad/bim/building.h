@@ -100,6 +100,10 @@ struct BuildingModel {
 
 BuildingModel buildModel(const PlanInput& plan, const BuildingParams& p);
 BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, const FloorPlans& fp);
+// prizmalar bo'yicha PTO, beton sinflari va jami (buildModel oxirida ham chaqiriladi)
+void computePto(BuildingModel& m);
+// "+3.050", "-0,150", "±0.000" (uch kasrli belgi)
+bool parseLevelText(const std::string& s, double& v);
 
 // Parametrlar + qatlam xaritasi JSON'da (GUI -> BUILDING buyrug'i). Xato bo'lsa Error.
 std::string paramsToJson(const BuildingParams& p, const std::map<std::string, ElemKind>& layerMap);

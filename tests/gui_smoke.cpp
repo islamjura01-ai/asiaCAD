@@ -493,9 +493,32 @@ int main(int argc, char** argv) {
         for (const auto& i : rdk->model().issues) cnt |= i.key == "rbi.chk.count";
         CHECK(cnt);
         CHECK(rdk->imported().specMass > 0);
+        CHECK(!rdk->projectMode());
         rdk->setSourceKj(false);
         CHECK(rdk->model().bars.size() > 1000);  // shablon bo'yicha butun bino
         rdk->close();
+
+        // bitta faylda KJ loyiha: rol ko'rsatilmasa ham (SLAB) — o'q pufakchalari bo'yicha avto taniladi
+        RebarDialog* rdp = w.openRebar();
+        rdp->drawings()->addFile(dir + "/kj_loyiha/kj_loyiha.dxf", "SLAB", 1, 1);
+        CHECK(rdp->projectMode());
+        CHECK(rdp->project().views.size() == 5);
+        const auto nb = rdp->model().bars.size();
+        CHECK(nb > 600);
+        double conc = 0;
+        for (const auto& pr : rdp->project().bm.pto) conc += pr.volume;
+        CHECK(conc > 80);
+        // fundament qalinligi parametri — beton qayta hisoblanadi
+        rdp->kjParams().foundT = 0.6;
+        rdp->recomputeNow();
+        double fv2 = 0;
+        for (const auto& r : rdp->project().bm.pto)
+            if (r.kind == asiacad::bim::ElemKind::FoundationSlab) fv2 += r.volume;
+        CHECK(std::abs(fv2 - 14 * 8 * 0.6) < 1e-6);
+        rdp->setShowConcrete(false);
+        rdp->setUpTo(0);
+        CHECK(rdp->view()->faceCount() >= 0);
+        rdp->close();
         bdlg->close();
     }
 

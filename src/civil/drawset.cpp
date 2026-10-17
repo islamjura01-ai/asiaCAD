@@ -15,7 +15,9 @@ std::string fileName(const std::string& path) {
     return p == std::string::npos ? path : path.substr(p + 1);
 }
 
-double autoScale(int insUnits, const BBox& ext) {
+double autoScale(int insUnits, const BBox& ext, double medianTextHeight) {
+    // $INSUNITS ko'pincha noto'g'ri (shablondan "m" qolgan, chizma esa mm da): matn balandligi 20 dan katta bo'lsa — mm
+    if (medianTextHeight > 20 && insUnits != 4) return 0.001;
     switch (insUnits) {
         case 4: return 0.001;  // mm
         case 5: return 0.01;   // sm
@@ -33,6 +35,7 @@ LoadedSheet loadSheet(const SheetFile& f) {
     ls.file = f;
     ls.doc = std::make_shared<Document>();
     int ins = 0;
+    double textH = 0;
     try {
         std::string ext = f.path.size() >= 5 ? f.path.substr(f.path.size() - 5) : f.path;
         for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -45,6 +48,8 @@ LoadedSheet loadSheet(const SheetFile& f) {
             opt.explodeInserts = true;
             auto r = readDxfFile(f.path, opt);
             ins = r.insUnits;
+            textH = r.medianTextHeight;
+            ls.dims = std::move(r.dims);
             for (const auto& l : r.layers) ls.doc->addLayer(l);
             for (auto& e : r.entities) {
                 if (!ls.doc->layer(e->layer())) ls.doc->addLayer(Layer{e->layer()});
@@ -59,7 +64,7 @@ LoadedSheet loadSheet(const SheetFile& f) {
         ls.error = e.what();
         return ls;
     }
-    const double s = f.scale > 0 ? f.scale : (ins == 6 && f.path.ends_with(".acad") ? 1.0 : autoScale(ins, ls.doc->extents(false)));
+    const double s = f.scale > 0 ? f.scale : (ins == 6 && f.path.ends_with(".acad") ? 1.0 : autoScale(ins, ls.doc->extents(false), textH));
     ls.scaleUsed = s;
     if (std::abs(s - 1) > 1e-12 || f.dx != 0 || f.dy != 0) {
         const Transform sc = Transform::scaling({0, 0, 0}, s), tr = Transform::translation({f.dx, f.dy, 0});
@@ -68,6 +73,11 @@ LoadedSheet loadSheet(const SheetFile& f) {
             e->transform(sc);
             e->transform(tr);
             ls.doc->noteChanged(id);
+        }
+        for (auto& d : ls.dims) {
+            d.p1 = tr.apply(sc.apply(d.p1));
+            d.p2 = tr.apply(sc.apply(d.p2));
+            d.loc = tr.apply(sc.apply(d.loc));
         }
     }
     return ls;

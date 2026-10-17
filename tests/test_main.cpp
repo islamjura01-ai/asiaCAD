@@ -2,6 +2,7 @@
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/bim/rebar_import.h>
+#include <asiacad/bim/kj_project.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/civil/road.h>
@@ -337,7 +338,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 51);
+    CHECK(loc.canonicalCommands().size() == 52);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2252,6 +2253,80 @@ TEST(excel_rebar_roundtrip) {
     CHECK(p2.floors == 7);
     CHECK(layers2["USTUN"] == bim::ElemKind::Column);
     NEAR(rs2.byKind[bim::ElemKind::Slab].s1, rs.byKind[bim::ElemKind::Slab].s1);
+}
+
+TEST(kj_single_file_project) {
+    // bitta faylda 5 ko'rinish: fundament (qolip+to'r), vypusklar, ustunlar, plita, plita qo'shimcha yuqori
+    civil::SheetFile f;
+    f.path = std::string(ASIACAD_EXAMPLES_DIR) + "/kj_loyiha/kj_loyiha.dxf";
+    const auto ls = civil::loadSheet(f);
+    CHECK(ls.error.empty());
+    NEAR(ls.scaleUsed, 0.001);           // $INSUNITS = m, lekin matnlar 300 — mm
+    CHECK(!ls.dims.empty());
+    NEAR(ls.dims.front().lfac, 2.0);      // M200 uslubi
+    const auto views = bim::detectKjViews(*ls.doc, ls.dims);
+    CHECK(views.size() == 5);
+    std::set<bim::KjViewKind> kinds;
+    for (const auto& v : views) {
+        kinds.insert(v.kind);
+        CHECK(v.aligned);
+        NEAR(v.scale, 2.0);
+        CHECK(v.axesX.size() == 3 && v.axesY.size() == 2);
+        if (v.axesX.count("3")) NEAR(v.axesX.at("3"), 12.0);   // chizmada 6000 mm × 2
+    }
+    CHECK(kinds.count(bim::KjViewKind::FoundMain) && kinds.count(bim::KjViewKind::Outlets) && kinds.count(bim::KjViewKind::Columns) &&
+          kinds.count(bim::KjViewKind::SlabMain) && kinds.count(bim::KjViewKind::SlabExtraTop));
+    bim::KjParams kp;
+    const auto r = bim::buildKjProject(*ls.doc, ls.dims, kp);
+    NEAR(r.slabTop, 3.0);
+    NEAR(r.slabT, 0.2);
+    CHECK(r.concrete == "B30");
+    auto vol = [&](bim::ElemKind k) {
+        for (const auto& row : r.bm.pto) if (row.kind == k) return row.volume;
+        return -1.0;
+    };
+    NEAR(vol(bim::ElemKind::FoundationSlab), 14 * 8 * 0.4);
+    NEAR(vol(bim::ElemKind::Slab), 14 * 8 * 0.2);
+    NEAR(vol(bim::ElemKind::Column), 6 * 0.25 * (2.8 + 0.15));
+    NEAR(vol(bim::ElemKind::Wall), 0.4 * 4 * 2.95);
+    std::map<std::pair<int, long>, int> n;   // (rol, Ø mm) -> soni
+    for (const auto& b : r.bars) n[{static_cast<int>(b.role) * 1000 + static_cast<int>(b.kind), std::lround(b.d * 1000)}]++;
+    auto cnt = [&](bim::ElemKind k, bim::BarRole ro, long d) { return n[{static_cast<int>(ro) * 1000 + static_cast<int>(k), d}]; };
+    CHECK(cnt(bim::ElemKind::FoundationSlab, bim::BarRole::BottomX, 16) == 40);   // 8 m / 0.2
+    CHECK(cnt(bim::ElemKind::FoundationSlab, bim::BarRole::TopY, 16) == 70);      // 14 m / 0.2
+    CHECK(cnt(bim::ElemKind::Slab, bim::BarRole::BottomX, 12) == 40);
+    CHECK(cnt(bim::ElemKind::Slab, bim::BarRole::TopX, 16) == 60);                // 6 zona × 2 m / 0.2
+    CHECK(cnt(bim::ElemKind::Slab, bim::BarRole::TopY, 16) == 60);
+    // vypusklar fundament ko'rinishidan, ustunlar boshqa ko'rinishdan — o'qlar bo'yicha ustma-ust tushadi
+    int outlets = 0, inCols = 0;
+    for (const auto& b : r.bars)
+        if (b.kind == bim::ElemKind::Column && b.role == bim::BarRole::Main) (b.level == 0 ? outlets : inCols)++;
+    CHECK(outlets == 24 && inCols == 24);
+    for (const auto& b : r.bars)
+        if (b.kind == bim::ElemKind::Column && b.role == bim::BarRole::Main && b.level == 0) {
+            NEAR(b.pts[0].z, kp.foundTop - kp.outletIn);
+            NEAR(b.pts[1].z, kp.foundTop + kp.outletOut);
+        }
+    int stir = 0;
+    for (const auto& b : r.bars) stir += b.role == bim::BarRole::Stirrup;
+    CHECK(stir > 6 * 10);                    // "100/200" — uchlarida zichroq
+    bool err = false;
+    for (const auto& i : r.issues) err |= i.error;
+    CHECK(!err);
+    CHECK(r.totalMass > 1000);
+}
+
+TEST(kj_auto_scale_text_height) {
+    BBox b;
+    b.expand({0, 0, 0});
+    b.expand({100, 100, 0});
+    NEAR(civil::autoScale(6, b, 300), 0.001);   // $INSUNITS = m, lekin matn 300 — mm
+    NEAR(civil::autoScale(6, b, 2.5), 1.0);
+    NEAR(civil::autoScale(4, b, 2.5), 0.001);
+    bim::BarMark m;
+    CHECK(bim::parseBarMark("\xC3\x98" "16AIII, \xD1\x88.200", m));
+    NEAR(m.spacing, 0.2);
+    CHECK(m.cls == "A400");
 }
 
 int main() {

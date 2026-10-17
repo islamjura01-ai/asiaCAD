@@ -6,6 +6,7 @@
 //  Armatura: KJ chizmalari (role = SLAB/WALL/COLUMN/FOUND), qavat oralig'i bilan.
 #include <asiacad/bim/building.h>
 #include <asiacad/core/document.h>
+#include <asiacad/io/dxf_reader.h>
 
 #include <memory>
 #include <string>
@@ -27,13 +28,15 @@ struct LoadedSheet {
     std::shared_ptr<Document> doc;  // metrga keltirilgan, bloklar explode qilingan
     double scaleUsed = 1;
     std::string error;              // bo'sh — muvaffaqiyatli
+    std::vector<DxfDimInfo> dims;   // o'lchamlar (masshtablangan) — KJ ko'rinishlari masshtabi uchun
 };
 
 // Faylni yuklash (xato bo'lsa error to'ldiriladi, doc bo'sh hujjat)
 LoadedSheet loadSheet(const SheetFile& f);
 std::vector<LoadedSheet> loadSheets(const std::vector<SheetFile>& files);
 // Avto masshtab: $INSUNITS (4 mm, 5 sm, 6 m), aks holda chizma kengligi > 2000 birlik — mm
-double autoScale(int insUnits, const BBox& extents);
+// Matn balandligi medianasi > 20 bo'lsa — mm ($INSUNITS = m bo'lsa ham: ko'p KJ fayllarda shunday)
+double autoScale(int insUnits, const BBox& extents, double medianTextHeight = 0);
 std::string fileName(const std::string& path);
 
 // Bino: role "FOUND" — fundament plani, "PLAN" — qavat plani/qolip chizmasi (floorFrom..floorTo).

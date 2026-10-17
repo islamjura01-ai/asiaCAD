@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.14: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.15: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -219,6 +219,26 @@ Har bir menyuda **"Chizmalar"** paneli: bir nechta DXF/.acad fayl, har biriga va
   "верх/низ"), armatura qatlamidagi sterjen, taqsimlash chizig'i (soni = uzunlik / qadam + 1), spetsifikatsiya jadvali
   ("Поз." | "Наименование" | "Кол." | "Масса"). 3D sterjenlar shu qavat plitasida (pastki/yuqori, himoya qatlami bilan).
   Taqqoslash: chizmadagi soni ↔ spetsifikatsiya, Ø mosligi, umumiy massa. Namuna: `examples/bino_qolip/kj_plita_1_2.dxf`.
+
+## Bitta faylda KJ loyiha: qolip + armatura (v0.15) — `bim/kj_project`
+
+Haqiqiy KJ fayllarda (masalan "1-43B-9 КЖ ТИП 3") barcha varaqlar model fazosida yonma-yon, har biri o'z masshtabida.
+AsiaCAD faylni o'zi tahlil qiladi — rol berish shart emas ("Armatura 3D" → KJ chizmalaridan → faylni qo'shish):
+
+- **Birlik:** $INSUNITS = m bo'lsa ham matn balandligi (300…500) bo'yicha mm deb aniqlanadi.
+- **Ko'rinishlar:** o'q pufakchalari (aylana ichida "1", "11Р", "А", "Б/1") qator/ustunlar bo'yicha guruhlanadi;
+  kesim va tugunlardagi pufakchalar chetga qoldiriladi. Sarlavha — yaqin yirik matn ("Опалубочный план ... фундаментной
+  плиты", "Схема расположения выпусков", "... плиты перекрытия в нижней/верхней зоне", "колонн и монолитных стен").
+- **Masshtab:** ko'rinishdagi o'lchamlar uslubining DIMLFAC'i (M200 → 2: chizmada 3000, haqiqatda 6000).
+- **Tekislash:** "1" o'qi X, "А" o'qi Y — barcha ko'rinishlar bitta koordinatada (vypusklar ustunlar ichiga tushadi).
+- **Beton:** fundament konturi, ustun/devor to'rtburchaklari ("Приямок" yozuvlilari chiqariladi), plita konturi;
+  plita belgilari jufti (+3.050 / +2.850 → 0.20 m), beton sinfi "Бетон кл.В30" dan. Fundament usti va qalinligi —
+  parametr (kesimdan tekshiring).
+- **Armatura:** asosiy to'r "Ø16AIII, ш.200" (yuqori + pastki, X + Y, kontur bo'yicha kesilgan, 11.7 m dan uzunlarga
+  nahlyostka); "d 20"/"d22" qatlamlaridagi chiziqlar — zona to'rtburchagi bo'ylab qadam bilan qo'shimcha sterjenlar;
+  aylanalar — vertikal sterjenlar (fundamentda shpilkalar, vypusklar 640 + 960); ustun karkaslari — vypusklar joyida
+  asosiy sterjenlar va xomutlar ("100/200").
+- CLI: `KJ fayl.dxf [fundament usti] [qalinligi]`. Namuna: `examples/kj_loyiha/` (`make_kj.py` — generator).
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

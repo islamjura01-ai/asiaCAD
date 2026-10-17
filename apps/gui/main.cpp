@@ -61,6 +61,8 @@ int main(int argc, char** argv) {
     bool road = false;
     QStringList sheetArgs, kjArgs;
     QString rebarKind;
+    bool noConcrete = false;
+    int upTo = -1;
     bool ortho = false, polar = false;
     QStringList points;
     QStringList cmds;
@@ -88,7 +90,9 @@ int main(int argc, char** argv) {
         else if (a == "--road") road = true;
         else if (a == "--sheet") sheetArgs << next();  // ROL,yo'l[,dan,gacha] — yer osti (--util) yoki bino chizmalari
         else if (a == "--kj") kjArgs << next();        // ROL,yo'l,dan,gacha — armatura KJ chizmalari  // Yo'l 3D (--sewer-tab 1 — profil)  // Armatura 3D menyusi (bino --building N dan)
-        else if (a == "--rebar-kind") rebarKind = next();  // FOUND/STRIP/COLUMN/WALL/SLAB/ROOF
+        else if (a == "--rebar-kind") rebarKind = next();
+        else if (a == "--no-concrete") noConcrete = true;
+        else if (a == "--upto") upTo = next().toInt();  // FOUND/STRIP/COLUMN/WALL/SLAB/ROOF
         else if (a == "--building") building = next().toInt();  // Monolit bino menyusi (qavatlar)
         else if (a == "--sewer") sewer = true;                 // Kanalizatsiya menyusi (skrinshot uni oladi)
         else if (a == "--sewer-file") { sewer = true; sewerFile = next(); }
@@ -152,6 +156,8 @@ int main(int argc, char** argv) {
                 if (!kjArgs.isEmpty()) addSheets(rd->drawings(), kjArgs);
                 asiacad::bim::ElemKind k;
                 if (!rebarKind.isEmpty() && asiacad::bim::kindFromKey(rebarKind.toStdString(), k)) rd->selectKind(k);
+                if (noConcrete) rd->setShowConcrete(false);
+                if (upTo >= 0) rd->setUpTo(upTo);
             }
             if (sewer) {
                 auto* d = w.openSewer();

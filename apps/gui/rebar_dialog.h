@@ -9,6 +9,7 @@
 
 #include <asiacad/bim/rebar.h>
 #include <asiacad/bim/rebar_import.h>
+#include <asiacad/bim/kj_project.h>
 #include <asiacad/i18n/localizer.h>
 
 #include <QDialog>
@@ -34,6 +35,12 @@ public:
     DrawingSetWidget* drawings() const { return set_; }
     void setSourceKj(bool kj);                       // false — shablonlar (avto), true — KJ chizmalardan
     const bim::ImportedRebar& imported() const { return imp_; }
+    const bim::KjProject& project() const { return kj_; }   // "KJ loyiha" (bitta fayl) natijasi
+    bool projectMode() const { return projectMode_; }
+    bim::KjParams& kjParams() { return kp_; }
+    void recomputeNow() { recompute(); }
+    void setShowConcrete(bool on);
+    void setUpTo(int level);
     const bim::RebarModel& model() const { return rm_; }
     const bim::RebarSettings& settings() const { return rs_; }
     TemplateSidebar* sidebar() const { return side_; }
@@ -72,6 +79,11 @@ private:
     QComboBox* source_ = nullptr;
     bim::FloorPlans fp_;
     bim::ImportedRebar imp_;
+    bim::KjProject kj_;
+    bim::KjParams kp_;
+    bool projectMode_ = false;
+    QWidget* kjBox_ = nullptr;
+    QDoubleSpinBox *kjFTop_ = nullptr, *kjFT_ = nullptr, *kjCover_ = nullptr, *kjIn_ = nullptr, *kjOut_ = nullptr;
     QComboBox* kind_ = nullptr;
     QFormLayout* form_ = nullptr;
     QLabel* legend_ = nullptr;

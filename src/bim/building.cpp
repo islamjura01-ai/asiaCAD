@@ -391,7 +391,14 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
     }
     if (p.slabT < 0.06) issue(true, "bim.chk.thin_slab", {std::format("{:.2f}", p.slabT)});
 
-    // ---- PTO
+    computePto(m);
+    return m;
+}
+
+void computePto(BuildingModel& m) {
+    m.pto.clear();
+    m.byConcrete.clear();
+    m.totalVolume = m.totalFormwork = 0;
     std::map<std::pair<int, int>, PtoRow> rows;
     for (const auto& pr : m.prisms) {
         auto& r = rows[{pr.level, static_cast<int>(pr.kind)}];
@@ -406,8 +413,9 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
         m.byConcrete[pr.concrete] += pr.volume();
     }
     for (auto& [k, r] : rows) m.pto.push_back(r);
-    return m;
 }
+
+bool parseLevelText(const std::string& s, double& v) { return parseLevel(s, v); }
 
 std::string paramsToJson(const BuildingParams& p, const std::map<std::string, ElemKind>& lm) {
     auto esc = [](const std::string& x) {

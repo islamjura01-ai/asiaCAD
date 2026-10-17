@@ -1,6 +1,8 @@
 #include "interpreter.h"
 
 #include <asiacad/bim/building.h>
+#include <asiacad/bim/kj_project.h>
+#include <asiacad/civil/drawset.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/road.h>
@@ -109,6 +111,7 @@ const char* commandSyntax(const std::string& c) {
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
         {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD in out"},
         {"UTIL", "[file.json] [+]"},
+        {"KJ", "file.dxf [fTop] [fT]"},
         {"ROAD", "[file.json] [+] [x,y]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
@@ -639,6 +642,35 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         } else {
             throw Error("xl.err.module", {a[0]});
         }
+    } else if (cmd == "KJ") {
+        // KJ fayl.dxf [fundament usti] [qalinligi] — bitta KJ fayldan (qolip + armatura) beton va armatura
+        need(a, 1, cmd);
+        civil::SheetFile sf;
+        sf.path = a[0];
+        const auto ls = civil::loadSheet(sf);
+        if (!ls.error.empty()) throw Error("acad.err.open", {a[0]});
+        bim::KjParams kp;
+        if (a.size() > 1) kp.foundTop = parseNumber(a[1]);
+        if (a.size() > 2) kp.foundT = parseNumber(a[2]);
+        const auto r = bim::buildKjProject(*ls.doc, ls.dims, kp);
+        int used = 0;
+        for (const auto& v : r.views) used += v.kind != bim::KjViewKind::Other;
+        say("kj.msg.views", {std::to_string(r.views.size()), std::to_string(used)});
+        for (const auto& v : r.views) {
+            if (v.kind == bim::KjViewKind::Other && v.title.empty()) continue;
+            say("kj.msg.view", {loc_.tr(std::string("kj.view.") + bim::kjViewKey(v.kind)), v.title, std::format("{:g}", v.scale),
+                                std::to_string(v.columns + v.walls + v.dots + v.bars)});
+        }
+        say("kj.msg.levels", {std::format("{:+.3f}", kp.foundTop), std::format("{:.2f}", kp.foundT), std::format("{:+.3f}", r.slabTop),
+                              std::format("{:.2f}", r.slabT)});
+        say("kj.msg.concrete", {std::format("{:.1f}", r.bm.totalVolume), r.concrete, std::format("{:.1f}", r.bm.totalFormwork)});
+        for (const auto& row : r.bm.pto)
+            out_ << "  " << loc_.tr(std::string("bim.kind.") + bim::kindKey(row.kind)) << ": " << row.count << " — "
+                 << std::format("{:.2f} m3", row.volume) << '\n';
+        say("kj.msg.steel", {std::to_string(r.bars.size()), std::format("{:.2f}", r.totalMass / 1000)});
+        for (const auto& [d, kg] : r.massByDia) out_ << "  " << d << ": " << std::format("{:.0f} kg", kg) << '\n';
+        for (const auto& i : r.issues)
+            out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args) << '\n';
     } else if (cmd == "UTIL") {
         // UTIL — chizmani tahlil; UTIL + — 3D ni chizmaga; UTIL fayl.json — GUI'da tuzatilgan modelni chizish
         auto p = civil::defaultUtilParams();

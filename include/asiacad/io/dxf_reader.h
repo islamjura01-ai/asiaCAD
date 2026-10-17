@@ -30,6 +30,16 @@ struct DxfImportOptions {
     bool explodeInserts = false;  // true — bloklar ta'rif sifatida emas, geometriya bo'lib keladi
 };
 
+// Model fazosidagi o'lcham (DIMENSION) ma'lumoti: o'lchangan nuqtalar, uslub va DIMLFAC (chizma masshtabi bo'yicha
+// ko'rsatiladigan qiymat = o'lchangan × lfac). KJ varaqlarida har ko'rinish o'z masshtabida chiziladi (M200 — lfac 2).
+struct DxfDimInfo {
+    Vec3 p1, p2, loc;      // 13, 14, 10 (WCS)
+    std::string style;     // 3
+    std::string text;      // 1 (bo'sh yoki "<>" — o'lchov)
+    double lfac = 1.0;     // uslubdan yoki XDATA DSTYLE (144) dan
+    int kind = 0;          // 70 & 7: 0 — chiziqli, 1 — tekislangan ...
+};
+
 struct DxfImportResult {
     std::string version;   // "AC1015"
     std::string release;   // "R2000"
@@ -41,6 +51,9 @@ struct DxfImportResult {
     std::map<std::string, std::size_t> imported;  // AsiaCAD turi -> soni
     std::map<std::string, std::size_t> skipped;   // DXF turi -> soni
     std::vector<DxfMessage> warnings;
+    std::vector<DxfDimInfo> dims;                    // model fazosidagi o'lchamlar
+    std::map<std::string, double> dimStyleLfac;      // UPPER(uslub) -> DIMLFAC
+    double medianTextHeight = 0;                     // birlikni aniqlash uchun (mm chizmada ~ 250..500)
 };
 
 // Xatoda asiacad::Error ("dxf.err.*") tashlaydi

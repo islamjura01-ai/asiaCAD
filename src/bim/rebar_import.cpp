@@ -117,7 +117,7 @@ bool parseBarMark(const std::string& text, BarMark& m) {
         p = q;
     }
     if (const auto p = u.find("L="); p != std::string::npos && num(s, p + 2, v)) m.length = v > 50 ? v / 1000 : v;
-    for (const char* k : {"ШАГ", "QADAM", "ҚАДАМ", "S=", "STEP", "ADIM"}) {
+    for (const char* k : {"ШАГ", "Ш.", "QADAM", "ҚАДАМ", "S=", "STEP", "ADIM"}) {
         const std::string K = key(k);
         const auto p = u.find(K);
         if (p != std::string::npos && num(u, p + K.size(), v)) { m.spacing = v > 20 ? v / 1000 : v; break; }

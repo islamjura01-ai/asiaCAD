@@ -147,9 +147,46 @@ void RebarDialog::buildUi() {
         lv->addWidget(source_);
         set_ = new DrawingSetWidget(loc_, t("gui.ds.title_kj"),
                                     {{"SLAB", t("bim.kind.SLAB")}, {"ROOF", t("bim.kind.ROOF")}, {"FOUND", t("bim.kind.FOUND")},
-                                     {"WALL", t("bim.kind.WALL")}, {"COLUMN", t("bim.kind.COLUMN")}},
+                                     {"WALL", t("bim.kind.WALL")}, {"COLUMN", t("bim.kind.COLUMN")},
+                                     {"PROJECT", t("gui.ds.role_project")}},
                                     true, left);
         lv->addWidget(set_);
+        // KJ loyiha (qolip + armatura bitta faylda): chizmada yo'q qiymatlar
+        kjBox_ = new QWidget(left);
+        auto* kf = new QFormLayout(kjBox_);
+        kf->setContentsMargins(0, 0, 0, 0);
+        auto* kt = new QLabel(t("gui.kj.params"), kjBox_);
+        kt->setObjectName("title");
+        kf->addRow(kt);
+        auto kspin = [&](double lo, double hi, double step, int dec, double val) {
+            auto* sp = new QDoubleSpinBox(kjBox_);
+            sp->setRange(lo, hi);
+            sp->setSingleStep(step);
+            sp->setDecimals(dec);
+            sp->setValue(val);
+            connect(sp, &QDoubleSpinBox::valueChanged, this, [this] {
+                if (updating_) return;
+                kp_.foundTop = kjFTop_->value();
+                kp_.foundT = kjFT_->value();
+                kp_.cover = kjCover_->value();
+                kp_.outletIn = kjIn_->value();
+                kp_.outletOut = kjOut_->value();
+                recompute();
+            });
+            return sp;
+        };
+        kjFTop_ = kspin(-20, 20, 0.05, 3, kp_.foundTop);
+        kjFT_ = kspin(0.1, 3, 0.05, 2, kp_.foundT);
+        kjCover_ = kspin(0.01, 0.1, 0.005, 3, kp_.cover);
+        kjIn_ = kspin(0, 3, 0.05, 2, kp_.outletIn);
+        kjOut_ = kspin(0, 5, 0.05, 2, kp_.outletOut);
+        kf->addRow(t("gui.kj.ftop"), kjFTop_);
+        kf->addRow(t("gui.kj.ft"), kjFT_);
+        kf->addRow(t("gui.kj.cover"), kjCover_);
+        kf->addRow(t("gui.kj.out_in"), kjIn_);
+        kf->addRow(t("gui.kj.out_out"), kjOut_);
+        kjBox_->setVisible(false);
+        lv->addWidget(kjBox_);
         connect(source_, &QComboBox::currentIndexChanged, this, [this] { recompute(); });
         connect(set_, &DrawingSetWidget::changed, this, [this] {
             if (set_->count() > 0 && source_->currentIndex() == 0) source_->setCurrentIndex(1);  // recompute signal orqali
@@ -442,6 +479,9 @@ void RebarDialog::saveTemplate() {
     fillSidebar();
 }
 
+void RebarDialog::setShowConcrete(bool on) { concrete_->setChecked(on); render(); }
+void RebarDialog::setUpTo(int level) { upTo_->setValue(level); render(); }
+
 void RebarDialog::setSourceKj(bool kj) { source_->setCurrentIndex(kj ? 1 : 0); }
 
 void RebarDialog::recompute() {
@@ -460,7 +500,34 @@ void RebarDialog::recompute() {
             else if (sh.file.role == "COLUMN") k = ElemKind::Column;
             in.push_back({sh.doc.get(), k, sh.file.floorFrom, sh.file.floorTo, civil::fileName(sh.file.path)});
         }
-        imp_ = bim::importRebar(in, bm_, rs_.byKind.count(ElemKind::Slab) ? rs_.byKind.at(ElemKind::Slab).cover : 0.025);
+        // bitta faylda butun KJ loyiha (o'qlar bilan ko'rinishlar) — "PROJECT" roli yoki avto aniqlash
+        projectMode_ = false;
+        for (const auto& sh : sheets) {
+            if (!sh.error.empty() || !sh.doc) continue;
+            bool proj = sh.file.role == "PROJECT";
+            if (!proj) {
+                int known = 0;
+                for (const auto& v : bim::detectKjViews(*sh.doc, sh.dims)) known += v.kind != bim::KjViewKind::Other;
+                proj = known >= 3;
+            }
+            if (!proj) continue;
+            kj_ = bim::buildKjProject(*sh.doc, sh.dims, kp_);
+            projectMode_ = true;
+            break;
+        }
+        if (kjBox_) kjBox_->setVisible(projectMode_);
+        if (projectMode_) {
+            bm_ = kj_.bm;
+            rm_ = {};
+            rm_.bars = kj_.bars;
+            rm_.schedule = kj_.schedule;
+            rm_.massByDia = kj_.massByDia;
+            rm_.totalMass = kj_.totalMass;
+            rm_.issues = kj_.issues;
+            in.clear();
+        }
+        if (!projectMode_) imp_ = bim::importRebar(in, bm_, rs_.byKind.count(ElemKind::Slab) ? rs_.byKind.at(ElemKind::Slab).cover : 0.025);
+        if (!projectMode_) {
         rm_ = {};
         rm_.bars = imp_.bars;
         rm_.schedule = imp_.schedule;
@@ -470,7 +537,10 @@ void RebarDialog::recompute() {
         rm_.massByDia = imp_.massByDia;
         rm_.totalMass = imp_.totalMass;
         rm_.issues = imp_.issues;
+        }
     } else {
+        projectMode_ = false;
+        if (kjBox_) kjBox_->setVisible(false);
         rm_ = bim::buildRebar(bm_, bp_, rs_);
     }
     auto levelName = [&](int lv) { return lv == 0 ? t("bim.level.found") : t("bim.level.n", {QString::number(lv)}); };
@@ -516,7 +586,22 @@ void RebarDialog::recompute() {
     totals_->addItem(t("rebar.tbl.wire") + ": " + f1(rm_.wireKg) + " kg");
     totals_->addItem(t("rebar.role.CHAIR") + ": " + QString::number(rm_.chairs));
     totals_->addItem(t("rebar.role.TIE") + ": " + QString::number(rm_.ties));
-    if (source_ && source_->currentIndex() == 1) {
+    if (source_ && source_->currentIndex() == 1 && projectMode_) {
+        totals_->addItem(t("gui.kj.concrete", {f1(bm_.totalVolume), f1(bm_.totalFormwork)}));
+        for (const auto& r : bm_.pto)
+            totals_->addItem(QStringLiteral("  %1: %2 — %3 m³")
+                                 .arg(t((std::string("bim.kind.") + bim::kindKey(r.kind)).c_str()))
+                                 .arg(r.count)
+                                 .arg(f1(r.volume)));
+        int known = 0;
+        for (const auto& v : kj_.views) known += v.kind != bim::KjViewKind::Other;
+        totals_->addItem(t("gui.kj.views", {QString::number(known)}));
+        for (const auto& v : kj_.views) {
+            if (v.kind == bim::KjViewKind::Other) continue;
+            totals_->addItem(QStringLiteral("  %1 — %2").arg(t((std::string("kj.view.") + bim::kjViewKey(v.kind)).c_str()),
+                                                            QString::fromStdString(v.title).trimmed()));
+        }
+    } else if (source_ && source_->currentIndex() == 1) {
         totals_->addItem(t("gui.rb.kj_marks", {QString::number(imp_.marks), QString::number(imp_.unlabeled)}));
         totals_->addItem(t("gui.rb.kj_spec", {f1(imp_.specMass), f1(imp_.totalMass)}));
         for (const auto& r : imp_.spec)

@@ -4,9 +4,11 @@
 // Bino modeli "Monolit bino" parametrlaridan (padbetonka -> tom) olinadi; "Ведомостni chizmaga" — REBAR buyrug'i.
 #include "pipe3d_view.h"
 #include "template_sidebar.h"
+#include "drawing_set_widget.h"
 #include "excel_link.h"
 
 #include <asiacad/bim/rebar.h>
+#include <asiacad/bim/rebar_import.h>
 #include <asiacad/i18n/localizer.h>
 
 #include <QDialog>
@@ -28,7 +30,10 @@ class RebarDialog : public QDialog {
 public:
     RebarDialog(const i18n::Localizer& loc, const Document& doc, bool dark, QWidget* parent = nullptr);
 
-    void setBuilding(const bim::BuildingParams& p, const std::map<std::string, bim::ElemKind>& layers);
+    void setBuilding(const bim::BuildingParams& p, const std::map<std::string, bim::ElemKind>& layers, const bim::FloorPlans& fp = {});
+    DrawingSetWidget* drawings() const { return set_; }
+    void setSourceKj(bool kj);                       // false — shablonlar (avto), true — KJ chizmalardan
+    const bim::ImportedRebar& imported() const { return imp_; }
     const bim::RebarModel& model() const { return rm_; }
     const bim::RebarSettings& settings() const { return rs_; }
     TemplateSidebar* sidebar() const { return side_; }
@@ -63,6 +68,10 @@ private:
 
     TemplateSidebar* side_ = nullptr;
     ExcelLink* excel_ = nullptr;
+    DrawingSetWidget* set_ = nullptr;
+    QComboBox* source_ = nullptr;
+    bim::FloorPlans fp_;
+    bim::ImportedRebar imp_;
     QComboBox* kind_ = nullptr;
     QFormLayout* form_ = nullptr;
     QLabel* legend_ = nullptr;

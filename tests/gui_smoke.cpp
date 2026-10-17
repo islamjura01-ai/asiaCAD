@@ -454,6 +454,51 @@ int main(int argc, char** argv) {
         rd->close();
     }
 
+    // 24. Alohida chizmalar: tarmoqlar (har biri o'z faylida), qavat qolip chizmalari, KJ armatura
+    {
+        const QString dir = QStringLiteral(ASIACAD_EXAMPLES_DIR);
+        w.runLine("NEW !");
+        UtilityDialog* ud = w.openUtility();
+        auto* ds = ud->drawings();
+        ds->addFile(dir + "/tarmoqlar/topo.dxf", "GROUND");
+        ds->addFile(dir + "/tarmoqlar/suv.dxf", "WATER");
+        ds->addFile(dir + "/tarmoqlar/kanal.dxf", "SEWER");
+        ds->addFile(dir + "/tarmoqlar/yomgir.dxf", "STORM");
+        CHECK(ud->model().lines.size() == 3);
+        CHECK(ud->model().groundPoints == 45);
+        bool clash = false;
+        for (const auto& i : ud->model().issues) clash |= i.key == "util.chk.clash" || i.key == "util.chk.clear";
+        CHECK(clash);
+        ud->close();
+
+        BuildingDialog* bdlg = w.openBuilding();
+        bdlg->drawings()->addFile(dir + "/bino_qolip/fundament.dxf", "FOUND");
+        bdlg->drawings()->addFile(dir + "/bino_qolip/qavat_1_2.dxf", "PLAN", 1, 2);
+        bdlg->drawings()->addFile(dir + "/bino_qolip/qavat_3_5.dxf", "PLAN", 3, 5);
+        CHECK(bdlg->params().floors == 5);
+        CHECK(bdlg->floorPlans().floors.size() == 5);
+        bool unsup = false;
+        for (const auto& i : bdlg->model().issues) unsup |= i.key == "bim.chk.unsupported";
+        CHECK(unsup);
+        double fv = 0;
+        for (const auto& r : bdlg->model().pto)
+            if (r.kind == asiacad::bim::ElemKind::FoundationSlab) fv += r.volume;
+        CHECK(std::abs(fv - 20 * 14 * 0.8) < 1e-6);
+
+        RebarDialog* rdk = w.openRebar();
+        rdk->drawings()->addFile(dir + "/bino_qolip/kj_plita_1_2.dxf", "SLAB", 1, 2);
+        CHECK(rdk->imported().marks == 3);
+        CHECK(rdk->model().bars.size() == 2 * (61 + 91 + 13));
+        bool cnt = false;
+        for (const auto& i : rdk->model().issues) cnt |= i.key == "rbi.chk.count";
+        CHECK(cnt);
+        CHECK(rdk->imported().specMass > 0);
+        rdk->setSourceKj(false);
+        CHECK(rdk->model().bars.size() > 1000);  // shablon bo'yicha butun bino
+        rdk->close();
+        bdlg->close();
+    }
+
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

@@ -29,6 +29,7 @@ struct Label {
     double x, y, value;
     char type;
     std::string layer;
+    int src = 0;
 };
 
 double segDist(double px, double py, const UtilVertex& a, const UtilVertex& b, double* t = nullptr) {
@@ -192,12 +193,22 @@ std::map<std::string, UtilKind> autoUtilLayers(const Document& doc) {
 }
 
 UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKind>& layers, const UtilParams& p) {
+    return readUtilities(std::vector<UtilSource>{{&doc, layers, UtilKind::Ignore, ""}}, p);
+}
+
+UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams& p) {
     UtilModel m;
     std::vector<Label> labels;
     std::vector<std::array<double, 3>> groundPts;
+    std::vector<int> lineSrc;  // chiziq -> manba
+    int cur = 0;
+    const UtilSource* src = nullptr;
     auto kindOf = [&](const std::string& layer) {
-        auto it = layers.find(layer);
-        return it != layers.end() ? it->second : guessUtil(layer);
+        auto it = src->layers.find(layer);
+        const UtilKind k = it != src->layers.end() ? it->second : guessUtil(layer);
+        // fayl uchun tur majburiy berilgan bo'lsa: yer sathi va "hisobga olinmaydi" dan boshqa hamma qatlam — shu tur
+        if (src->force != UtilKind::Ignore && k != UtilKind::Ground) return src->force;
+        return k;
     };
     std::function<void(const IEntity&)> visit = [&](const IEntity& e) {
         if (auto* ins = dynamic_cast<const InsertEntity*>(&e)) {
@@ -210,7 +221,7 @@ UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKin
             // tarmoq qatlamida bo'lmagan yozuvlar ham (masalan "YOZUV" qatlami) — diametr/belgi bo'lishi mumkin
             if (auto* t = dynamic_cast<const TextEntity*>(&e)) {
                 double v;
-                if (const char c = parseUtilLabel(t->text(), v)) labels.push_back({t->insertion().x, t->insertion().y, v, c, e.layer()});
+                if (const char c = parseUtilLabel(t->text(), v)) labels.push_back({t->insertion().x, t->insertion().y, v, c, e.layer(), cur});
             }
             return;
         }
@@ -218,7 +229,7 @@ UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKin
             double v;
             const char c = parseUtilLabel(t->text(), v);
             if (k == UtilKind::Ground && c == 'z') groundPts.push_back({t->insertion().x, t->insertion().y, v});
-            else if (c) labels.push_back({t->insertion().x, t->insertion().y, v, c, e.layer()});
+            else if (c) labels.push_back({t->insertion().x, t->insertion().y, v, c, e.layer(), cur});
             return;
         }
         if (k == UtilKind::Ground) {
@@ -248,13 +259,18 @@ UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKin
         UtilLine ln;
         ln.id = static_cast<int>(m.lines.size()) + 1;
         ln.kind = k;
-        ln.layer = e.layer();
+        ln.layer = src->tag.empty() ? e.layer() : src->tag + " · " + e.layer();
+        lineSrc.push_back(cur);
         bool hasZ = false;
         for (const auto& q : pts) hasZ |= std::abs(q.z) > 1e-9;
         for (const auto& q : pts) ln.v.push_back({q.x, q.y, q.z, 0, hasZ ? UtilVertex::FromZ : UtilVertex::Default});
         m.lines.push_back(std::move(ln));
     };
-    doc.forEach([&](const IEntity& e) { visit(e); });
+    for (std::size_t si = 0; si < sources.size(); ++si) {
+        src = &sources[si];
+        cur = static_cast<int>(si);
+        if (src->doc) src->doc->forEach([&](const IEntity& e) { visit(e); });
+    }
     m.groundPoints = static_cast<int>(groundPts.size());
 
     // ---- yer sathi (IDW, 6 ta eng yaqin)
@@ -286,8 +302,9 @@ UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKin
         for (std::size_t i = 0; i < m.lines.size(); ++i) {
             const auto& ln = m.lines[i];
             for (std::size_t j = 0; j + 1 < ln.v.size(); ++j) {
+                if (lineSrc[i] != lb.src) break;  // boshqa fayldagi yozuv bu chiziqqa tegishli emas
                 double d = segDist(lb.x, lb.y, ln.v[j], ln.v[j + 1]);
-                if (ln.layer == lb.layer) d *= 0.5;  // o'z qatlami afzal
+                if (ln.layer == lb.layer || ln.layer.ends_with(" · " + lb.layer)) d *= 0.5;  // o'z qatlami afzal
                 if (d < bd) { bd = d; best = static_cast<int>(i); }
             }
         }
@@ -309,9 +326,9 @@ UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKin
         bool found = false;
         for (std::size_t i = 0; i < m.lines.size(); ++i)
             for (std::size_t j = 0; j < m.lines[i].v.size(); ++j) {
-                if (m.lines[i].v[j].src == UtilVertex::FromZ) continue;
+                if (m.lines[i].v[j].src == UtilVertex::FromZ || lineSrc[i] != lb.src) continue;
                 double d = std::hypot(m.lines[i].v[j].x - lb.x, m.lines[i].v[j].y - lb.y);
-                if (m.lines[i].layer == lb.layer) d *= 0.5;
+                if (m.lines[i].layer == lb.layer || m.lines[i].layer.ends_with(" · " + lb.layer)) d *= 0.5;
                 if (d < bd) { bd = d; bi = i; bj = j; found = true; }
             }
         if (!found) continue;

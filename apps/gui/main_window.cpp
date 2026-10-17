@@ -201,7 +201,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.13"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.14"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -825,7 +825,7 @@ RebarDialog* MainWindow::openRebar() {
             view_->zoomExtents();
         });
     }
-    if (building_) rebar_->setBuilding(building_->params(), building_->layerMap());
+    if (building_) rebar_->setBuilding(building_->params(), building_->layerMap(), building_->floorPlans());
     else rebar_->setBuilding(bim::BuildingParams{}, bim::autoLayerMap(doc_));
     rebar_->show();
     rebar_->raise();

@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <functional>
 #include <format>
 #include <sstream>
 
@@ -101,10 +103,10 @@ void collect(const IEntity& e, ElemKind k, PlanInput& in) {
             case ElemKind::Slab:
             case ElemKind::Roof: in.slabs.push_back(ring); break;
             case ElemKind::Opening: in.openings.push_back(ring); break;
-            case ElemKind::Outline:
-            case ElemKind::FoundationSlab:
-            case ElemKind::Lean:
-            case ElemKind::StripFooting: in.outlines.push_back(ring); break;
+            case ElemKind::Outline: in.outlines.push_back(ring); break;
+            case ElemKind::FoundationSlab: in.foundations.push_back(ring); break;
+            case ElemKind::Lean: in.leans.push_back(ring); break;
+            case ElemKind::StripFooting: in.strips.push_back(ring); break;
             default: break;
         }
         return;
@@ -174,13 +176,76 @@ std::map<std::string, ElemKind> autoLayerMap(const Document& doc) {
     return m;
 }
 
+namespace {
+// "h=200", "δ=200", "t=0,2" — plita qalinligi (m); "+3.000", "отм. +3,000", "▽+3.000", "±0.000" — belgi
+bool parseThickness(const std::string& raw, double& v) {
+    std::string s = raw;
+    for (auto& c : s) if (c == ',') c = '.';
+    for (const char* mk : {"h=", "H=", "\xCE\xB4=", "\xCE\xB4 =", "t=", "\xD0\xBD=", "\xD0\x9D="}) {
+        const auto p = s.find(mk);
+        if (p == std::string::npos) continue;
+        try {
+            std::size_t used = 0;
+            double x = std::stod(s.substr(p + std::strlen(mk)), &used);
+            if (used == 0) continue;
+            if (x >= 30 && x <= 3000) x /= 1000;
+            if (x > 0.03 && x < 3) { v = x; return true; }
+        } catch (...) {
+        }
+    }
+    return false;
+}
+bool parseLevel(const std::string& raw, double& v) {
+    std::string s = raw;
+    for (auto& c : s) if (c == ',') c = '.';
+    if (s.find("\xC2\xB1" "0.000") != std::string::npos) { v = 0; return true; }
+    for (std::size_t p = 0; p < s.size(); ++p) {
+        if (s[p] != '+' && s[p] != '-') continue;
+        std::size_t q = p + 1;
+        while (q < s.size() && std::isdigit(static_cast<unsigned char>(s[q]))) ++q;
+        if (q == p + 1 || q >= s.size() || s[q] != '.') continue;
+        std::size_t r = q + 1;
+        while (r < s.size() && std::isdigit(static_cast<unsigned char>(s[r]))) ++r;
+        if (r - q - 1 != 3) continue;  // belgilar uch kasr bilan yoziladi
+        v = std::stod(s.substr(p, r - p));
+        return true;
+    }
+    return false;
+}
+} // namespace
+
 PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& layerMap) {
     PlanInput in;
+    std::vector<std::pair<Vec3, double>> thick;
+    std::map<double, int> levels;
+    std::function<void(const IEntity&)> texts = [&](const IEntity& e) {
+        if (auto* ins = dynamic_cast<const InsertEntity*>(&e)) {
+            for (const auto& part : ins->explode()) texts(*part);
+            for (const auto& a : ins->attributes()) texts(a.text);
+            return;
+        }
+        auto* t = dynamic_cast<const TextEntity*>(&e);
+        if (!t) return;
+        double v;
+        if (parseThickness(t->text(), v)) thick.push_back({t->insertion(), v});
+        else if (parseLevel(t->text(), v)) levels[std::round(v * 1000) / 1000] += 1;
+    };
     doc.forEach([&](const IEntity& e) {
         auto it = layerMap.find(e.layer());
         const ElemKind k = it != layerMap.end() ? it->second : guessKind(e.layer());
         collect(e, k, in);
+        texts(e);
     });
+    // qalinlik: plita ichidagi (yoki yagona) yozuv
+    for (const auto& [pt, v] : thick) {
+        bool inSlab = in.slabs.empty();
+        for (const auto& sl : in.slabs) inSlab = inSlab || inside(sl, pt);
+        if (inSlab) { in.slabT = v; break; }
+    }
+    // belgi: eng ko'p uchragan (teng bo'lsa — eng balandi)
+    int best = 0;
+    for (const auto& [lv, n] : levels)
+        if (n >= best) { best = n; in.levelTop = lv; }
     return in;
 }
 
@@ -205,66 +270,115 @@ double Prism::formwork() const {
     }
 }
 
-BuildingModel buildModel(const PlanInput& plan, const BuildingParams& p) {
+BuildingModel buildModel(const PlanInput& plan, const BuildingParams& p) { return buildModel(plan, p, FloorPlans{}); }
+
+BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, const FloorPlans& fp) {
     BuildingModel m;
     auto issue = [&](bool err, const char* key, std::vector<std::string> a = {}) { m.issues.push_back({err, key, std::move(a)}); };
     if (p.floors < 1 || p.floorHeight <= p.slabT + 0.5) issue(true, "bim.chk.params");
+    auto planFor = [&](int k) -> const PlanInput& {
+        auto it = fp.floors.find(k);
+        return it != fp.floors.end() ? it->second : typical;
+    };
+    auto wallsOf = [&](const PlanInput& pl) {
+        std::vector<std::vector<Vec3>> w = pl.walls;
+        for (const auto& [a, b] : pl.wallLines)
+            if (auto r = wallRect(a, b, p.wallT); !r.empty()) w.push_back(r);
+        return w;
+    };
+    auto outlinesOf = [&](const PlanInput& pl, bool report) {
+        std::vector<std::vector<Vec3>> o = pl.outlines;
+        if (o.empty()) o = pl.slabs;
+        if (o.empty()) {
+            std::vector<std::vector<Vec3>> v = pl.columns;
+            for (const auto& w : wallsOf(pl)) v.push_back(w);
+            if (auto b = bboxRing(v); !b.empty()) o.push_back(b);
+            if (report) issue(false, "bim.chk.no_outline");
+        }
+        return o;
+    };
+    const PlanInput& base = planFor(1);
+    const auto walls = wallsOf(base);
+    if (base.columns.empty() && walls.empty()) issue(true, "bim.chk.no_vertical");
+    const auto outlines = outlinesOf(base, true);
 
-    std::vector<std::vector<Vec3>> walls = plan.walls;
-    for (const auto& [a, b] : plan.wallLines)
-        if (auto r = wallRect(a, b, p.wallT); !r.empty()) walls.push_back(r);
-    std::vector<std::vector<Vec3>> verticals = plan.columns;
-    verticals.insert(verticals.end(), walls.begin(), walls.end());
-    if (plan.columns.empty() && walls.empty()) issue(true, "bim.chk.no_vertical");
-
-    // bino konturi: KONTUR qatlami -> plita -> ustun/devorlar qutisi
-    std::vector<std::vector<Vec3>> outlines = plan.outlines;
-    if (outlines.empty()) outlines = plan.slabs;
-    if (outlines.empty()) {
-        if (auto b = bboxRing(verticals); !b.empty()) outlines.push_back(b);
-        issue(false, "bim.chk.no_outline");
-    }
-    std::vector<std::vector<Vec3>> slabs = plan.slabs.empty() ? outlines : plan.slabs;
-
-    const double fBot = p.foundTop - p.foundT;
     // ---- fundament va padbetonka
-    if (!p.stripFoundation) {
+    const PlanInput* fplan = fp.foundation ? &*fp.foundation : nullptr;
+    const double foundT = fplan && fplan->slabT > 0 ? fplan->slabT : p.foundT;
+    const double ftop = fplan && fplan->levelTop ? *fplan->levelTop : p.foundTop;  // fundament plani belgisi
+    const double fBot = ftop - foundT;
+    auto lean = [&](const std::vector<Vec3>& f) {
+        m.prisms.push_back({ElemKind::Lean, 0, offsetRing(f, p.leanOverhang), {}, fBot - p.leanT, fBot, p.classLean});
+    };
+    const PlanInput& fsrc = fplan ? *fplan : base;
+    if (!fsrc.foundations.empty() || !fsrc.strips.empty()) {
+        // aniq konturlar (fundament plani)
+        for (const auto& f : fsrc.foundations) m.prisms.push_back({ElemKind::FoundationSlab, 0, f, {}, fBot, ftop, p.classFound});
+        for (const auto& f : fsrc.strips) m.prisms.push_back({ElemKind::StripFooting, 0, f, {}, fBot, ftop, p.classFound});
+        if (!fsrc.leans.empty())
+            for (const auto& l : fsrc.leans) m.prisms.push_back({ElemKind::Lean, 0, l, {}, fBot - p.leanT, fBot, p.classLean});
+        else {
+            for (const auto& f : fsrc.foundations) lean(f);
+            for (const auto& f : fsrc.strips) lean(f);
+        }
+    } else if (!p.stripFoundation) {
         for (const auto& o : outlines) {
             const auto f = offsetRing(o, p.foundOverhang);
-            m.prisms.push_back({ElemKind::FoundationSlab, 0, f, {}, fBot, p.foundTop, p.classFound});
-            m.prisms.push_back({ElemKind::Lean, 0, offsetRing(f, p.leanOverhang), {}, fBot - p.leanT, fBot, p.classLean});
+            m.prisms.push_back({ElemKind::FoundationSlab, 0, f, {}, fBot, ftop, p.classFound});
+            lean(f);
         }
     } else {
         // lenta: devorlar ostida kengligi stripWidth; ustunlar ostida kvadrat yostiq (2×stripWidth)
         for (const auto& w : walls) {
             const auto f = offsetRing(w, std::max(0.0, (p.stripWidth - p.wallT) / 2));
-            m.prisms.push_back({ElemKind::StripFooting, 0, f, {}, fBot, p.foundTop, p.classFound});
-            m.prisms.push_back({ElemKind::Lean, 0, offsetRing(f, p.leanOverhang), {}, fBot - p.leanT, fBot, p.classLean});
+            m.prisms.push_back({ElemKind::StripFooting, 0, f, {}, fBot, ftop, p.classFound});
+            lean(f);
         }
-        for (const auto& c : plan.columns) {
+        for (const auto& c : base.columns) {
             const Vec3 cc = centroid(c);
             const double h = p.stripWidth;
             std::vector<Vec3> pad{{cc.x - h, cc.y - h, 0}, {cc.x + h, cc.y - h, 0}, {cc.x + h, cc.y + h, 0}, {cc.x - h, cc.y + h, 0}};
-            m.prisms.push_back({ElemKind::StripFooting, 0, pad, {}, fBot, p.foundTop, p.classFound});
-            m.prisms.push_back({ElemKind::Lean, 0, offsetRing(pad, p.leanOverhang), {}, fBot - p.leanT, fBot, p.classLean});
+            m.prisms.push_back({ElemKind::StripFooting, 0, pad, {}, fBot, ftop, p.classFound});
+            lean(pad);
         }
     }
-    // ---- qavatlar
+    // ---- qavatlar (har qavat o'z plani; belgilar qolip chizmasidan yoki qavat balandligidan)
+    double prevTop = 0;
+    std::vector<std::vector<Vec3>> prevVerticals;
     for (int k = 1; k <= p.floors; ++k) {
+        const PlanInput& pl = planFor(k);
+        const bool own = fp.floors.count(k) != 0;
         const bool roof = k == p.floors;
-        const double t = roof ? p.roofT : p.slabT;
-        const double top = k * p.floorHeight;
-        const double z0 = k == 1 ? p.foundTop : (k - 1) * p.floorHeight;
-        for (const auto& c : plan.columns) m.prisms.push_back({ElemKind::Column, k, c, {}, z0, top - t, p.classFrame});
-        for (const auto& w : walls) m.prisms.push_back({ElemKind::Wall, k, w, {}, z0, top - t, p.classFrame});
+        const double t = pl.slabT > 0 ? pl.slabT : (roof ? p.roofT : p.slabT);
+        const double top = pl.levelTop && own ? *pl.levelTop : prevTop + p.floorHeight;
+        const double z0 = k == 1 ? ftop : prevTop;
+        if (top - t <= z0 + 0.5) issue(true, "bim.chk.level", {std::to_string(k), std::format("{:.3f}", top)});
+        const auto w = wallsOf(pl);
+        if (own && pl.columns.empty() && w.empty()) issue(false, "bim.chk.no_vertical_floor", {std::to_string(k)});
+        for (const auto& c : pl.columns) m.prisms.push_back({ElemKind::Column, k, c, {}, z0, top - t, p.classFrame});
+        for (const auto& wl : w) m.prisms.push_back({ElemKind::Wall, k, wl, {}, z0, top - t, p.classFrame});
+        auto slabs = pl.slabs.empty() ? outlinesOf(pl, false) : pl.slabs;
         for (const auto& s : slabs) {
             Prism pr{roof ? ElemKind::Roof : ElemKind::Slab, k, s, {}, top - t, top, p.classSlab};
-            for (const auto& o : plan.openings)
+            for (const auto& o : pl.openings)
                 if (inside(s, centroid(o))) pr.holes.push_back(o);
             m.prisms.push_back(pr);
         }
+        // tayanch: yuqori qavat ustuni pastdagi ustun/devorga tushishi kerak
+        if (k >= 2 && !fp.floors.empty())
+            for (std::size_t i = 0; i < pl.columns.size(); ++i) {
+                const Vec3 c = centroid(pl.columns[i]);
+                bool ok = false;
+                for (const auto& v : prevVerticals) ok = ok || inside(v, c);
+                if (!ok) issue(true, "bim.chk.unsupported", {std::to_string(k), std::format("{:.2f}; {:.2f}", c.x, c.y)});
+            }
+        prevVerticals = pl.columns;
+        prevVerticals.insert(prevVerticals.end(), w.begin(), w.end());
+        prevTop = top;
     }
-    m.heightTop = p.floors * p.floorHeight;
+    m.heightTop = prevTop;
+    const PlanInput& plan = base;
+    const auto slabs = base.slabs.empty() ? outlines : base.slabs;
 
     // ---- tekshiruvlar
     for (std::size_t i = 0; i < plan.columns.size(); ++i) {

@@ -4,6 +4,7 @@
 //  o'rta — 3D (tur filtri, vertikal masshtab, yer sathi proyeksiyasi, quduqlar, xato kesishmalar qizil)
 //  o'ng — Tarmoqlar (tur, Ø tahrirlanadi), Nuqtalar (Z tahrirlanadi), Kesishmalar, Tekshiruv (bosilsa — chiziq tanlanadi)
 //  past — Excelga/Exceldan (bog'langan), "3D ni chizmaga" (UTIL fayl.json)
+#include "drawing_set_widget.h"
 #include "excel_link.h"
 #include "pipe3d_view.h"
 #include "template_sidebar.h"
@@ -33,6 +34,7 @@ public:
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
     Pipe3DView* view() const { return view_; }
+    DrawingSetWidget* drawings() const { return set_; }
     QTableWidget* linesTable() const { return lines_; }
     void selectLine(int index);
     void setZ(int line, int vertex, double z);      // qo'lda tuzatish (sinov uchun ham)
@@ -60,6 +62,8 @@ private:
     int selected_ = -1;
 
     TemplateSidebar* side_ = nullptr;
+    DrawingSetWidget* set_ = nullptr;
+    QCheckBox* useDoc_ = nullptr;
     QTableWidget* layers_ = nullptr;
     QDoubleSpinBox *ground_ = nullptr, *radius_ = nullptr, *gap_ = nullptr, *clPipe_ = nullptr, *clCable_ = nullptr, *vexag_ = nullptr;
     QCheckBox* show_[9] = {};

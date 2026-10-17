@@ -59,6 +59,7 @@ int main(int argc, char** argv) {
     bool rebar = false;
     bool util = false;
     bool road = false;
+    QStringList sheetArgs, kjArgs;
     QString rebarKind;
     bool ortho = false, polar = false;
     QStringList points;
@@ -84,7 +85,9 @@ int main(int argc, char** argv) {
         else if (a == "--view") viewArg = next();  // cx,cy,piksel/birlik
         else if (a == "--rebar") rebar = true;
         else if (a == "--util") util = true;  // Yer osti tarmoqlari 3D
-        else if (a == "--road") road = true;  // Yo'l 3D (--sewer-tab 1 — profil)  // Armatura 3D menyusi (bino --building N dan)
+        else if (a == "--road") road = true;
+        else if (a == "--sheet") sheetArgs << next();  // ROL,yo'l[,dan,gacha] — yer osti (--util) yoki bino chizmalari
+        else if (a == "--kj") kjArgs << next();        // ROL,yo'l,dan,gacha — armatura KJ chizmalari  // Yo'l 3D (--sewer-tab 1 — profil)  // Armatura 3D menyusi (bino --building N dan)
         else if (a == "--rebar-kind") rebarKind = next();  // FOUND/STRIP/COLUMN/WALL/SLAB/ROOF
         else if (a == "--building") building = next().toInt();  // Monolit bino menyusi (qavatlar)
         else if (a == "--sewer") sewer = true;                 // Kanalizatsiya menyusi (skrinshot uni oladi)
@@ -128,16 +131,25 @@ int main(int argc, char** argv) {
             if (const auto gi = grip.split(','); gi.size() == 2) w.viewport()->beginGrip(gi[0].toULongLong(), gi[1].toInt());
             if (!tool.isEmpty()) w.activateTool(tool);
             if (building > 0) w.openBuilding()->setFloors(building);
+            auto addSheets = [](asiacad::gui::DrawingSetWidget* ds, const QStringList& list) {
+                for (const auto& sa : list) {
+                    const auto f = sa.split(',');
+                    if (f.size() >= 2) ds->addFile(f[1], f[0], f.size() > 2 ? f[2].toInt() : 1, f.size() > 3 ? f[3].toInt() : 1);
+                }
+            };
+            if (!sheetArgs.isEmpty() && !util && building > 0) addSheets(w.openBuilding()->drawings(), sheetArgs);
             if (road) {
                 auto* rd = w.openRoad();
                 if (!sewerTab.isEmpty()) rd->showTab(sewerTab.toInt());
             }
             if (util) {
                 auto* ud = w.openUtility();
+                if (!sheetArgs.isEmpty()) addSheets(ud->drawings(), sheetArgs);
                 if (!select.isEmpty()) ud->selectLine(select.toInt());
             }
             if (rebar) {
                 auto* rd = w.openRebar();
+                if (!kjArgs.isEmpty()) addSheets(rd->drawings(), kjArgs);
                 asiacad::bim::ElemKind k;
                 if (!rebarKind.isEmpty() && asiacad::bim::kindFromKey(rebarKind.toStdString(), k)) rd->selectKind(k);
             }

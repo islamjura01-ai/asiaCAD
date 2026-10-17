@@ -109,9 +109,10 @@ QString RebarDialog::templatesPath() const {
     return dir + "/rebar_templates.json";
 }
 
-void RebarDialog::setBuilding(const bim::BuildingParams& p, const std::map<std::string, ElemKind>& layers) {
+void RebarDialog::setBuilding(const bim::BuildingParams& p, const std::map<std::string, ElemKind>& layers, const bim::FloorPlans& fp) {
     bp_ = p;
     layers_ = layers;
+    fp_ = fp;
     upTo_->setRange(0, p.floors);
     upTo_->setValue(p.floors);
     recompute();
@@ -136,6 +137,25 @@ void RebarDialog::buildUi() {
     left->setObjectName("sewerLeftBody");
     scroll->setWidget(left);
     auto* lv = new QVBoxLayout(left);
+    {
+        auto* st = new QLabel(t("gui.rb.source"), left);
+        st->setObjectName("title");
+        lv->addWidget(st);
+        source_ = new QComboBox(left);
+        source_->addItem(t("gui.rb.src_tpl"));
+        source_->addItem(t("gui.rb.src_kj"));
+        lv->addWidget(source_);
+        set_ = new DrawingSetWidget(loc_, t("gui.ds.title_kj"),
+                                    {{"SLAB", t("bim.kind.SLAB")}, {"ROOF", t("bim.kind.ROOF")}, {"FOUND", t("bim.kind.FOUND")},
+                                     {"WALL", t("bim.kind.WALL")}, {"COLUMN", t("bim.kind.COLUMN")}},
+                                    true, left);
+        lv->addWidget(set_);
+        connect(source_, &QComboBox::currentIndexChanged, this, [this] { recompute(); });
+        connect(set_, &DrawingSetWidget::changed, this, [this] {
+            if (set_->count() > 0 && source_->currentIndex() == 0) source_->setCurrentIndex(1);  // recompute signal orqali
+            else recompute();
+        });
+    }
     auto* lt = new QLabel(t("gui.rb.kind"), left);
     lt->setObjectName("title");
     lv->addWidget(lt);
@@ -422,9 +442,37 @@ void RebarDialog::saveTemplate() {
     fillSidebar();
 }
 
+void RebarDialog::setSourceKj(bool kj) { source_->setCurrentIndex(kj ? 1 : 0); }
+
 void RebarDialog::recompute() {
-    bm_ = bim::buildModel(bim::readPlan(doc_, layers_), bp_);
-    rm_ = bim::buildRebar(bm_, bp_, rs_);
+    bm_ = bim::buildModel(bim::readPlan(doc_, layers_), bp_, fp_);
+    imp_ = {};
+    if (source_ && source_->currentIndex() == 1) {
+        // KJ chizmalardan: chizilgan sterjenlar + spetsifikatsiya bilan taqqoslash
+        std::vector<bim::RebarSheetInput> in;
+        const auto sheets = set_->loaded();
+        for (const auto& sh : sheets) {
+            if (!sh.error.empty() || !sh.doc) continue;
+            ElemKind k = ElemKind::Slab;
+            if (sh.file.role == "ROOF") k = ElemKind::Roof;
+            else if (sh.file.role == "FOUND") k = ElemKind::FoundationSlab;
+            else if (sh.file.role == "WALL") k = ElemKind::Wall;
+            else if (sh.file.role == "COLUMN") k = ElemKind::Column;
+            in.push_back({sh.doc.get(), k, sh.file.floorFrom, sh.file.floorTo, civil::fileName(sh.file.path)});
+        }
+        imp_ = bim::importRebar(in, bm_, rs_.byKind.count(ElemKind::Slab) ? rs_.byKind.at(ElemKind::Slab).cover : 0.025);
+        rm_ = {};
+        rm_.bars = imp_.bars;
+        rm_.schedule = imp_.schedule;
+        int pos = 0;
+        for (auto& r : rm_.schedule)
+            if (r.pos == 0) r.pos = ++pos;
+        rm_.massByDia = imp_.massByDia;
+        rm_.totalMass = imp_.totalMass;
+        rm_.issues = imp_.issues;
+    } else {
+        rm_ = bim::buildRebar(bm_, bp_, rs_);
+    }
     auto levelName = [&](int lv) { return lv == 0 ? t("bim.level.found") : t("bim.level.n", {QString::number(lv)}); };
     sched_->setRowCount(0);
     auto row = [&](const QStringList& cells, bool bold) {
@@ -468,6 +516,19 @@ void RebarDialog::recompute() {
     totals_->addItem(t("rebar.tbl.wire") + ": " + f1(rm_.wireKg) + " kg");
     totals_->addItem(t("rebar.role.CHAIR") + ": " + QString::number(rm_.chairs));
     totals_->addItem(t("rebar.role.TIE") + ": " + QString::number(rm_.ties));
+    if (source_ && source_->currentIndex() == 1) {
+        totals_->addItem(t("gui.rb.kj_marks", {QString::number(imp_.marks), QString::number(imp_.unlabeled)}));
+        totals_->addItem(t("gui.rb.kj_spec", {f1(imp_.specMass), f1(imp_.totalMass)}));
+        for (const auto& r : imp_.spec)
+            totals_->addItem(QStringLiteral("  %1 %2: Ø%3 %4 L=%5 × %6 = %7 kg")
+                                 .arg(t("gui.rb.col.pos"))
+                                 .arg(r.pos)
+                                 .arg(std::lround(r.d * 1000))
+                                 .arg(QString::fromStdString(r.cls))
+                                 .arg(r.length, 0, 'f', 2)
+                                 .arg(r.count)
+                                 .arg(f1(r.mass)));
+    }
 
     checks_->clear();
     for (const auto& is : rm_.issues) {

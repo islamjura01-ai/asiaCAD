@@ -4,6 +4,7 @@
 // "PTO jadvalini chizmaga" — parametrlar JSON'ga yoziladi va BUILDING buyrug'i Interpreter orqali bajariladi.
 #include "pipe3d_view.h"
 #include "template_sidebar.h"
+#include "drawing_set_widget.h"
 #include "excel_link.h"
 
 #include <asiacad/bim/building.h>
@@ -35,6 +36,9 @@ public:
     Pipe3DView* view() const { return view_; }
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
+    DrawingSetWidget* drawings() const { return set_; }
+    const bim::FloorPlans& floorPlans() const { return fp_; }
+    bim::PlanInput typicalPlan() const;
     void setParams(const bim::BuildingParams& p, const std::map<std::string, bim::ElemKind>& layers);
     void applyTypology(const QString& id);  // btpl.* — bino tiplari
 
@@ -56,6 +60,8 @@ private:
 
     TemplateSidebar* side_ = nullptr;
     ExcelLink* excel_ = nullptr;
+    DrawingSetWidget* set_ = nullptr;
+    bim::FloorPlans fp_;
     QTableWidget* layers_ = nullptr;
     QSpinBox* floors_ = nullptr;
     QDoubleSpinBox *height_ = nullptr, *slab_ = nullptr, *roof_ = nullptr, *ftop_ = nullptr, *ft_ = nullptr, *fover_ = nullptr,

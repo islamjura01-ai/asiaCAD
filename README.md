@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.13: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.14: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -203,6 +203,22 @@ armatura — element turlari bo'yicha. Foydalanuvchi shablonlari AppData'da saql
 - Toifa shablonlari I-a…V, yo'l to'shamasi shablonlari; to'kma/kesma hajmlari, qoplama qatlamlari, asfalt m².
 - Tekshiruv (SNiP 2.05.02-85 asosida, tasdiqlanmagan): bo'ylama nishablik, egri radiusi, egrisiz burilish, baland to'kma.
 - `ROAD` — tahlil, `ROAD + x,y` — 3D va profil. Namuna: `examples/yol.acs`.
+
+## Alohida chizmalarni import qilish (v0.14) — `civil/drawset`, `bim/rebar_import`
+
+Har bir menyuda **"Chizmalar"** paneli: bir nechta DXF/.acad fayl, har biriga vazifa, qavat oralig'i va birlik
+(mm/sm/m — avto: $INSUNITS yoki chizma o'lchami bo'yicha).
+
+- **Yer osti tarmoqlari:** suv, kanalizatsiya, yomg'ir, gaz... — har biri o'z faylida, qatlam nomlari ixtiyoriy
+  (vazifa fayl bo'yicha beriladi), rel'ef alohida faylda. Kesishmalar va to'qnashuvlar **fayllar orasida** tekshiriladi;
+  yozuvlar faqat o'z fayli chiziqlariga biriktiriladi. Namuna: `examples/tarmoqlar/`.
+- **Monolit bino:** fundament plani + har qavat (yoki qavatlar oralig'i) uchun qolip chizmasi. Plita qalinligi
+  "h=200"/"δ=200" yozuvidan, plita usti belgisi "+3.300" dan; fundament aniq konturi va belgisi o'z planidan.
+  Tekshiruv: yuqori qavat ustuni ostida tayanch yo'q, qavat belgilari. Namuna: `examples/bino_qolip/`.
+- **Armatura (KJ):** "Armatura manbai — KJ chizmalaridan". Markirovka ("Поз.1 Ø12 A500C шаг 200", "4Ø16 А-III L=3450",
+  "верх/низ"), armatura qatlamidagi sterjen, taqsimlash chizig'i (soni = uzunlik / qadam + 1), spetsifikatsiya jadvali
+  ("Поз." | "Наименование" | "Кол." | "Масса"). 3D sterjenlar shu qavat plitasida (pastki/yuqori, himoya qatlami bilan).
+  Taqqoslash: chizmadagi soni ↔ spetsifikatsiya, Ø mosligi, umumiy massa. Namuna: `examples/bino_qolip/kj_plita_1_2.dxf`.
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

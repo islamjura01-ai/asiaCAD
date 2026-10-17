@@ -87,6 +87,8 @@ void BuildingDialog::buildUi() {
     left->setObjectName("sewerLeftBody");
     scroll->setWidget(left);
     auto* lv = new QVBoxLayout(left);
+    set_ = new DrawingSetWidget(loc_, t("gui.ds.title_bim"), {{"PLAN", t("gui.ds.role.plan")}, {"FOUND", t("gui.ds.role.found")}}, true, left);
+    lv->addWidget(set_);
     auto* lt = new QLabel(t("gui.bim.layers"), left);
     lt->setObjectName("title");
     lv->addWidget(lt);
@@ -218,6 +220,13 @@ void BuildingDialog::buildUi() {
     root->addLayout(bottom);
 
     connect(reread, &QPushButton::clicked, this, &BuildingDialog::reread);
+    connect(set_, &DrawingSetWidget::changed, this, [this] {
+        int maxFloor = 0;
+        for (const auto& f : set_->sheets())
+            if (f.enabled && f.role == "PLAN") maxFloor = std::max(maxFloor, f.floorTo);
+        if (maxFloor > floors_->value()) floors_->setValue(maxFloor);  // recompute signal orqali
+        else recompute();
+    });
     connect(toRebar, &QPushButton::clicked, this, &BuildingDialog::rebarRequested);
     connect(close, &QPushButton::clicked, this, &QDialog::close);
     connect(toDwg, &QPushButton::clicked, this, [this] {
@@ -359,9 +368,12 @@ bim::BuildingParams BuildingDialog::params() const {
     return p;
 }
 
+bim::PlanInput BuildingDialog::typicalPlan() const { return bim::readPlan(doc_, layerMap()); }
+
 void BuildingDialog::recompute() {
     const auto p = params();
-    model_ = bim::buildModel(bim::readPlan(doc_, layerMap()), p);
+    fp_ = civil::floorPlansFrom(set_->loaded());
+    model_ = bim::buildModel(typicalPlan(), p, fp_);
     // PTO
     pto_->setRowCount(0);
     auto row = [&](const QStringList& cells, bool bold) {

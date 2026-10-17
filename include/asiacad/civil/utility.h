@@ -87,6 +87,17 @@ struct UtilModel {
 
 std::map<std::string, UtilKind> autoUtilLayers(const Document& doc);
 UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKind>& layers, const UtilParams& p);
+
+// Bir nechta chizma (masalan suv, kanalizatsiya, yomg'ir — alohida fayllar) bitta modelga: kesishmalar fayllar orasida
+// ham tekshiriladi. force != Ignore — fayldagi barcha chiziqlar shu tur (yer sathi qatlamlaridan tashqari).
+// Yozuvlar faqat o'z fayli chiziqlariga biriktiriladi; yer nuqtalari umumiy. tag — chiziq qatlami oldiga ("fayl · qatlam").
+struct UtilSource {
+    const Document* doc = nullptr;
+    std::map<std::string, UtilKind> layers;
+    UtilKind force = UtilKind::Ignore;
+    std::string tag;
+};
+UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams& p);
 // Qo'lda tuzatishdan keyin: kesishmalar, uzunliklar va tekshiruv qayta hisoblanadi (belgilar o'zgarmaydi)
 void checkUtilities(UtilModel& m, const UtilParams& p);
 

@@ -1,7 +1,9 @@
 // AsiaCAD core testlari (tashqi kutubxonasiz)
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
+#include <asiacad/bim/rebar_import.h>
 #include <asiacad/civil/excel.h>
+#include <asiacad/civil/drawset.h>
 #include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
@@ -1955,6 +1957,132 @@ TEST(util_example_drawing_to_3d) {
     CHECK(m2.lines.size() == m.lines.size() && m2.issues.size() == m.issues.size());
     NEAR(m2.lines[0].v[0].z, m.lines[0].v[0].z);
     CHECK(!civil::drawUtilities3D(m, 0.5).empty());
+}
+
+TEST(util_separate_files_clash) {
+    // suv, kanalizatsiya, yomg'ir — alohida DXF (mm da, qatlam nomlari umumiy "TRUBA"), rel'ef — alohida fayl
+    const std::string dir = std::string(ASIACAD_EXAMPLES_DIR) + "/tarmoqlar/";
+    std::vector<civil::SheetFile> files{{dir + "topo.dxf", "AUTO"}, {dir + "suv.dxf", "WATER"}, {dir + "kanal.dxf", "SEWER"}, {dir + "yomgir.dxf", "STORM"}};
+    const auto sheets = civil::loadSheets(files);
+    CHECK(sheets.size() == 4);
+    for (const auto& sh : sheets) {
+        CHECK(sh.error.empty());
+        NEAR(sh.scaleUsed, 0.001);  // avto: mm
+    }
+    std::vector<civil::UtilSource> src;
+    for (const auto& sh : sheets) {
+        civil::UtilKind k = civil::UtilKind::Ignore;
+        civil::utilFromKey(sh.file.role, k);
+        src.push_back({sh.doc.get(), civil::autoUtilLayers(*sh.doc), k, civil::fileName(sh.file.path)});
+    }
+    const auto m = civil::readUtilities(src, civil::defaultUtilParams());
+    CHECK(m.lines.size() == 3);
+    CHECK(m.groundPoints == 45);
+    CHECK(m.nodes.size() == 2);
+    const civil::UtilLine *w = nullptr, *k = nullptr, *st = nullptr;
+    for (const auto& l : m.lines) {
+        if (l.kind == civil::UtilKind::Water) w = &l;
+        if (l.kind == civil::UtilKind::Sewer) k = &l;
+        if (l.kind == civil::UtilKind::Storm) st = &l;
+    }
+    CHECK(w && k && st);
+    if (w && k && st) {
+        CHECK(w->dn == 160 && k->dn == 200 && st->dn == 400);  // har yozuv o'z faylidagi chiziqqa
+        NEAR(k->v[0].z, 98.20 + 0.1);
+        CHECK(w->layer.starts_with("suv.dxf"));
+    }
+    bool clashStormWater = false, sewerWaterOk = true;
+    for (const auto& c : m.crossings) {
+        const auto ka = m.lines[static_cast<std::size_t>(c.a)].kind, kb = m.lines[static_cast<std::size_t>(c.b)].kind;
+        auto is = [&](civil::UtilKind x, civil::UtilKind y) { return (ka == x && kb == y) || (ka == y && kb == x); };
+        if (is(civil::UtilKind::Water, civil::UtilKind::Storm) && c.clear < c.required) clashStormWater = true;
+        if (is(civil::UtilKind::Water, civil::UtilKind::Sewer) && c.clear < c.required) sewerWaterOk = false;
+    }
+    CHECK(clashStormWater);
+    CHECK(sewerWaterOk);
+    CHECK(m.crossings.size() == 2);
+}
+
+TEST(building_per_floor_formwork_drawings) {
+    const std::string dir = std::string(ASIACAD_EXAMPLES_DIR) + "/bino_qolip/";
+    civil::SheetFile f0{dir + "fundament.dxf", "FOUND"}, f1{dir + "qavat_1_2.dxf", "PLAN", 1, 2}, f3{dir + "qavat_3_5.dxf", "PLAN", 3, 5};
+    const auto sheets = civil::loadSheets({f0, f1, f3});
+    for (const auto& sh : sheets) CHECK(sh.error.empty());
+    const auto fp = civil::floorPlansFrom(sheets);
+    CHECK(fp.foundation.has_value() && fp.floors.size() == 5);
+    NEAR(fp.floors.at(1).slabT, 0.2);
+    NEAR(fp.floors.at(3).slabT, 0.18);
+    CHECK(fp.floors.at(1).levelTop && std::abs(*fp.floors.at(1).levelTop - 3.3) < 1e-9);
+    CHECK(!fp.floors.at(2).levelTop);
+    bim::BuildingParams p;
+    p.floors = 5;
+    p.floorHeight = 3.3;
+    const auto m = bim::buildModel(fp.floors.at(1), p, fp);
+    auto vol = [&](bim::ElemKind k, int lv) {
+        for (const auto& r : m.pto) if (r.kind == k && r.level == lv) return r.volume;
+        return -1.0;
+    };
+    NEAR(vol(bim::ElemKind::FoundationSlab, 0), 20 * 14 * 0.8);   // aniq kontur, h=800
+    NEAR(vol(bim::ElemKind::Column, 1), 12 * 0.16 * (3.3 - 0.2 + 0.3));  // -0.300 dan +3.100 gacha
+    NEAR(vol(bim::ElemKind::Column, 3), 12 * 0.25 * (9.9 - 0.18 - 6.6));
+    NEAR(m.heightTop, 9.9 + 2 * 3.3);
+    bool unsupported = false;
+    for (const auto& is : m.issues) unsupported |= is.key == "bim.chk.unsupported";
+    CHECK(unsupported);  // 3-qavatda ko'chirilgan ustun ostida tayanch yo'q
+}
+
+TEST(rebar_marks_parse) {
+    bim::BarMark m;
+    CHECK(bim::parseBarMark("Поз.1 Ø12 A500C шаг 200", m) && m.pos == 1 && std::abs(m.d - 0.012) < 1e-12 && m.cls == "A500C" &&
+          std::abs(m.spacing - 0.2) < 1e-12 && m.count == 0);
+    CHECK(bim::parseBarMark("4Ø16 А-III L=3450", m) && m.count == 4 && m.cls == "A400" && std::abs(m.length - 3.45) < 1e-9);
+    CHECK(bim::parseBarMark("%%c10 AI @150 верх", m) && m.cls == "A240" && std::abs(m.spacing - 0.15) < 1e-12 && m.face == 2);
+    CHECK(bim::parseBarMark("⌀14 A400 s=200 pastki", m) && m.face == 1);
+    CHECK(!bim::parseBarMark("Плита П-1 h=200", m));
+    CHECK(bim::normRebarClass("А500С") == "A500C");
+    CHECK(bim::isRebarLayer("ARM_NIZ") && bim::isRebarLayer("Арматура верх") && !bim::isRebarLayer("PLITA"));
+    CHECK(bim::faceFromLayer("ARM_VERX") == 2 && bim::faceFromLayer("ARM_NIZ") == 1);
+}
+
+TEST(rebar_import_from_kj_drawing) {
+    const std::string dir = std::string(ASIACAD_EXAMPLES_DIR) + "/bino_qolip/";
+    const auto sheets = civil::loadSheets({{dir + "fundament.dxf", "FOUND"}, {dir + "qavat_1_2.dxf", "PLAN", 1, 2}, {dir + "qavat_3_5.dxf", "PLAN", 3, 5}});
+    const auto fp = civil::floorPlansFrom(sheets);
+    bim::BuildingParams p;
+    p.floors = 5;
+    p.floorHeight = 3.3;
+    const auto bm = bim::buildModel(fp.floors.at(1), p, fp);
+    const auto kj = civil::loadSheet({dir + "kj_plita_1_2.dxf", "SLAB", 1, 2});
+    CHECK(kj.error.empty());
+    const auto spec = bim::readSpecification(*kj.doc);
+    CHECK(spec.size() == 3);
+    if (spec.size() == 3) {
+        CHECK(spec[0].pos == 1 && spec[0].count == 61 && std::abs(spec[0].length - 18) < 1e-9);
+        CHECK(spec[1].count == 95 && std::abs(spec[2].d - 0.016) < 1e-12);
+    }
+    const auto r = bim::importRebar({{kj.doc.get(), bim::ElemKind::Slab, 1, 2, "kj"}}, bm);
+    CHECK(r.marks == 3);
+    // 2 qavat × (61 + 91 + 13)
+    CHECK(r.bars.size() == 2 * (61 + 91 + 13));
+    int n1 = 0, n3 = 0;
+    for (const auto& b : r.schedule) {
+        if (b.pos == 1 && b.level == 1) n1 = b.count;
+        if (b.pos == 3 && b.level == 2) n3 = b.count;
+    }
+    CHECK(n1 == 61 && n3 == 13);
+    // z: 1-qavat plitasi +3.100..+3.300 — pastki to'r 25 mm himoya bilan, yuqori — ustidan
+    double zb = 0, zt = 0;
+    for (const auto& b : r.bars) {
+        if (b.level == 1 && b.role == bim::BarRole::BottomX) zb = b.pts[0].z;
+        if (b.level == 1 && b.role == bim::BarRole::TopX) zt = b.pts[0].z;
+    }
+    NEAR(zb, 3.1 + 0.025 + 0.006);
+    NEAR(zt, 3.3 - 0.025 - 0.008);
+    bool countErr = false;
+    for (const auto& i : r.issues) countErr |= i.key == "rbi.chk.count" && i.args[0] == "2";
+    CHECK(countErr);   // spetsifikatsiyada 95, chizmada 91
+    CHECK(r.specMass > 0 && r.totalMass > 0);
+    NEAR(r.specMass, 2 * (61 * 15.98 + 95 * 10.66 + 13 * 3.79));
 }
 
 // ---------- Yo'l ----------

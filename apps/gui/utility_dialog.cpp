@@ -104,6 +104,18 @@ void UtilityDialog::buildUi() {
     left->setObjectName("sewerLeftBody");
     scroll->setWidget(left);
     auto* lv = new QVBoxLayout(left);
+    {
+        std::vector<std::pair<QString, QString>> roles{{"AUTO", t("gui.ds.auto")}};
+        for (UtilKind k : civil::utilKinds()) roles.push_back({QString::fromLatin1(civil::utilKey(k)), t((std::string("util.kind.") + civil::utilKey(k)).c_str())});
+        roles.push_back({"GROUND", t("util.kind.GROUND")});
+        set_ = new DrawingSetWidget(loc_, t("gui.ds.title_util"), roles, false, left);
+        lv->addWidget(set_);
+        useDoc_ = new QCheckBox(t("gui.ds.usedoc"), left);
+        useDoc_->setChecked(true);
+        lv->addWidget(useDoc_);
+        connect(set_, &DrawingSetWidget::changed, this, [this] { reread(); });
+        connect(useDoc_, &QCheckBox::toggled, this, [this] { reread(); });
+    }
     auto* lt = new QLabel(t("gui.ut.layers"), left);
     lt->setObjectName("title");
     lv->addWidget(lt);
@@ -310,7 +322,18 @@ void UtilityDialog::readParams() {
 void UtilityDialog::reread() {
     if (layers_->rowCount() == 0) fillLayers();
     readParams();
-    m_ = civil::readUtilities(doc_, layerMap(), p_);
+    std::vector<civil::UtilSource> src;
+    if (useDoc_->isChecked()) src.push_back({&doc_, layerMap(), UtilKind::Ignore, ""});
+    const auto sheets = set_->loaded();
+    for (const auto& sh : sheets) {
+        if (!sh.error.empty() || !sh.doc) continue;
+        UtilKind k = UtilKind::Ignore;
+        civil::utilFromKey(sh.file.role, k);
+        src.push_back({sh.doc.get(), civil::autoUtilLayers(*sh.doc), k == UtilKind::Ground ? UtilKind::Ignore : k, civil::fileName(sh.file.path)});
+        if (k == UtilKind::Ground)  // butun fayl — yer sathi
+            for (const auto& [name, l] : sh.doc->layers()) src.back().layers[name] = UtilKind::Ground;
+    }
+    m_ = civil::readUtilities(src, p_);
     selected_ = -1;
     fillTables();
     render();

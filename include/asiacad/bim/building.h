@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -56,7 +57,18 @@ struct Prism {
 
 struct PlanInput {
     std::vector<std::vector<Vec3>> columns, walls, slabs, openings, outlines;
+    std::vector<std::vector<Vec3>> foundations, strips, leans;   // fundament plani (aniq konturlar)
     std::vector<std::pair<Vec3, Vec3>> wallLines;  // markaz chiziqlari (wallT bilan)
+    double slabT = 0;                       // qolip chizmasidagi "h=200" / "δ=200" (0 — parametrdan)
+    std::optional<double> levelTop;         // qolip chizmasidagi plita usti belgisi "+3.000"
+    bool empty() const { return columns.empty() && walls.empty() && wallLines.empty() && slabs.empty() && foundations.empty() && strips.empty(); }
+};
+
+// Qavatlar bo'yicha alohida planlar (qolip chizmalari): qavat -> plan; fundament plani alohida.
+// Berilmagan qavatlar uchun tipik plan ishlatiladi.
+struct FloorPlans {
+    std::map<int, PlanInput> floors;
+    std::optional<PlanInput> foundation;
 };
 
 // Hujjatdan: qatlam -> tur xaritasi bo'yicha (bo'sh bo'lsa guessKind). Bloklar ichidagi geometriya ham olinadi.
@@ -87,6 +99,7 @@ struct BuildingModel {
 };
 
 BuildingModel buildModel(const PlanInput& plan, const BuildingParams& p);
+BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, const FloorPlans& fp);
 
 // Parametrlar + qatlam xaritasi JSON'da (GUI -> BUILDING buyrug'i). Xato bo'lsa Error.
 std::string paramsToJson(const BuildingParams& p, const std::map<std::string, ElemKind>& layerMap);

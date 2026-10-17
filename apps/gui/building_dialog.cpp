@@ -21,6 +21,8 @@
 
 #include <fstream>
 
+#include <asiacad/civil/excel.h>
+
 namespace asiacad::gui {
 
 using bim::ElemKind;
@@ -197,6 +199,19 @@ void BuildingDialog::buildUi() {
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     close->setFixedWidth(44);
     bottom->addWidget(summary_, 1);
+    auto* xlStatus = new QLabel(this);
+    xlStatus->setObjectName("muted");
+    bottom->addWidget(xlStatus);
+    excel_ = new ExcelLink(
+        loc_, this, "bino_PTO", [this] { return excel::buildingWorkbook(params(), layerMap(), model_, [this](const std::string& k, const std::vector<std::string>& a) { return loc_.tr(k, a); }); },
+        [this](const xlsx::Workbook& wb) {
+            auto p = params();
+            auto lm = layerMap();
+            excel::buildingFromWorkbook(wb, p, lm, [this](const std::string& k, const std::vector<std::string>& a) { return loc_.tr(k, a); });
+            setParams(p, lm);
+        });
+    excel_->setStatusLabel(xlStatus);
+    excel_->addButtons(bottom);
     bottom->addWidget(toRebar);
     bottom->addWidget(toDwg);
     bottom->addWidget(close);
@@ -251,6 +266,37 @@ void BuildingDialog::reread() {
 }
 
 void BuildingDialog::setFloors(int n) { floors_->setValue(n); }
+
+void BuildingDialog::setParams(const bim::BuildingParams& p, const std::map<std::string, ElemKind>& layers) {
+    updating_ = true;
+    floors_->setValue(p.floors);
+    height_->setValue(p.floorHeight);
+    slab_->setValue(p.slabT);
+    roof_->setValue(p.roofT);
+    ftop_->setValue(p.foundTop);
+    ft_->setValue(p.foundT);
+    fover_->setValue(p.foundOverhang);
+    strip_->setChecked(p.stripFoundation);
+    stripW_->setValue(p.stripWidth);
+    lean_->setValue(p.leanT);
+    wallT_->setValue(p.wallT);
+    clsLean_->setCurrentText(QString::fromStdString(p.classLean));
+    clsFound_->setCurrentText(QString::fromStdString(p.classFound));
+    clsFrame_->setCurrentText(QString::fromStdString(p.classFrame));
+    clsSlab_->setCurrentText(QString::fromStdString(p.classSlab));
+    for (int r = 0; r < layers_->rowCount(); ++r) {
+        auto it = layers.find(layers_->item(r, 0)->text().toStdString());
+        if (it == layers.end()) continue;
+        if (auto* cb = qobject_cast<QComboBox*>(layers_->cellWidget(r, 1))) {
+            const int k = cb->findData(QString::fromLatin1(bim::kindKey(it->second == ElemKind::Roof ? ElemKind::Slab : it->second)));
+            if (k >= 0) cb->setCurrentIndex(k);
+        }
+    }
+    updating_ = false;
+    showUpTo_->setRange(0, p.floors);
+    showUpTo_->setValue(p.floors);
+    recompute();
+}
 
 void BuildingDialog::applyTypology(const QString& id) {
     struct T { const char* id; int floors; double h, slab, roof, ft, fover; bool strip; double stripW; const char *frame, *slabC, *found; };

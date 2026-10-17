@@ -4,6 +4,7 @@
 // "Chizmaga chizish" tarmoqni .kan.json ga yozib, SEWER buyrug'ini Interpreter orqali bajaradi (undo bitta qadam).
 #include "pipe3d_view.h"
 #include "template_sidebar.h"
+#include "excel_link.h"
 
 #include <asiacad/civil/sewer.h>
 #include <asiacad/i18n/localizer.h>
@@ -39,6 +40,7 @@ public:
     bool withProfile() const;
     QString templatesPath() const;
     TemplateSidebar* sidebar() const { return side_; }
+    ExcelLink* excel() const { return excel_; }
 
     // sinov va skrinshot uchun
     void selectTemplate(int index);
@@ -78,6 +80,7 @@ private:
 
     QComboBox* tpl_ = nullptr;
     TemplateSidebar* side_ = nullptr;
+    ExcelLink* excel_ = nullptr;
     QLineEdit* name_ = nullptr;
     QComboBox* system_ = nullptr;
     QCheckBox* street_ = nullptr;

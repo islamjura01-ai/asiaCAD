@@ -4,6 +4,7 @@
 // Bino modeli "Monolit bino" parametrlaridan (padbetonka -> tom) olinadi; "Ведомостni chizmaga" — REBAR buyrug'i.
 #include "pipe3d_view.h"
 #include "template_sidebar.h"
+#include "excel_link.h"
 
 #include <asiacad/bim/rebar.h>
 #include <asiacad/i18n/localizer.h>
@@ -31,6 +32,7 @@ public:
     const bim::RebarModel& model() const { return rm_; }
     const bim::RebarSettings& settings() const { return rs_; }
     TemplateSidebar* sidebar() const { return side_; }
+    ExcelLink* excel() const { return excel_; }
     Pipe3DView* view() const { return view_; }
     void selectKind(bim::ElemKind k);
     QString templatesPath() const;
@@ -60,6 +62,7 @@ private:
     bool updating_ = false;
 
     TemplateSidebar* side_ = nullptr;
+    ExcelLink* excel_ = nullptr;
     QComboBox* kind_ = nullptr;
     QFormLayout* form_ = nullptr;
     QLabel* legend_ = nullptr;

@@ -4,6 +4,12 @@
 #include "sewer_dialog.h"
 #include "building_dialog.h"
 #include "rebar_dialog.h"
+#include "excel_link.h"
+
+#include <QDir>
+#include <QElapsedTimer>
+#include <QThread>
+#include <asiacad/io/xlsx.h>
 
 #include <QPushButton>
 #include <QTableWidget>
@@ -44,6 +50,7 @@ static int failures = 0, checks = 0;
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    asiacad::gui::ExcelLink::openExternally = false;
     i18n::Localizer loc;
     CHECK(loc.loadDirectory(ASIACAD_I18N_DIR) == 6);
     loc.setLanguage("uz");
@@ -274,6 +281,26 @@ int main(int argc, char** argv) {
     v->setSelection(doc.ids());
     SewerDialog* sd = w.openSewer();
     CHECK(sd->sidebar()->count() >= 8);
+    {   // Excel: eksport -> tashqi tahrir (fayl saqlanadi) -> avtomatik qayta o'qish
+        const QString xp = QDir::temp().filePath("asiacad-gui-test.xlsx");
+        QFile::remove(xp);
+        const auto before = sd->network();
+        CHECK(sd->excel()->exportTo(xp, false));
+        CHECK(QFile::exists(xp));
+        QElapsedTimer tm;
+        tm.start();
+        while (tm.elapsed() < 1700) { QApplication::processEvents(); QThread::msleep(20); }  // o'z yozuvimiz o'tib ketsin
+        auto wb = asiacad::xlsx::load(xp.toStdString());
+        wb.sheets[0].rows[1][3] = asiacad::xlsx::Cell::n(before.manholes[0].rim + 1.5);
+        asiacad::xlsx::save(wb, xp.toStdString());
+        bool reloaded = false;
+        QObject::connect(sd->excel(), &asiacad::gui::ExcelLink::reloaded, [&] { reloaded = true; });
+        tm.restart();
+        while (!reloaded && tm.elapsed() < 5000) { QApplication::processEvents(); QThread::msleep(20); }
+        CHECK(reloaded);
+        CHECK(std::abs(sd->network().manholes[0].rim - (before.manholes[0].rim + 1.5)) < 1e-6);
+        sd->setNetwork(before);
+    }
     CHECK(sd != nullptr);
     sd->selectTemplate(1);  // ko'cha tarmog'i PVX SN8 Ø200
     auto clickBtn = [&](const char* key) {
@@ -356,6 +383,18 @@ int main(int argc, char** argv) {
         CHECK(doc.layer("ARM_VEDOMOST").has_value());
         w.runLine("UNDO");
         CHECK(doc.size() == nr);
+        {   // armatura: Excel'da ustun 12 sterjen -> import
+            const QString xp = QDir::temp().filePath("asiacad-gui-rebar.xlsx");
+            CHECK(rd->excel()->exportTo(xp, false));
+            auto wb = asiacad::xlsx::load(xp.toStdString());
+            for (auto& sh : wb.sheets)
+                for (auto& row : sh.rows)
+                    if (row.size() > 18 && row[0].kind == asiacad::xlsx::Cell::Text && row[0].text == "COLUMN") row[18] = asiacad::xlsx::Cell::n(12);
+            const QString xp2 = QDir::temp().filePath("asiacad-gui-rebar2.xlsx");
+            asiacad::xlsx::save(wb, xp2.toStdString());
+            CHECK(rd->excel()->importFrom(xp2));
+            CHECK(rd->settings().byKind.at(asiacad::bim::ElemKind::Column).nMain == 12);
+        }
         rd->close();
     }
     bd->close();

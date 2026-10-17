@@ -1,7 +1,9 @@
 // AsiaCAD core testlari (tashqi kutubxonasiz)
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
+#include <asiacad/civil/excel.h>
 #include <asiacad/civil/sewer.h>
+#include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/grips.h>
@@ -331,7 +333,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 48);
+    CHECK(loc.canonicalCommands().size() == 49);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -1883,6 +1885,99 @@ TEST(cli_rebar_command) {
     const auto u = runScript("uz", {"QATLAM USTUN", "JORIY USTUN", "POLICHIZIQ 0,0 0.4,0 0.4,0.4 0,0.4 YOPIQ", "ARMATURA 20,10"});
     CHECK(u.find("Armatura jami") != std::string::npos);
     CHECK(u.find("Armatura vedomosti chizildi") != std::string::npos);
+}
+
+// ---------- Excel (.xlsx) ----------
+TEST(xlsx_zip_inflate_roundtrip) {
+    using namespace asiacad::xlsx;
+    CHECK(colName(0) == "A" && colName(25) == "Z" && colName(26) == "AA" && colName(701) == "ZZ" && colName(702) == "AAA");
+    CHECK(ref(2, 1) == "B3");
+    CHECK(zip::crc32("123456789") == 0xCBF43926u);
+    // qo'lda yasalgan "fixed Huffman" deflate: "abc" (python zlib.compress(b'abc')[2:-4])
+    const std::string raw("\x4b\x4c\x4a\x06\x00", 5);
+    CHECK(zip::inflate(raw) == "abc");
+    Workbook wb;
+    auto& s = wb.add("Sinov 'A' x");
+    s.add({Cell::s("Nomi", 1), Cell::s("Qiymat", 1)});
+    s.add({Cell::s("a & <b> ʻ"), Cell::n(1.25)});
+    s.add({Cell::s("jami"), Cell::f("SUM(B2:B2)", 1.25)});
+    const auto back = fromBytes(toBytes(wb));
+    CHECK(back.sheets.size() == 1 && back.sheets[0].name == "Sinov 'A' x");
+    CHECK(back.sheets[0].str(1, 0) == "a & <b> ʻ");
+    CHECK(back.sheets[0].num(1, 1) && *back.sheets[0].num(1, 1) == 1.25);
+    CHECK(back.sheets[0].at(2, 1)->kind == Cell::Formula && back.sheets[0].at(2, 1)->text == "SUM(B2:B2)");
+    CHECK(back.sheets[0].column("Qiymat") == 1);
+    // matnli son ("1,5") ham son sifatida o'qiladi
+    Sheet t;
+    t.add({Cell::s("1,5")});
+    CHECK(t.num(0, 0) && std::abs(*t.num(0, 0) - 1.5) < 1e-12);
+}
+
+static excel::Tr testTr() {
+    auto loc = std::make_shared<i18n::Localizer>(loadedLocalizer());
+    loc->setLanguage("uz");
+    return [loc](const std::string& k, const std::vector<std::string>& a) { return loc->tr(k, a); };
+}
+
+TEST(excel_sewer_roundtrip) {
+    const auto tr = testTr();
+    auto n = demoNet();
+    n.segments[0].flowLs = 4;
+    const auto r = civil::compute(n);
+    auto wb = xlsx::fromBytes(xlsx::toBytes(excel::sewerWorkbook(n, r, tr)));
+    CHECK(wb.sheets.size() == 5);
+    CHECK(wb.sheets[0].name == tr("xl.sh.manholes", {}));
+    // Excel'da tahrirlash: 2-quduq yer belgisi, 2-bo'lak nishabligi, yangi quduq qo'shish
+    auto& m = wb.sheets[0];
+    m.rows[2][3] = xlsx::Cell::n(100.1);
+    m.rows.push_back({xlsx::Cell::s("K1-4"), xlsx::Cell::n(130), xlsx::Cell::n(0), xlsx::Cell::n(99.4)});
+    wb.sheets[1].rows[2][4] = xlsx::Cell::n(0.009);
+    civil::SewerNetwork n2 = n;
+    excel::sewerFromWorkbook(wb, n2, tr);
+    CHECK(n2.manholes.size() == 4 && n2.segments.size() == 3);
+    NEAR(n2.manholes[1].rim, 100.1);
+    NEAR(n2.segments[1].slope, 0.009);
+    CHECK(n2.segments[2].specId == n2.segments[1].specId);  // yangi bo'lak — oxirgi quvur
+    NEAR(n2.segments[0].flowLs, 4);
+    // uzunlik formulasi Quduqlar varag'iga ishora qiladi
+    CHECK(wb.sheets[1].at(1, 6)->kind == xlsx::Cell::Formula && wb.sheets[1].at(1, 6)->text.find("Quduqlar") != std::string::npos);
+}
+
+TEST(excel_rebar_roundtrip) {
+    const auto tr = testTr();
+    Document doc;
+    auto e = std::make_unique<PolylineEntity>(std::vector<Vec3>{{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.4, 0}, {0, 0.4, 0}}, true);
+    e->setLayer("USTUN");
+    doc.add(std::move(e));
+    bim::BuildingParams p;
+    p.floors = 3;
+    auto layers = bim::autoLayerMap(doc);
+    const auto bm = bim::buildModel(bim::readPlan(doc, layers), p);
+    auto rs = bim::defaultRebarSettings();
+    const auto rm = bim::buildRebar(bm, p, rs);
+    auto wb = xlsx::fromBytes(xlsx::toBytes(excel::rebarWorkbook(p, layers, bm, rs, rm, tr)));
+    const auto* v = wb.find(tr("xl.sh.sched", {}));
+    CHECK(v && v->rows.size() == rm.schedule.size() + 2);
+    // massa formulasi
+    CHECK(v && v->at(1, 10)->kind == xlsx::Cell::Formula);
+    // shablon: ustun 8 sterjen, qavatlar 7
+    auto* t = const_cast<xlsx::Sheet*>(wb.find(tr("xl.sh.rtpl", {})));
+    CHECK(t != nullptr);
+    if (t)
+        for (auto& row : t->rows)
+            if (!row.empty() && row[0].kind == xlsx::Cell::Text && row[0].text == "COLUMN") row[18] = xlsx::Cell::n(8);
+    auto* ps = const_cast<xlsx::Sheet*>(wb.find(tr("xl.sh.params", {})));
+    if (ps)
+        for (auto& row : ps->rows)
+            if (!row.empty() && row[0].text == "floors") row[1] = xlsx::Cell::n(7);
+    bim::BuildingParams p2 = p;
+    auto layers2 = layers;
+    auto rs2 = rs;
+    excel::rebarFromWorkbook(wb, p2, layers2, rs2, tr);
+    CHECK(rs2.byKind[bim::ElemKind::Column].nMain == 8);
+    CHECK(p2.floors == 7);
+    CHECK(layers2["USTUN"] == bim::ElemKind::Column);
+    NEAR(rs2.byKind[bim::ElemKind::Slab].s1, rs.byKind[bim::ElemKind::Slab].s1);
 }
 
 int main() {

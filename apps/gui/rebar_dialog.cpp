@@ -22,6 +22,8 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <asiacad/civil/excel.h>
+
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -269,6 +271,20 @@ void RebarDialog::buildUi() {
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     close->setFixedWidth(44);
     bottom->addWidget(summary_, 1);
+    auto* xlStatus = new QLabel(this);
+    xlStatus->setObjectName("muted");
+    bottom->addWidget(xlStatus);
+    excel_ = new ExcelLink(
+        loc_, this, "armatura_vedomost", [this] { return excel::rebarWorkbook(bp_, layers_, bm_, rs_, rm_, [this](const std::string& k, const std::vector<std::string>& a) { return loc_.tr(k, a); }); },
+        [this](const xlsx::Workbook& wb) {
+            excel::rebarFromWorkbook(wb, bp_, layers_, rs_, [this](const std::string& k, const std::vector<std::string>& a) { return loc_.tr(k, a); });
+            upTo_->setRange(0, bp_.floors);
+            upTo_->setValue(bp_.floors);
+            loadEditor();
+            recompute();
+        });
+    excel_->setStatusLabel(xlStatus);
+    excel_->addButtons(bottom);
     bottom->addWidget(toDwg);
     bottom->addWidget(close);
     root->addLayout(bottom);

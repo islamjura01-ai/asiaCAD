@@ -21,6 +21,8 @@
 #include <QScrollArea>
 #include <QSplitter>
 #include <QStandardPaths>
+
+#include <asiacad/civil/excel.h>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTextStream>
@@ -256,6 +258,18 @@ void SewerDialog::buildUi() {
     auto* closeB = new QPushButton(QString::fromStdString(loc_.tr("gui.unsaved.title")).isEmpty() ? "OK" : "✕", this);
     closeB->setFixedWidth(44);
     bottom->addWidget(status_, 1);
+    auto* xlStatus = new QLabel(this);
+    xlStatus->setObjectName("muted");
+    bottom->addWidget(xlStatus);
+    excel_ = new ExcelLink(
+        loc_, this, "kanalizatsiya", [this] { return excel::sewerWorkbook(network(), res_, [this](const std::string& k, const std::vector<std::string>& a) { return loc_.tr(k, a); }); },
+        [this](const xlsx::Workbook& wb) {
+            auto n = network();
+            excel::sewerFromWorkbook(wb, n, [this](const std::string& k, const std::vector<std::string>& a) { return loc_.tr(k, a); });
+            setNetwork(n);
+        });
+    excel_->setStatusLabel(xlStatus);
+    excel_->addButtons(bottom);
     bottom->addWidget(profile_);
     bottom->addWidget(drawB);
     bottom->addWidget(closeB);

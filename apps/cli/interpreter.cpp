@@ -2,6 +2,7 @@
 
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
+#include <asiacad/civil/excel.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
@@ -102,6 +103,7 @@ const char* commandSyntax(const std::string& c) {
         {"BUILDING", "[n] [H] [t] [x,y] | file.json [x,y]"},
         {"REBAR", "[file.json] [x,y]"},
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
+        {"EXCEL", "SEWER|BUILDING|REBAR in out"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -544,6 +546,63 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             last_.clear();
             for (auto* c : adds) last_.push_back(c->entityId());
             say("rebar.msg.table", {std::to_string(last_.size())});
+        }
+    } else if (cmd == "EXCEL") {
+        // EXCEL <modul> <kirish> <chiqish>: .xlsx chiqishi — eksport, .xlsx kirishi — import (JSON yoziladi)
+        need(a, 2, cmd);
+        const std::string mod = loc_.resolveCommand(a[0]);
+        const excel::Tr tr = [this](const std::string& k, const std::vector<std::string>& v) { return loc_.tr(k, v); };
+        auto readAll = [](const std::string& path) {
+            std::ifstream f(path, std::ios::binary);
+            if (!f) throw Error("acad.err.open", {path});
+            std::stringstream b;
+            b << f.rdbuf();
+            return b.str();
+        };
+        auto writeAll = [](const std::string& path, const std::string& text) {
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            if (!f) throw Error("xlsx.err.write", {path});
+            f << text;
+        };
+        const std::string in = a.size() >= 3 ? a[1] : std::string(), out = a.back();
+        if (mod == "SEWER") {
+            need(a, 3, cmd);
+            if (extOf(in) == "xlsx") {
+                civil::SewerNetwork n;
+                excel::sewerFromWorkbook(xlsx::load(in), n, tr);
+                writeAll(out, civil::toJson(n));
+                const auto r = civil::compute(n);
+                say("xl.msg.imported", {in, std::to_string(n.manholes.size()), std::to_string(r.errors()), std::to_string(r.warnings())});
+            } else {
+                const auto n = civil::fromJson(readAll(in));
+                xlsx::save(excel::sewerWorkbook(n, civil::compute(n), tr), out);
+                say("xl.msg.exported", {out});
+            }
+        } else if (mod == "BUILDING" || mod == "REBAR") {
+            bim::BuildingParams bp;
+            auto lm = bim::autoLayerMap(doc_);
+            bim::RebarSettings rs = bim::defaultRebarSettings();
+            if (!in.empty() && extOf(in) == "xlsx") {
+                const auto wb = xlsx::load(in);
+                if (mod == "REBAR") excel::rebarFromWorkbook(wb, bp, lm, rs, tr);
+                else excel::buildingFromWorkbook(wb, bp, lm, tr);
+                std::string js = bim::paramsToJson(bp, lm);
+                if (mod == "REBAR") js = js.substr(0, js.find_last_of('}')) + ",\"rebar\":" + bim::rebarToJson(rs) + "}";
+                writeAll(out, js);
+                say("xl.msg.imported", {in, std::to_string(bp.floors), "0", "0"});
+            } else {
+                if (!in.empty() && extOf(in) == "json") {
+                    const std::string text = readAll(in);
+                    bim::paramsFromJson(text, bp, lm);
+                    bim::rebarFromJson(text, rs);
+                }
+                const auto bm = bim::buildModel(bim::readPlan(doc_, lm), bp);
+                if (mod == "REBAR") xlsx::save(excel::rebarWorkbook(bp, lm, bm, rs, bim::buildRebar(bm, bp, rs), tr), out);
+                else xlsx::save(excel::buildingWorkbook(bp, lm, bm, tr), out);
+                say("xl.msg.exported", {out});
+            }
+        } else {
+            throw Error("xl.err.module", {a[0]});
         }
     } else if (cmd == "PIPES") {
         const auto& cat = civil::PipeCatalog::builtin();

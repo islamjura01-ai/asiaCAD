@@ -1,4 +1,5 @@
 #include "sewer_dialog.h"
+#include "table_bulk.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -505,6 +506,7 @@ void SewerDialog::setNetwork(const SewerNetwork& n) {
     tcon_->setValue(n.storm.tcon);
     tcan_->setValue(n.storm.tcan);
     for (int i = 0; i < 7; ++i) share_[i]->setValue(n.storm.share[static_cast<std::size_t>(i)] * 100.0);
+    BulkFill bulk(mh_);
     mh_->setRowCount(0);
     for (const auto& m : n.manholes) {
         const int r = mh_->rowCount();

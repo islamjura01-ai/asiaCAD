@@ -30,7 +30,61 @@ struct Label {
     char type;
     std::string layer;
     int src = 0;
+    bool used = false;
 };
+struct TextLbl {          // quduq nomi ("070A") yoki material ("MBB", "PVC")
+    double x, y;
+    std::string text;
+    int src = 0;
+};
+struct Leader {
+    double ax, ay, bx, by;
+    int src = 0;
+};
+// Faqat yozuvlar qatlami: undagi chiziqlar — yo'naltiruvchi (leader), aylanalar — yozuv ramkasi, quvur emas
+UtilNode makeNode(UtilKind k, const std::string& layer, double x, double y, double r) {
+    UtilNode n;
+    n.kind = k;
+    n.layer = layer;
+    n.x = x;
+    n.y = y;
+    n.r = r;
+    return n;
+}
+bool labelLayer(const std::string& layer) {
+    const std::string u = utf8::toUpper(layer);
+    for (const char* k : {"ETIKET", "ETİKET", "LABEL", "YOZUV", "PODPIS", "ПОДПИС", "НАДПИС", "TEXT", "MATN", "ANNO", "YAZI"})
+        if (u.find(utf8::toUpper(k)) != std::string::npos) return true;
+    return false;
+}
+// Quduq nomi: "070A", "K-12", "КК5", "B12a" — raqam va harf bor, nuqta/ikki nuqta yo'q, qisqa
+bool nodeName(const std::string& s0) {
+    std::string s;
+    for (char c : s0)
+        if (c != ' ') s += c;
+    const auto u = utf8::decode(s);
+    if (u.empty() || u.size() > 8) return false;
+    bool dig = false, let = false;
+    for (char32_t c : u) {
+        if (c >= U'0' && c <= U'9') dig = true;
+        else if ((c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z') || (c >= U'А' && c <= U'я') || c == U'-') let = let || c != U'-';
+        else return false;
+    }
+    return dig && let && u.size() >= 2;
+}
+// Material: faqat harflar, 2..8 ta ("MBB", "PVC", "HDPE", "KORUGE", "ЧУГ")
+bool materialName(const std::string& s0) {
+    std::string s;
+    for (char c : s0)
+        if (c != ' ') s += c;
+    const auto u = utf8::decode(s);
+    if (u.size() < 2 || u.size() > 8) return false;
+    for (char32_t c : u)
+        if (!((c >= U'A' && c <= U'Z') || (c >= U'А' && c <= U'Я') || c == U'Ç' || c == U'Ş' || c == U'Ü' || c == U'Ö' || c == U'Ğ' || c == U'İ' ||
+              c == U'-'))
+            return false;
+    return u.front() != U'-' && u.back() != U'-';  // "MBB", "PE-BA", "PVC", "KRG" 
+}
 
 double segDist(double px, double py, const UtilVertex& a, const UtilVertex& b, double* t = nullptr) {
     const double dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
@@ -118,6 +172,25 @@ UtilKind guessUtil(const std::string& layer) {
         }
         return false;
     };
+    if (!u.empty() && u[0] == '@') return UtilKind::Ignore;  // NetCAD izoh/xref qatlamlari ("@Kapak_ASu", "@XREF_YOL")
+    // so'zlar (Turkiya: ASU — atık su, YSU — yağmur suyu, ISU/İSU — içme suyu)
+    std::set<std::string> tok;
+    {
+        std::string cur;
+        for (char c : u) {
+            if (c == '_' || c == '-' || c == ' ' || c == '.' || c == '|' || c == '$') { if (!cur.empty()) tok.insert(cur); cur.clear(); }
+            else cur += c;
+        }
+        if (!cur.empty()) tok.insert(cur);
+    }
+    auto tk = [&](std::initializer_list<const char*> keys) {
+        for (const char* k : keys)
+            if (tok.count(utf8::toUpper(k))) return true;
+        return false;
+    };
+    if (tk({"YSU", "YAGMUR", "YAĞMUR"})) return UtilKind::Storm;
+    if (tk({"ASU", "ATIKSU", "ATIK"})) return UtilKind::Sewer;
+    if (tk({"ISU", "İSU", "ICMESU", "İÇMESU"})) return UtilKind::Water;
     if (has({"YOMG", "ЁМҒ", "ЛИВН", "ДОЖД", "STORM", "YAĞMUR"}) || starts({"К2", "K2"})) return UtilKind::Storm;
     if (has({"DRENAJ", "ДРЕН", "DRAIN"})) return UtilKind::Drain;
     if (has({"KANAL", "КАНАЛ", "SEWER", "ATIKSU"}) || starts({"К1", "K1", "К3", "K3", "К", "K"})) return UtilKind::Sewer;
@@ -157,6 +230,31 @@ int UtilModel::errors() const {
 
 char parseUtilLabel(const std::string& text, double& value) {
     const std::string s = norm(text);
+    {   // nishablik: "1:365", "1/365", "i=0.005", "i=5‰"
+        std::string t;
+        for (char c : s)
+            if (c != ' ') t += c;
+        if (t.size() > 2 && t[0] == '1' && (t[1] == ':' || t[1] == '/')) {
+            double v;
+            std::size_t end = 0;
+            if (readNum(t, 2, v, &end) && end == t.size() && v >= 10 && v <= 100000) { value = 1.0 / v; return 's'; }
+        }
+        if (t.size() > 2 && (t[0] == 'i' || t[0] == 'I') && t[1] == '=') {
+            double v;
+            std::size_t end = 0;
+            if (readNum(t, 2, v, &end)) {
+                const bool permil = t.find("\xE2\x80\xB0") != std::string::npos;
+                if (permil) v /= 1000;
+                if (v > 0 && v < 0.5) { value = v; return 's'; }
+            }
+        }
+        // uzunlik: "48.1m", "48.1 m", "L=48.1"
+        double v;
+        std::size_t end = 0;
+        if (t.size() > 1 && t.back() == 'm' && readNum(t, 0, v, &end) && end + 1 == t.size() && v > 0.5 && v < 10000) { value = v; return 'l'; }
+        if (t.size() > 2 && (t[0] == 'L' || t[0] == 'l') && t[1] == '=' && readNum(t, 2, v, &end) && (end == t.size() || (end + 1 == t.size() && t.back() == 'm')) &&
+            v > 0.5 && v < 10000) { value = v; return 'l'; }
+    }
     // diametr: @200, DN300, d=110 (oldidagi "2@" — soni)
     for (const char* mk : {"@", "DN", "dn", "Dn", "d=", "D="}) {
         const std::size_t p = s.find(mk);
@@ -186,6 +284,62 @@ char parseUtilLabel(const std::string& text, double& value) {
     return 0;
 }
 
+namespace {
+// Quvur ko'pincha bir nechta parallel chiziq bilan chiziladi (tashqi/ichki devor, o'q): uzunligi va uchlari mos,
+// bir-biridan bundleWidth ichida — bitta o'q chizig'iga (o'rtadagisi) birlashtiriladi.
+void mergeBundles(UtilModel& m, std::vector<int>& lineSrc, double width) {
+    const std::size_t n = m.lines.size();
+    std::vector<int> parent(n);
+    for (std::size_t i = 0; i < n; ++i) parent[i] = static_cast<int>(i);
+    std::function<int(int)> root = [&](int i) { return parent[static_cast<std::size_t>(i)] == i ? i : parent[static_cast<std::size_t>(i)] = root(parent[static_cast<std::size_t>(i)]); };
+    std::vector<std::size_t> idx;
+    for (std::size_t i = 0; i < n; ++i)
+        if (m.lines[i].v.size() == 2) idx.push_back(i);
+    auto mid = [&](std::size_t i) { return std::array<double, 2>{(m.lines[i].v[0].x + m.lines[i].v[1].x) / 2, (m.lines[i].v[0].y + m.lines[i].v[1].y) / 2}; };
+    std::sort(idx.begin(), idx.end(), [&](auto a, auto b) { return mid(a)[0] < mid(b)[0]; });
+    for (std::size_t a = 0; a < idx.size(); ++a) {
+        const auto& A = m.lines[idx[a]];
+        const double ax = A.v[1].x - A.v[0].x, ay = A.v[1].y - A.v[0].y, la = std::hypot(ax, ay);
+        if (la < 1e-6) continue;
+        for (std::size_t b = a + 1; b < idx.size() && mid(idx[b])[0] - mid(idx[a])[0] <= width; ++b) {
+            const auto& B = m.lines[idx[b]];
+            if (B.kind != A.kind || lineSrc[idx[a]] != lineSrc[idx[b]]) continue;
+            const double bx = B.v[1].x - B.v[0].x, by = B.v[1].y - B.v[0].y, lb = std::hypot(bx, by);
+            if (lb < 1e-6 || std::abs(la - lb) > std::max(0.3, 0.03 * la)) continue;
+            if (std::abs(ax * by - ay * bx) / (la * lb) > 0.02) continue;
+            const auto ma = mid(idx[a]), mb = mid(idx[b]);
+            if (std::hypot(ma[0] - mb[0], ma[1] - mb[1]) > width) continue;
+            parent[static_cast<std::size_t>(root(static_cast<int>(idx[a])))] = root(static_cast<int>(idx[b]));
+        }
+    }
+    std::map<int, std::vector<std::size_t>> groups;
+    for (auto i : idx) groups[root(static_cast<int>(i))].push_back(i);
+    std::vector<bool> drop(n, false);
+    for (auto& [g, mem] : groups) {
+        if (mem.size() < 2) continue;
+        // o'rtadagi chiziq (birinchisiga nisbatan perpendikulyar siljish medianasi)
+        const auto& F = m.lines[mem[0]];
+        const double fx = F.v[1].x - F.v[0].x, fy = F.v[1].y - F.v[0].y, fl = std::hypot(fx, fy);
+        std::vector<std::pair<double, std::size_t>> off;
+        for (auto i : mem) {
+            const auto c = mid(i);
+            off.push_back({((c[0] - F.v[0].x) * -fy + (c[1] - F.v[0].y) * fx) / fl, i});
+        }
+        std::sort(off.begin(), off.end());
+        const std::size_t keep = off[off.size() / 2].second;
+        for (auto i : mem)
+            if (i != keep) drop[i] = true;
+    }
+    std::vector<UtilLine> out;
+    std::vector<int> src;
+    for (std::size_t i = 0; i < n; ++i)
+        if (!drop[i]) { out.push_back(std::move(m.lines[i])); src.push_back(lineSrc[i]); }
+    for (std::size_t i = 0; i < out.size(); ++i) out[i].id = static_cast<int>(i) + 1;
+    m.lines = std::move(out);
+    lineSrc = std::move(src);
+}
+} // namespace
+
 std::map<std::string, UtilKind> autoUtilLayers(const Document& doc) {
     std::map<std::string, UtilKind> m;
     for (const auto& [name, l] : doc.layers()) m[name] = guessUtil(name);
@@ -199,21 +353,40 @@ UtilModel readUtilities(const Document& doc, const std::map<std::string, UtilKin
 UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams& p) {
     UtilModel m;
     std::vector<Label> labels;
+    std::vector<TextLbl> names, materials;
+    std::vector<Leader> leaders;
     std::vector<std::array<double, 3>> groundPts;
     std::vector<int> lineSrc;  // chiziq -> manba
     int cur = 0;
     const UtilSource* src = nullptr;
+    bool srcHasKnown = false;
     auto kindOf = [&](const std::string& layer) {
         auto it = src->layers.find(layer);
         const UtilKind k = it != src->layers.end() ? it->second : guessUtil(layer);
-        // fayl uchun tur majburiy berilgan bo'lsa: yer sathi va "hisobga olinmaydi" dan boshqa hamma qatlam — shu tur
-        if (src->force != UtilKind::Ignore && k != UtilKind::Ground) return src->force;
+        // fayl uchun tur majburiy berilgan bo'lsa: nomidan tarmoq ekani tanilgan qatlamlar shu turga o'tadi
+        // (genplan/yo'l xreflari, "0" qatlam — yo'q); faylda bunday qatlam umuman bo'lmasa — yer sathidan boshqa hammasi.
+        if (src->force != UtilKind::Ignore && k != UtilKind::Ground) {
+            if (!srcHasKnown) return src->force;
+            return (k == UtilKind::Ignore || k == UtilKind::Other) ? UtilKind::Ignore : src->force;
+        }
         return k;
     };
     std::function<void(const IEntity&)> visit = [&](const IEntity& e) {
         if (auto* ins = dynamic_cast<const InsertEntity*>(&e)) {
             for (const auto& c : ins->explode()) visit(*c);
             for (const auto& a : ins->attributes()) visit(a.text);
+            return;
+        }
+        if (!e.layer().empty() && e.layer()[0] == '@') return;  // izoh bloklari, xref
+        if (labelLayer(e.layer())) {
+            if (auto* t = dynamic_cast<const TextEntity*>(&e)) {
+                double v;
+                if (const char c = parseUtilLabel(t->text(), v)) labels.push_back({t->insertion().x, t->insertion().y, v, c, e.layer(), cur});
+                else if (nodeName(t->text())) names.push_back({t->insertion().x, t->insertion().y, t->text(), cur});
+                else if (materialName(t->text())) materials.push_back({t->insertion().x, t->insertion().y, t->text(), cur});
+            } else if (auto* l = dynamic_cast<const LineEntity*>(&e)) {
+                leaders.push_back({l->startPoint().x, l->startPoint().y, l->endPoint().x, l->endPoint().y, cur});
+            }
             return;
         }
         const UtilKind k = kindOf(e.layer());
@@ -237,7 +410,7 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
             return;
         }
         if (auto* c = dynamic_cast<const CircleEntity*>(&e)) {
-            if (c->radius() >= 0.2 && c->radius() <= 3.0) m.nodes.push_back({k, e.layer(), c->center().x, c->center().y, c->radius(), 0, 0});
+            if (c->radius() >= 0.2 && c->radius() <= 3.0) m.nodes.push_back(makeNode(k, e.layer(), c->center().x, c->center().y, c->radius()));
             return;
         }
         std::vector<Vec3> pts;
@@ -251,7 +424,7 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
                 cy /= static_cast<double>(pts.size());
                 double r = 0;
                 for (const auto& q : pts) r = std::max(r, std::hypot(q.x - cx, q.y - cy));
-                if (r <= 3.0) { m.nodes.push_back({k, e.layer(), cx, cy, r, 0, 0}); return; }
+                if (r <= 3.0) { m.nodes.push_back(makeNode(k, e.layer(), cx, cy, r)); return; }
                 pts.push_back(pts.front());
             }
         }
@@ -269,7 +442,177 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
     for (std::size_t si = 0; si < sources.size(); ++si) {
         src = &sources[si];
         cur = static_cast<int>(si);
+        srcHasKnown = false;
+        if (src->doc && src->force != UtilKind::Ignore)
+            for (const auto& [name, l] : src->doc->layers()) {
+                auto it = src->layers.find(name);
+                const UtilKind k = it != src->layers.end() ? it->second : guessUtil(name);
+                if (k != UtilKind::Ignore && k != UtilKind::Other && k != UtilKind::Ground && !labelLayer(name)) { srcHasKnown = true; break; }
+            }
         if (src->doc) src->doc->forEach([&](const IEntity& e) { visit(e); });
+    }
+    mergeBundles(m, lineSrc, p.bundleWidth);
+    // ---- quduqlar: ichma-ich aylanalar (tashqi/ichki devor, qopqoq) — bitta quduq (eng kattasi)
+    {
+        std::vector<std::size_t> ord(m.nodes.size());
+        for (std::size_t i = 0; i < ord.size(); ++i) ord[i] = i;
+        std::sort(ord.begin(), ord.end(), [&](auto a, auto b) { return m.nodes[a].r > m.nodes[b].r; });
+        std::vector<UtilNode> kept;
+        for (auto i : ord) {
+            const auto& n = m.nodes[i];
+            bool inside = false;
+            for (const auto& k : kept)
+                if (k.kind == n.kind && std::hypot(k.x - n.x, k.y - n.y) + n.r <= k.r + 0.05) { inside = true; break; }
+            if (!inside) kept.push_back(n);
+        }
+        m.nodes = std::move(kept);
+    }
+    // ---- quduq belgilari: markazdan nodeLabelRadius ichidagi ≥ 2 ta belgi — eng kattasi qopqoq, qolganlari tub
+    {
+        std::vector<std::vector<std::size_t>> near(m.nodes.size());
+        for (std::size_t li = 0; li < labels.size(); ++li) {
+            const auto& lb = labels[li];
+            if (lb.type != 'z') continue;
+            int bi = -1;
+            double bd = p.nodeLabelRadius;
+            // yo'naltiruvchi chiziq bo'ylab yozilgan belgilar ("489.52 / 485.09" chiziq ustida va ostida)
+            double bl = 4.0;
+            for (const auto& ld : leaders) {
+                if (ld.src != lb.src) continue;
+                const UtilVertex a{ld.ax, ld.ay, 0, 0, UtilVertex::Default}, b{ld.bx, ld.by, 0, 0, UtilVertex::Default};
+                const double dl = segDist(lb.x, lb.y, a, b);
+                if (dl >= bl) continue;
+                for (std::size_t ni = 0; ni < m.nodes.size(); ++ni) {
+                    const auto& n = m.nodes[ni];
+                    if (std::min(std::hypot(n.x - ld.ax, n.y - ld.ay), std::hypot(n.x - ld.bx, n.y - ld.by)) <= n.r + 1.5) {
+                        bl = dl;
+                        bi = static_cast<int>(ni);
+                    }
+                }
+            }
+            if (bi >= 0) bd = -1;
+            for (std::size_t ni = 0; ni < m.nodes.size() && bd >= 0; ++ni) {
+                const double d = std::hypot(m.nodes[ni].x - lb.x, m.nodes[ni].y - lb.y);
+                if (d < bd) { bd = d; bi = static_cast<int>(ni); }
+            }
+            if (bi >= 0) near[static_cast<std::size_t>(bi)].push_back(li);
+        }
+        for (std::size_t ni = 0; ni < m.nodes.size(); ++ni) {
+            if (near[ni].size() < 2) continue;
+            std::vector<double> v;
+            for (auto li : near[ni]) { v.push_back(labels[li].value); labels[li].used = true; }
+            std::sort(v.begin(), v.end());
+            auto& n = m.nodes[ni];
+            n.ground = v.back();
+            v.pop_back();
+            n.inverts = v;
+            n.labeled = true;
+            groundPts.push_back({n.x, n.y, n.ground});
+        }
+        // nomlar: yo'naltiruvchi chiziq orqali (bir uchi yozuv yonida, ikkinchisi quduqda), bo'lmasa eng yaqin quduq
+        for (const auto& nm : names) {
+            int bi = -1;
+            double bd = 1e18;
+            for (const auto& ld : leaders) {
+                if (ld.src != nm.src) continue;
+                const double da = std::hypot(ld.ax - nm.x, ld.ay - nm.y), db = std::hypot(ld.bx - nm.x, ld.by - nm.y);
+                const double ox = da < db ? ld.bx : ld.ax, oy = da < db ? ld.by : ld.ay;
+                if (std::min(da, db) > 8) continue;
+                for (std::size_t ni = 0; ni < m.nodes.size(); ++ni) {
+                    const double d = std::hypot(m.nodes[ni].x - ox, m.nodes[ni].y - oy);
+                    if (d <= m.nodes[ni].r + 1.5 && std::min(da, db) + d < bd) { bd = std::min(da, db) + d; bi = static_cast<int>(ni); }
+                }
+            }
+            if (bi < 0)
+                for (std::size_t ni = 0; ni < m.nodes.size(); ++ni) {
+                    const double d = std::hypot(m.nodes[ni].x - nm.x, m.nodes[ni].y - nm.y);
+                    if (d < p.nodeLabelRadius * 3 && d < bd) { bd = d; bi = static_cast<int>(ni); }
+                }
+            if (bi >= 0 && m.nodes[static_cast<std::size_t>(bi)].name.empty()) {
+                std::string t;
+                for (char c : nm.text)
+                    if (c != ' ') t += c;
+                m.nodes[static_cast<std::size_t>(bi)].name = t;
+            }
+        }
+    }
+    // ---- belgisi yo'q quduqlar (faqat nomi bor): tub belgisi tarmoq bo'yicha baholanadi —
+    //      zanjir ichida bo'lsa ikki tomondagi belgili quduqlar orasida masofa bo'yicha, shox boshida — qo'shni quduqdan
+    //      quvur yozuvidagi nishablik bilan yuqoriga. Ogohlantirish beriladi (qo'lda tuzatish uchun).
+    {
+        auto nodeNear = [&](const UtilVertex& v, UtilKind k) {
+            int bi = -1;
+            double bd = 1e18;
+            for (std::size_t ni = 0; ni < m.nodes.size(); ++ni) {
+                const auto& n = m.nodes[ni];
+                if (n.kind != k) continue;
+                const double d = std::hypot(n.x - v.x, n.y - v.y);
+                if (d <= n.r + 1.5 && d < bd) { bd = d; bi = static_cast<int>(ni); }
+            }
+            return bi;
+        };
+        struct Edge { int to; double len; std::size_t line; };
+        std::vector<std::vector<Edge>> adj(m.nodes.size());
+        for (std::size_t i = 0; i < m.lines.size(); ++i) {
+            const int a = nodeNear(m.lines[i].v.front(), m.lines[i].kind), b = nodeNear(m.lines[i].v.back(), m.lines[i].kind);
+            if (a < 0 || b < 0 || a == b) continue;
+            const double L = std::hypot(m.nodes[a].x - m.nodes[b].x, m.nodes[a].y - m.nodes[b].y);
+            adj[a].push_back({b, L, i});
+            adj[b].push_back({a, L, i});
+        }
+        // nishablik yozuvi chiziqlarga hali biriktirilmagan — shu yerda yaqin yozuvdan
+        auto slopeNear = [&](std::size_t li) {
+            const auto& ln = m.lines[li];
+            double bd = p.labelRadius * 2, sl = 0;
+            for (const auto& lb : labels)
+                if (lb.type == 's' && lb.src == lineSrc[li]) {
+                    const double d = segDist(lb.x, lb.y, ln.v.front(), ln.v.back());
+                    if (d < bd) { bd = d; sl = lb.value; }
+                }
+            return sl;
+        };
+        std::vector<double> est(m.nodes.size(), 0);
+        std::vector<bool> has(m.nodes.size(), false);
+        for (std::size_t ni = 0; ni < m.nodes.size(); ++ni)
+            if (!m.nodes[ni].inverts.empty()) { has[ni] = true; est[ni] = m.nodes[ni].inverts.front(); }
+        for (int pass = 0; pass < 50; ++pass) {
+            bool changed = false;
+            for (std::size_t ni = 0; ni < m.nodes.size(); ++ni) {
+                if (has[ni] || adj[ni].empty()) continue;
+                // ikki yo'nalishda zanjir bo'ylab birinchi belgili quduq
+                std::vector<std::pair<double, double>> ends;  // (masofa, belgi)
+                for (const auto& e0 : adj[ni]) {
+                    int prev = static_cast<int>(ni), cur = e0.to;
+                    double dist = e0.len;
+                    for (int step = 0; step < 200 && !has[static_cast<std::size_t>(cur)] && adj[static_cast<std::size_t>(cur)].size() == 2; ++step) {
+                        const auto& nx = adj[static_cast<std::size_t>(cur)][0].to == prev ? adj[static_cast<std::size_t>(cur)][1] : adj[static_cast<std::size_t>(cur)][0];
+                        prev = cur;
+                        cur = nx.to;
+                        dist += nx.len;
+                    }
+                    if (has[static_cast<std::size_t>(cur)]) ends.push_back({dist, est[static_cast<std::size_t>(cur)]});
+                }
+                if (ends.size() >= 2) {
+                    std::sort(ends.begin(), ends.end());
+                    const auto [d1, z1] = ends[0];
+                    const auto [d2, z2] = ends[1];
+                    est[ni] = z1 + (z2 - z1) * d1 / (d1 + d2);
+                } else if (ends.size() == 1 && adj[ni].size() == 1) {
+                    const double sl = slopeNear(adj[ni][0].line);
+                    est[ni] = ends[0].second + (sl > 0 ? sl : 0.005) * ends[0].first;  // shox boshi — yuqorida
+                } else {
+                    continue;
+                }
+                has[ni] = true;
+                changed = true;
+            }
+            if (!changed) break;
+        }
+        for (std::size_t ni = 0; ni < m.nodes.size(); ++ni)
+            if (m.nodes[ni].inverts.empty() && has[ni] && !adj[ni].empty()) {
+                m.nodes[ni].inverts = {std::round(est[ni] * 100) / 100};
+                m.nodes[ni].estimated = true;
+            }
     }
     m.groundPoints = static_cast<int>(groundPts.size());
 
@@ -295,10 +638,12 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
     for (auto& n : m.nodes) n.ground = groundAt(n.x, n.y);
 
     // ---- diametr yozuvlari: eng yaqin chiziq (radius ichida; shu qatlam ustun)
+    struct DnLabel { double x, y; int line; int src; };
+    std::vector<DnLabel> dnLabels;
     for (const auto& lb : labels) {
         if (lb.type != 'd') continue;
         int best = -1;
-        double bd = p.labelRadius;
+        double bd = labelLayer(lb.layer) ? std::max(p.labelRadius, 4.5) : p.labelRadius;
         for (std::size_t i = 0; i < m.lines.size(); ++i) {
             const auto& ln = m.lines[i];
             for (std::size_t j = 0; j + 1 < ln.v.size(); ++j) {
@@ -311,6 +656,39 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
         if (best >= 0) {
             m.lines[static_cast<std::size_t>(best)].dn = lb.value;
             m.lines[static_cast<std::size_t>(best)].dnFromLabel = true;
+            dnLabels.push_back({lb.x, lb.y, best, lb.src});
+        }
+    }
+    // ---- nishablik, uzunlik, material: shu Ø yozuvi guruhi (8 m ichida) chizig'iga, bo'lmasa eng yaqin chiziqqa
+    auto lineFor = [&](double x, double y, int srcIdx) {
+        int best = -1;
+        double bd = 8;
+        for (const auto& d : dnLabels)
+            if (d.src == srcIdx && std::hypot(d.x - x, d.y - y) < bd) { bd = std::hypot(d.x - x, d.y - y); best = d.line; }
+        if (best >= 0) return best;
+        bd = p.labelRadius * 1.5;
+        for (std::size_t i = 0; i < m.lines.size(); ++i) {
+            if (lineSrc[i] != srcIdx) continue;
+            for (std::size_t j = 0; j + 1 < m.lines[i].v.size(); ++j) {
+                const double d = segDist(x, y, m.lines[i].v[j], m.lines[i].v[j + 1]);
+                if (d < bd) { bd = d; best = static_cast<int>(i); }
+            }
+        }
+        return best;
+    };
+    for (const auto& lb : labels) {
+        if (lb.type != 's' && lb.type != 'l') continue;
+        const int li = lineFor(lb.x, lb.y, lb.src);
+        if (li < 0) continue;
+        (lb.type == 's' ? m.lines[static_cast<std::size_t>(li)].slopeLabel : m.lines[static_cast<std::size_t>(li)].lengthLabel) = lb.value;
+    }
+    for (const auto& mt : materials) {
+        const int li = lineFor(mt.x, mt.y, mt.src);
+        if (li >= 0 && m.lines[static_cast<std::size_t>(li)].material.empty()) {
+            std::string t;
+            for (char c : mt.text)
+                if (c != ' ') t += c;
+            m.lines[static_cast<std::size_t>(li)].material = t;
         }
     }
     for (auto& ln : m.lines)
@@ -320,7 +698,7 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
     struct Pick { double d = 1e18; double v = 0; char t = 0; };
     std::map<std::pair<std::size_t, std::size_t>, Pick> pick;
     for (const auto& lb : labels) {
-        if (lb.type != 'z' && lb.type != 'h') continue;
+        if ((lb.type != 'z' && lb.type != 'h') || lb.used) continue;
         std::size_t bi = 0, bj = 0;
         double bd = p.labelRadius;
         bool found = false;
@@ -345,6 +723,57 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
         } else {
             v.z = v.ground - pk.v - r;                   // chuqurlik — quvur ustigacha
             v.src = UtilVertex::FromDepth;
+        }
+    }
+    // ---- quduqlar orasidagi quvurlar: uchlari quduqqa tegadi; tub belgilari quduq yozuvidan
+    //      (bir nechta tub bo'lsa — yozuvdagi nishablikka eng mos juftlik; yo'q bo'lsa yuqoridagi quduqdan eng pasti)
+    auto nodeAt = [&](const UtilVertex& v, UtilKind k) {
+        int bi = -1;
+        double bd = 1e18;
+        for (std::size_t ni = 0; ni < m.nodes.size(); ++ni) {
+            const auto& n = m.nodes[ni];
+            if (n.kind != k) continue;
+            const double d = std::hypot(n.x - v.x, n.y - v.y);
+            if (d <= n.r + 1.5 && d < bd) { bd = d; bi = static_cast<int>(ni); }
+        }
+        return bi;
+    };
+    for (auto& ln : m.lines) {
+        ln.from = nodeAt(ln.v.front(), ln.kind);
+        ln.to = nodeAt(ln.v.back(), ln.kind);
+        if (ln.from < 0 || ln.to < 0 || ln.from == ln.to) continue;
+        const auto& A = m.nodes[static_cast<std::size_t>(ln.from)];
+        const auto& B = m.nodes[static_cast<std::size_t>(ln.to)];
+        if (A.inverts.empty() || B.inverts.empty()) continue;
+        const double L = std::max(0.01, std::hypot(B.x - A.x, B.y - A.y));
+        double ia = A.inverts.front(), ib = B.inverts.front();
+        if (ln.slopeLabel > 0) {
+            double best = 1e18;
+            for (double a : A.inverts)
+                for (double b : B.inverts) {
+                    const double e = std::abs(std::abs(a - b) / L - ln.slopeLabel);
+                    if (e < best - 1e-12) { best = e; ia = a; ib = b; }
+                }
+        } else {
+            const bool aUp = A.inverts.back() >= B.inverts.back();
+            const auto& up = aUp ? A.inverts : B.inverts;
+            const auto& dn = aUp ? B.inverts : A.inverts;
+            const double u = up.front();
+            double d = dn.front();
+            for (double x : dn)
+                if (x < u) d = x;  // eng yuqori, lekin chiqishdan past
+            ia = aUp ? u : d;
+            ib = aUp ? d : u;
+        }
+        const double r = ln.dn / 2000.0;
+        for (auto& v : ln.v) {
+            const double t = std::clamp(((v.x - A.x) * (B.x - A.x) + (v.y - A.y) * (B.y - A.y)) / (L * L), 0.0, 1.0);
+            v.z = ia + t * (ib - ia) + (isGravity(ln.kind) ? r : 0);
+            v.src = UtilVertex::FromLabel;
+        }
+        if (A.labeled && B.labeled && A.ground > 0 && B.ground > 0) {
+            ln.v.front().ground = A.ground;
+            ln.v.back().ground = B.ground;
         }
     }
     // ---- interpolyatsiya / standart
@@ -387,7 +816,7 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
                     low = any ? std::min(low, inv) : inv;
                     any = true;
                 }
-        n.bottom = low - 0.1;
+        n.bottom = n.inverts.empty() ? low - 0.1 : n.inverts.front() - 0.1;
     }
     checkUtilities(m, p);
     return m;
@@ -419,6 +848,17 @@ void checkUtilities(UtilModel& m, const UtilParams& p) {
         }
         if (wv && worst < 0) issue(true, "util.chk.above", {id, f2(-worst)}, li, wv->x, wv->y);
         else if (wv && worst + 1e-9 < need) issue(true, "util.chk.cover", {id, f2(worst), f2(need)}, li, wv->x, wv->y);
+        // loyiha yozuvidagi nishablik ("1:365") ↔ quduq tub belgilaridan hisoblangan nishablik
+        if (isGravity(ln.kind) && ln.slopeLabel > 0 && ln.v.size() >= 2 && ln.v.front().src == UtilVertex::FromLabel &&
+            ln.v.back().src == UtilVertex::FromLabel) {
+            const double L = std::hypot(ln.v.back().x - ln.v.front().x, ln.v.back().y - ln.v.front().y);
+            if (L > 1) {
+                const double sl = std::abs(ln.v.front().z - ln.v.back().z) / L;
+                if (std::abs(sl - ln.slopeLabel) > std::max(0.001, ln.slopeLabel * 0.25))
+                    issue(false, "util.chk.slope_label", {id, std::format("{:.4f}", ln.slopeLabel), std::format("{:.4f}", sl)}, li, ln.v.front().x,
+                          ln.v.front().y);
+            }
+        }
         // o'z oqimli: nishablik ishorasi o'zgarmasligi kerak
         if (isGravity(ln.kind) && ln.v.size() >= 3) {
             int sign = 0;

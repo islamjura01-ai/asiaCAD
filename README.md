@@ -220,6 +220,15 @@ Har bir menyuda **"Chizmalar"** paneli: bir nechta DXF/.acad fayl, har biriga va
   ("Поз." | "Наименование" | "Кол." | "Масса"). 3D sterjenlar shu qavat plitasida (pastki/yuqori, himoya qatlami bilan).
   Taqqoslash: chizmadagi soni ↔ spetsifikatsiya, Ø mosligi, umumiy massa. Namuna: `examples/bino_qolip/kj_plita_1_2.dxf`.
 
+## Turkiya/NetCAD kanalizatsiya loyihasi (v0.15)
+
+"ATIKSU UYGULAMA" kabi NetCAD planlari to'g'ridan-to'g'ri o'qiladi: `ET1_ASU_Borular` (quvur, bir nechta parallel chiziq →
+bitta o'q), `Ana_Baca`/`Ara_Baca` (quduq aylanalari), `BACA ETİKETLERİ` (qopqoq / nom "070A" / tub belgilari, yo'naltiruvchi
+chiziq bo'ylab), `Boru Etiketleri` ("48.1m", "1:365", "Ø500", "MBB"/"PE-BA"). Yozuvsiz quduqlarda tub belgisi tarmoq bo'yicha
+baholanadi; yozuvdagi nishablik ↔ quduq belgilaridan hisoblangan nishablik solishtiriladi. Fayl roli (SEWER) faqat nomidan
+tarmoq ekani tanilgan qatlamlarga qo'llanadi — genplan/yo'l xreflari quvurga aylanmaydi. Katta jadvallar bir martada
+to'ldiriladi (600+ quvur — soniyalarda).
+
 ## Bitta faylda KJ loyiha: qolip + armatura (v0.15) — `bim/kj_project`
 
 Haqiqiy KJ fayllarda (masalan "1-43B-9 КЖ ТИП 3") barcha varaqlar model fazosida yonma-yon, har biri o'z masshtabida.

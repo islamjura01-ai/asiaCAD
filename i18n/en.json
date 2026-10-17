@@ -762,6 +762,7 @@
     "util.chk.no_z": "Line {0} ({1}): no levels/depths — default depth used",
     "util.chk.above": "Line {0}: pipe is {1} m above ground",
     "util.chk.cover": "Line {0}: cover {1} m < {2} m",
+    "util.chk.slope_label": "Pipe {0}: labelled slope {1}, from manhole inverts {2} — check",
     "util.chk.counter": "Line {0}: gravity line slope reverses at vertex {1}",
     "util.chk.gap": "Line {0}: {1} m gap at end — not connected",
     "util.chk.clash": "Lines {0} and {1} clash: clearance {2} m (need ≥ {3} m)",

@@ -1,4 +1,5 @@
 #include "road_dialog.h"
+#include "table_bulk.h"
 
 #include <asiacad/civil/excel.h>
 
@@ -446,6 +447,7 @@ void RoadDialog::setDesign(int i, double z) {
 
 void RoadDialog::fillTables() {
     updating_ = true;
+    BulkFill bulk(st_);
     st_->setRowCount(0);
     std::map<double, int> bad;  // piket -> 2 xato / 1 ogohlantirish
     for (const auto& is : m_.issues) bad[is.s] = std::max(bad[is.s], is.error ? 2 : 1);

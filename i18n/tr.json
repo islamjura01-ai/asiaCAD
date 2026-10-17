@@ -762,6 +762,7 @@
     "util.chk.no_z": "{0}. hat ({1}): kot/derinlik yok — varsayılan derinlik",
     "util.chk.above": "{0}. hat: boru zeminin {1} m üstünde",
     "util.chk.cover": "{0}. hat: üst örtü {1} m < {2} m",
+    "util.chk.slope_label": "{0}. boru: etikette eğim {1}, baca kotlarından {2} — kontrol edin",
     "util.chk.counter": "{0}. hat: cazibeli hatta {1}. noktada ters eğim",
     "util.chk.gap": "{0}. hat: ucunda {1} m boşluk — bağlı değil",
     "util.chk.clash": "{0} ve {1} çakışıyor: aralık {2} m (≥ {3} m gerekli)",

@@ -30,6 +30,8 @@ struct UtilParams {
     double gapTol = 1.0;          // shu masofadagi ulanmagan uchlar — uzilish, m
     double clearPipe = 0.2;       // kesishmada vertikal masofa (sirtlar orasi), m
     double clearCable = 0.5;      // kabel ishtirok etsa, m
+    double nodeLabelRadius = 9.0; // quduq belgilari (qopqoq/tub) quduq markazidan shu radiusda, m
+    double bundleWidth = 1.2;     // quvur bir nechta parallel chiziq bilan chizilgan bo'lsa — bitta o'qqa, m
     std::map<UtilKind, double> depth;     // standart chuqurlik (quvur ustigacha), m
     std::map<UtilKind, double> dn;        // standart diametr, mm
     std::map<UtilKind, double> minCover;  // eng kam qatlam (quvur ustigacha), m
@@ -50,6 +52,11 @@ struct UtilLine {
     bool dnFromLabel = false;
     bool dnManual = false;
     std::vector<UtilVertex> v;
+    // loyiha yozuvlari (Turkiya/NetCAD uslubi: "48.1m", "1:365", "Ø500", "MBB"); 0 — yo'q
+    double slopeLabel = 0;        // nishablik (1:365 -> 0.00274)
+    double lengthLabel = 0;       // m
+    std::string material;
+    int from = -1, to = -1;       // uchlaridagi quduqlar (nodes indeksi)
     double length() const;        // 3D
 };
 
@@ -58,6 +65,10 @@ struct UtilNode {                 // quduq/kamera (aylana)
     std::string layer;
     double x = 0, y = 0, r = 0.5;
     double ground = 0, bottom = 0;
+    std::string name;             // "070A"
+    std::vector<double> inverts;  // yozuvdagi tub belgilari (o'sish tartibida); ground — qopqoq belgisi
+    bool labeled = false;
+    bool estimated = false;       // belgi yozuvi yo'q — tarmoq bo'yicha baholangan tub belgisi
 };
 
 struct UtilCrossing {
@@ -101,7 +112,8 @@ UtilModel readUtilities(const std::vector<UtilSource>& sources, const UtilParams
 // Qo'lda tuzatishdan keyin: kesishmalar, uzunliklar va tekshiruv qayta hisoblanadi (belgilar o'zgarmaydi)
 void checkUtilities(UtilModel& m, const UtilParams& p);
 
-// Yozuvni tahlil qilish (sinov uchun ochiq): 'd' — diametr mm, 'h' — chuqurlik m, 'z' — belgi m, 0 — yo'q
+// Yozuvni tahlil qilish (sinov uchun ochiq): 'd' — diametr mm, 'h' — chuqurlik m, 'z' — belgi m,
+// 's' — nishablik ("1:365", "i=0.005"), 'l' — uzunlik ("48.1m", "L=48.1"), 0 — yo'q
 char parseUtilLabel(const std::string& text, double& value);
 
 std::string utilToJson(const UtilModel& m, const UtilParams& p);

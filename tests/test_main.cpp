@@ -1905,7 +1905,7 @@ TEST(util_labels_and_layers) {
     CHECK(civil::parseUtilLabel("▽ 101.20", v) == 'z' && std::abs(v - 101.2) < 1e-12);
     CHECK(civil::parseUtilLabel("отм. 99.5", v) == 'z');
     CHECK(civil::parseUtilLabel("АВБбШв 4x120", v) == 0);
-    CHECK(civil::parseUtilLabel("L=45", v) == 0);
+    CHECK(civil::parseUtilLabel("L=45", v) == 'l' && std::abs(v - 45) < 1e-12);  // quvur uzunligi
     CHECK(civil::guessUtil("V1_SUV") == civil::UtilKind::Water);
     CHECK(civil::guessUtil("К1") == civil::UtilKind::Sewer);
     CHECK(civil::guessUtil("K2_YOMGIR") == civil::UtilKind::Storm);
@@ -1958,6 +1958,27 @@ TEST(util_example_drawing_to_3d) {
     CHECK(m2.lines.size() == m.lines.size() && m2.issues.size() == m.issues.size());
     NEAR(m2.lines[0].v[0].z, m.lines[0].v[0].z);
     CHECK(!civil::drawUtilities3D(m, 0.5).empty());
+}
+
+TEST(util_force_kind_keeps_known_layers_only) {
+    // NetCAD fayli: tarmoq qatlami nomidan tanilsa (ET1_ASU_Borular), "SEWER" roli faqat shunday qatlamlarga —
+    // genplan/yo'l chiziqlari ("0", "YOL_KENAR") quvurga aylanmaydi
+    Document d;
+    d.addLayer(Layer{"ET1_ASU_Borular_3"});
+    d.addLayer(Layer{"YOL_KENAR"});
+    d.add(std::make_unique<LineEntity>(Vec3{0, 0, 0}, Vec3{40, 0, 0}));
+    d.find(d.ids().back())->setLayer("ET1_ASU_Borular_3");
+    d.add(std::make_unique<LineEntity>(Vec3{0, 10, 0}, Vec3{40, 10, 0}));
+    d.find(d.ids().back())->setLayer("YOL_KENAR");
+    d.add(std::make_unique<LineEntity>(Vec3{0, 20, 0}, Vec3{40, 20, 0}));
+    civil::UtilSource src{&d, {}, civil::UtilKind::Sewer, "a"};
+    const auto m = civil::readUtilities(std::vector<civil::UtilSource>{src}, civil::defaultUtilParams());
+    CHECK(m.lines.size() == 1);
+    // tanilgan qatlam yo'q — eski xulq: barcha chiziqlar shu tur
+    Document e;
+    e.add(std::make_unique<LineEntity>(Vec3{0, 0, 0}, Vec3{40, 0, 0}));
+    civil::UtilSource s2{&e, {}, civil::UtilKind::Water, "b"};
+    CHECK(civil::readUtilities(std::vector<civil::UtilSource>{s2}, civil::defaultUtilParams()).lines.size() == 1);
 }
 
 TEST(util_separate_files_clash) {

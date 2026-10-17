@@ -1,4 +1,5 @@
 #include "utility_dialog.h"
+#include "table_bulk.h"
 
 #include <asiacad/civil/excel.h>
 
@@ -386,6 +387,7 @@ void UtilityDialog::applyTemplate(const QVariant& data) {
 void UtilityDialog::fillTables() {
     updating_ = true;
     const int keep = selected_;
+    BulkFill bulkLines(lines_), bulkCross(cross_);
     lines_->setRowCount(0);
     double total = 0;
     for (std::size_t i = 0; i < m_.lines.size(); ++i) {
@@ -460,6 +462,7 @@ void UtilityDialog::fillTables() {
 void UtilityDialog::fillPoints() {
     const bool was = updating_;
     updating_ = true;
+    BulkFill bulk(points_);
     points_->setRowCount(0);
     if (selected_ >= 0 && selected_ < static_cast<int>(m_.lines.size())) {
         const auto& ln = m_.lines[static_cast<std::size_t>(selected_)];

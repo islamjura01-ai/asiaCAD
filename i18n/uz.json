@@ -762,6 +762,7 @@
     "util.chk.no_z": "{0}-chiziq ({1}): belgi/chuqurlik yoʻq — standart chuqurlik olindi",
     "util.chk.above": "{0}-chiziq: quvur yer sathidan {1} m yuqorida",
     "util.chk.cover": "{0}-chiziq: quvur ustidagi qatlam {1} m < {2} m",
+    "util.chk.slope_label": "{0}-quvur: yozuvda nishablik {1}, quduq tub belgilaridan {2} — tekshiring",
     "util.chk.counter": "{0}-chiziq: oʻz oqimli tarmoqda {1}-uchda nishablik teskari",
     "util.chk.gap": "{0}-chiziq: uchida {1} m uzilish — ulanmagan",
     "util.chk.clash": "{0} va {1} chiziqlar toʻqnashadi: oraliq {2} m (kerak ≥ {3} m)",

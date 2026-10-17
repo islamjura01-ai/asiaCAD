@@ -31,6 +31,7 @@ public:
     void addPrism(const std::vector<P3>& outline, const std::vector<std::vector<P3>>& holes, double z0, double z1, const QColor& c,
                   int alpha = 255);
     void addLabel(const P3& at, const QString& text);
+    void addFace(const std::vector<P3>& pts, const QColor& c, int alpha = 255, bool outline = false);  // ixtiyoriy tekis yuza
     void addPolyline(const std::vector<P3>& pts, const QColor& c, double widthPx, bool closed = false);  // armatura va h.k.
     void endScene(bool keepView = false);
     void resetView();

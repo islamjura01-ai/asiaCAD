@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.12: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.13: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -177,6 +177,32 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
 Har bir katta menyuda chapda shablonlar paneli turadi (qidiruv, bo'limlar, ikki marta bosish — qo'llash):
 kanalizatsiya — quvur shablonlari material bo'yicha; monolit bino — bino tiplari (karkas 9/16 qavat, ofis, kottej, maktab);
 armatura — element turlari bo'yicha. Foydalanuvchi shablonlari AppData'da saqlanadi.
+
+## Excel bilan hamnafas (v0.13) — `io/xlsx`, `civil/excel`
+
+- O'z .xlsx yozuvchi/o'quvchimiz (tashqi kutubxonasiz: ZIP + inflate). Excel, LibreOffice, Google Sheets fayllari o'qiladi.
+- Har bir menyuda **Excelga ↗ / Exceldan ↙**: jadvallar jonli formulalar bilan (uzunlik, massa, SUMIF/SUMIFS, hajmlar),
+  sariq kataklar — tahrirlanadi. Bog'langan faylni Excelda saqlasangiz, menyu avtomatik yangilanadi.
+- Kanalizatsiya (quduqlar, bo'laklar, hajmlar, parametrlar), bino (parametrlar, qatlamlar, PTO), armatura (vedomost,
+  diametrlar, shablonlar), yer osti tarmoqlari (tarmoqlar, nuqtalar Z, kesishmalar), yo'l (piketlar, hajmlar).
+- `EXCEL SEWER|BUILDING|REBAR|UTIL|ROAD kirish chiqish` — .xlsx chiqishi eksport, .xlsx kirishi import.
+
+## Yer osti tarmoqlari 3D (v0.13) — `civil/utility`
+
+- Plan chizmasidan: qatlam -> tur (suv, kanalizatsiya, yomg'ir, gaz, issiqlik, elektr, aloqa, drenaj, yer sathi).
+- Yozuvlar: Ø200, %%c110, DN300, Ду150 — diametr; h=1,80 — quvur ustigacha chuqurlik; 98,45 / ▽98.45 / отм. 98.45 — belgi
+  (o'z oqimli — quvur tubi, boshqalar — o'q); 3D poliliniya Z si; yer — belgi yozuvlari va 3D nuqtalar (IDW).
+- Xatolar: diametr/belgi yo'q (standart olindi), uzilish, kesishmalarda vertikal oraliq (0,2 / kabel 0,5 m),
+  quvur ustidagi qatlam, teskari nishablik. Qo'lda tuzatish: jadvalda (tur, Ø, har uch Z) yoki Excelda.
+- `UTIL` — tahlil, `UTIL +` — 3D_* qatlamlarga chizish. Namuna: `examples/yer_osti.acs`.
+
+## Yo'l 3D (v0.13) — `civil/road`
+
+- O'q (poliliniya, yoylar bilan) + yer belgilari + loyiha belgilari (▽101,20) -> piketlar, ko'ndalang profil
+  (polosalar, yo'l yoqasi, qiyalik 1:m yergacha), 3D koridor, bo'ylama profil.
+- Toifa shablonlari I-a…V, yo'l to'shamasi shablonlari; to'kma/kesma hajmlari, qoplama qatlamlari, asfalt m².
+- Tekshiruv (SNiP 2.05.02-85 asosida, tasdiqlanmagan): bo'ylama nishablik, egri radiusi, egrisiz burilish, baland to'kma.
+- `ROAD` — tahlil, `ROAD + x,y` — 3D va profil. Namuna: `examples/yol.acs`.
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

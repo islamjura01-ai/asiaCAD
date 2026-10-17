@@ -5,6 +5,7 @@
 #include "building_dialog.h"
 #include "rebar_dialog.h"
 #include "utility_dialog.h"
+#include "road_dialog.h"
 #include "icons.h"
 
 #include <asiacad/core/entities.h>
@@ -77,6 +78,7 @@ const ActDef kActs[] = {
     {"building", "bim", "gui.act.building", false},
     {"rebar", "rebar", "gui.act.rebar", false},
     {"util", "util", "gui.act.util", false},
+    {"road", "road", "gui.act.road", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -199,7 +201,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.12"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.13"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -221,7 +223,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
             {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
             {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
@@ -280,6 +282,7 @@ void MainWindow::buildActions() {
     connect(act_["building"], &QAction::triggered, this, [this] { openBuilding(); });
     connect(act_["rebar"], &QAction::triggered, this, [this] { openRebar(); });
     connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
+    connect(act_["road"], &QAction::triggered, this, [this] { openRoad(); });
     // Asbob tugagach (Esc, Enter, buyruq bajarildi) — "Tanlash" tugmasi yonsin
     connect(view_, &Viewport::promptChanged, this, [this] {
         if (act_.contains(toolKey(view_->tool()))) act_[toolKey(view_->tool())]->setChecked(true);
@@ -300,7 +303,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimradius", "dimdiameter"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "building", "rebar"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "building", "rebar"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
         {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
@@ -845,6 +848,26 @@ UtilityDialog* MainWindow::openUtility() {
     util_->raise();
     util_->activateWindow();
     return util_;
+}
+
+RoadDialog* MainWindow::openRoad() {
+    if (!road_) {
+        road_ = new RoadDialog(loc_, doc_, !theme_.lightCanvas, this);
+        road_->setStyleSheet(theme_.styleSheet);
+        connect(road_, &RoadDialog::drawRequested, this, [this](const QString& path) {
+            const BBox b = doc_.extents(true);
+            const double x = b.valid() ? b.min.x : 0, y = b.valid() ? b.min.y - 30 : -30;
+            runLine(QStringLiteral("ROAD \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
+                                                              Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0)));
+            view_->zoomExtents();
+        });
+    } else {
+        road_->reread();
+    }
+    road_->show();
+    road_->raise();
+    road_->activateWindow();
+    return road_;
 }
 
 void MainWindow::activateTool(const QString& key) {

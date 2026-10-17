@@ -569,4 +569,105 @@ void utilityFromWorkbook(const Workbook& wb, civil::UtilModel& m, const civil::U
     civil::checkUtilities(m, p);
 }
 
+// ================================================================ yo'l
+Workbook roadWorkbook(const civil::RoadModel& m, const civil::RoadParams& p, const Tr& tr) {
+    Workbook wb;
+    Sheet& s = wb.add(T(tr, "xl.sh.stations"));
+    s.add({hd(tr, "xl.c.pk"), hd(tr, "xl.c.s"), Cell::s("X", H), Cell::s("Y", H), hd(tr, "xl.c.ground"), hd(tr, "xl.c.design"), hd(tr, "xl.c.workz"),
+           hd(tr, "xl.c.grade"), hd(tr, "xl.c.fillA"), hd(tr, "xl.c.cutA"), hd(tr, "xl.c.fillV"), hd(tr, "xl.c.cutV"), hd(tr, "xl.c.width")});
+    s.widths = {13, 10, 12, 12, 11, 12, 10, 10, 10, 10, 11, 11, 11};
+    const int n = static_cast<int>(m.st.size());
+    for (int i = 0; i < n; ++i) {
+        const auto& t = m.st[static_cast<std::size_t>(i)];
+        const std::string R = r1(i + 1), Rn = r1(i + 2);
+        const bool lastRow = i + 1 == n;
+        const auto* nx = lastRow ? nullptr : &m.st[static_cast<std::size_t>(i + 1)];
+        const double fillV = nx ? (t.fillArea + nx->fillArea) / 2 * (nx->s - t.s) : 0;
+        const double cutV = nx ? (t.cutArea + nx->cutArea) / 2 * (nx->s - t.s) : 0;
+        const double width = t.section.empty() ? 0 : t.section.front().first - t.section.back().first;
+        s.add({Cell::s(civil::pk(t.s)), Cell::n(t.s, N2), Cell::n(t.x, N3), Cell::n(t.y, N3), Cell::n(t.ground, N2), Cell::n(t.design, WARN),
+               Cell::f(std::format("F{0}-E{0}", R), t.design - t.ground, N2),
+               lastRow ? Cell::s("") : Cell::f(std::format("(F{1}-F{0})/(B{1}-B{0})*1000", R, Rn), t.grade * 1000, N2), Cell::n(t.fillArea, N2),
+               Cell::n(t.cutArea, N2), lastRow ? Cell::s("") : Cell::f(std::format("(I{0}+I{1})/2*(B{1}-B{0})", R, Rn), fillV, N2),
+               lastRow ? Cell::s("") : Cell::f(std::format("(J{0}+J{1})/2*(B{1}-B{0})", R, Rn), cutV, N2), Cell::n(width, N2)});
+    }
+    s.add({Cell::s(T(tr, "gui.bim.total"), TOT), Cell::f(std::format("B{}-B2", n + 1), m.length, TOT), {}, {}, {}, {}, {}, {}, {}, {},
+           Cell::f(std::format("SUM(K2:K{})", n + 1), m.fillVolume, TOT), Cell::f(std::format("SUM(L2:L{})", n + 1), m.cutVolume, TOT)});
+
+    Sheet& q = wb.add(T(tr, "xl.sh.quant"));
+    q.add({hd(tr, "xl.c.work"), hd(tr, "xl.c.thick"), hd(tr, "xl.c.width"), hd(tr, "xl.c.len"), hd(tr, "xl.c.qty")});
+    q.rows[0][0] = hd(tr, "gui.rd.pavement");
+    q.widths = {44, 11, 12, 12, 14};
+    const double w = 2 * (p.cat.lanes * p.cat.laneWidth / 2 + p.cat.strengthened);
+    const std::string ss = sref(T(tr, "xl.sh.stations"));
+    for (const auto& l : p.pavement) {
+        const int row = static_cast<int>(q.rows.size());
+        q.add({Cell::s(l.name.rfind("road.", 0) == 0 ? T(tr, l.name) : l.name), Cell::n(l.thickness, N3), Cell::n(w, N2),
+               Cell::f(std::format("{}B{}", ss, n + 2), m.length, N2), Cell::f(std::format("B{0}*C{0}*D{0}", r1(row)), l.thickness * w * m.length, N2)});
+    }
+    q.add({});
+    q.add({Cell::s(T(tr, "xl.asphalt")), {}, Cell::n(w, N2), Cell::f(std::format("{}B{}", ss, n + 2), m.length, N2),
+           Cell::f(std::format("C{0}*D{0}", r1(static_cast<int>(q.rows.size()))), m.asphaltArea, TOT)});
+    q.add({Cell::s(T(tr, "xl.c.fillV")), {}, {}, {}, Cell::f(std::format("{}K{}", ss, n + 2), m.fillVolume, TOT)});
+    q.add({Cell::s(T(tr, "xl.c.cutV")), {}, {}, {}, Cell::f(std::format("{}L{}", ss, n + 2), m.cutVolume, TOT)});
+
+    Sheet& pr = wb.add(T(tr, "xl.sh.params"));
+    pr.add({hd(tr, "xl.c.key"), hd(tr, "xl.c.value"), hd(tr, "xl.c.desc")});
+    pr.widths = {16, 14, 50};
+    pr.autoFilter = false;
+    auto row = [&](const char* key, double v, const char* desc) { pr.add({Cell::s(key), Cell::n(v, WARN), Cell::s(T(tr, desc))}); };
+    pr.add({Cell::s("cat"), Cell::s(p.cat.id, WARN), Cell::s(T(tr, ("road.cat." + p.cat.id).c_str()))});
+    row("lanes", p.cat.lanes, "gui.rd.lanes");
+    row("laneWidth", p.cat.laneWidth, "gui.rd.lanew");
+    row("shoulder", p.cat.shoulder, "gui.rd.shoulder");
+    row("strengthened", p.cat.strengthened, "gui.rd.strength");
+    row("crossfall", p.crossfall * 100, "gui.rd.crossfall");
+    row("shoulderFall", p.shoulderFall * 100, "gui.rd.shfall");
+    row("slopeFill", p.slopeFill, "gui.rd.slope");
+    row("slopeCut", p.slopeCut, "gui.rd.slope");
+    row("maxGrade", p.cat.maxGrade * 1000, "gui.rd.maxgrade");
+    row("minRadius", p.cat.minRadius, "gui.rd.minradius");
+    for (std::size_t i = 0; i < p.pavement.size(); ++i)
+        pr.add({Cell::s("pav" + std::to_string(i + 1)), Cell::n(p.pavement[i].thickness, WARN),
+                Cell::s(p.pavement[i].name.rfind("road.", 0) == 0 ? T(tr, p.pavement[i].name) : p.pavement[i].name)});
+
+    std::vector<std::tuple<int, std::string, std::string, std::string>> iss;
+    for (const auto& is : m.issues) iss.emplace_back(is.error ? 2 : 1, civil::pk(is.s), T(tr, is.key, is.args), "SNiP 2.05.02-85");
+    issuesSheet(wb, tr, iss);
+    return wb;
+}
+
+void roadFromWorkbook(const Workbook& wb, civil::RoadModel& m, civil::RoadParams& p, const Tr& tr) {
+    if (const Sheet* pr = findSheet(wb, tr, "xl.sh.params", 2)) {
+        const auto pm = readParams(*pr);
+        pnum(pm, "lanes", [&](double v) { p.cat.lanes = std::max(1, static_cast<int>(std::lround(v))); });
+        pnum(pm, "laneWidth", [&](double v) { p.cat.laneWidth = v; });
+        pnum(pm, "shoulder", [&](double v) { p.cat.shoulder = v; });
+        pnum(pm, "strengthened", [&](double v) { p.cat.strengthened = v; });
+        pnum(pm, "crossfall", [&](double v) { p.crossfall = v / 100; });
+        pnum(pm, "shoulderFall", [&](double v) { p.shoulderFall = v / 100; });
+        pnum(pm, "slopeFill", [&](double v) { p.slopeFill = v; });
+        pnum(pm, "slopeCut", [&](double v) { p.slopeCut = v; });
+        pnum(pm, "maxGrade", [&](double v) { p.cat.maxGrade = v / 1000; });
+        pnum(pm, "minRadius", [&](double v) { p.cat.minRadius = v; });
+        for (std::size_t i = 0; i < p.pavement.size(); ++i)
+            pnum(pm, ("pav" + std::to_string(i + 1)).c_str(), [&](double v) { p.pavement[i].thickness = v; });
+    }
+    const Sheet* s = findSheet(wb, tr, "xl.sh.stations", 0);
+    if (!s) throw Error("xlsx.err.sheet", {T(tr, "xl.sh.stations")});
+    for (std::size_t r = 1; r < s->rows.size(); ++r) {
+        const auto ch = s->num(r, 1), z = s->num(r, 5);
+        if (!ch || !z) continue;
+        for (auto& t : m.st)
+            if (std::abs(t.s - *ch) < 0.01) {
+                if (std::abs(t.design - *z) > 1e-6) {
+                    t.design = *z;
+                    t.control = true;
+                }
+                break;
+            }
+    }
+    civil::recomputeRoad(m, p);
+}
+
 } // namespace asiacad::excel

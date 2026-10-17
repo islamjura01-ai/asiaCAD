@@ -2,6 +2,7 @@
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
+#include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
 #include <asiacad/io/xlsx.h>
@@ -334,7 +335,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 50);
+    CHECK(loc.canonicalCommands().size() == 51);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -1954,6 +1955,82 @@ TEST(util_example_drawing_to_3d) {
     CHECK(m2.lines.size() == m.lines.size() && m2.issues.size() == m.issues.size());
     NEAR(m2.lines[0].v[0].z, m.lines[0].v[0].z);
     CHECK(!civil::drawUtilities3D(m, 0.5).empty());
+}
+
+// ---------- Yo'l ----------
+static excel::Tr testTr();
+TEST(road_example_corridor) {
+    CHECK(civil::pk(0) == "PK0+00,00");
+    CHECK(civil::pk(301.5) == "PK3+01,50");
+    CHECK(civil::pk(1250) == "PK12+50,00");
+    CHECK(civil::guessRoadLayer("YOL_OQ") == civil::RoadLayer::Axis);
+    CHECK(civil::guessRoadLayer("ОСЬ_ДОРОГИ") == civil::RoadLayer::Axis);
+    CHECK(civil::guessRoadLayer("LOYIHA") == civil::RoadLayer::Design);
+    CHECK(civil::guessRoadLayer("РЕЛЬЕФ") == civil::RoadLayer::Ground);
+    const auto r = loadAcad(std::string(ASIACAD_EXAMPLES_DIR) + "/yol.acad");
+    const auto p = civil::defaultRoadParams();
+    auto m = civil::buildRoad(r.doc, civil::autoRoadLayers(r.doc), p);
+    NEAR(m.length, 600.0);
+    CHECK(m.groundPoints > 50);
+    CHECK(m.designPoints == 5);
+    CHECK(m.st.size() >= 31);
+    // loyiha belgilari: PK0 — 101, PK3 — 104
+    NEAR(m.st.front().design, 101.0);
+    bool at300 = false;
+    for (const auto& s : m.st)
+        if (std::abs(s.s - 300) < 0.01) { at300 = true; NEAR(s.design, 104.0); }
+    CHECK(at300);
+    // ko'ndalang kesim: 7 nuqta, qatnov qismi chetidan 2% pastga
+    const auto& s0 = m.st.front();
+    CHECK(s0.section.size() == 7);
+    NEAR(s0.section[2].first, 3.5);
+    NEAR(s0.section[2].second, s0.design - 3.5 * 0.02);
+    CHECK(m.fillVolume > 0 && m.cutVolume > 0);
+    CHECK(!m.pavementVolumes.empty());
+    NEAR(m.pavementVolumes[0].second, 0.05 * 2 * (3.5 + 0.5) * 600);
+    auto has = [&](const civil::RoadModel& mm, const char* key) {
+        for (const auto& i : mm.issues) if (i.key == key) return true;
+        return false;
+    };
+    CHECK(has(m, "road.chk.grade"));
+    CHECK(has(m, "road.chk.nocurve"));
+    // qo'lda tuzatish: PK4+50 belgisini 101,5 ga ko'tarish -> nishablik normada
+    for (auto& s : m.st)
+        if (std::abs(s.s - 450) < 0.01) s.design = 101.5;
+    // oraliq piketlarni chiziqli qayta taqsimlash
+    double z300 = 104, z450 = 101.5;
+    for (auto& s : m.st)
+        if (s.s > 300 && s.s < 450) s.design = z300 + (z450 - z300) * (s.s - 300) / 150;
+        else if (s.s > 450) s.design = z450 + (98.0 - z450) * (s.s - 450) / 150;
+    civil::recomputeRoad(m, p);
+    CHECK(!has(m, "road.chk.grade"));
+    // JSON
+    civil::RoadModel m2;
+    auto p2 = p;
+    civil::roadFromJson(civil::roadToJson(m, p), m2, p2);
+    CHECK(m2.st.size() == m.st.size());
+    NEAR(m2.cutVolume, m.cutVolume);
+    CHECK(!civil::drawRoad3D(m).empty());
+    CHECK(!civil::drawRoadProfile(m, {0, -100, 0}, 10, 2, "g", "d", "pk").empty());
+}
+
+TEST(excel_road_roundtrip) {
+    const auto tr = testTr();
+    const auto r = loadAcad(std::string(ASIACAD_EXAMPLES_DIR) + "/yol.acad");
+    auto p = civil::defaultRoadParams();
+    auto m = civil::buildRoad(r.doc, civil::autoRoadLayers(r.doc), p);
+    auto wb = xlsx::fromBytes(xlsx::toBytes(excel::roadWorkbook(m, p, tr)));
+    CHECK(wb.sheets.size() == 4);
+    // Excel'da: 2-piket loyiha belgisini o'zgartirish, polosa enini 3,75
+    wb.sheets[0].rows[2][5] = xlsx::Cell::n(m.st[1].design + 0.4);
+    for (auto& row : wb.sheets[2].rows)
+        if (!row.empty() && row[0].text == "laneWidth") row[1] = xlsx::Cell::n(3.75);
+    const double z1 = m.st[1].design;
+    excel::roadFromWorkbook(wb, m, p, tr);
+    NEAR(m.st[1].design, z1 + 0.4);
+    CHECK(m.st[1].control);
+    NEAR(p.cat.laneWidth, 3.75);
+    NEAR(m.st[0].section[2].first, 3.75);
 }
 
 // ---------- Excel (.xlsx) ----------

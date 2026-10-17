@@ -6,6 +6,7 @@
 #include "rebar_dialog.h"
 #include "excel_link.h"
 #include "utility_dialog.h"
+#include "road_dialog.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -429,6 +430,28 @@ int main(int argc, char** argv) {
         w.runLine("UNDO");
         CHECK(doc.size() == n0);
         ud->close();
+    }
+
+    // 23. Yo'l 3D: chizmadan koridor, toifa shabloni, qo'lda tuzatish, chizmaga
+    w.runLine(QStringLiteral("OPEN \"%1/yol.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
+    {
+        RoadDialog* rd = w.openRoad();
+        CHECK(std::abs(rd->model().length - 600) < 1e-6);
+        CHECK(rd->sidebar()->count() == 9);
+        CHECK(rd->view()->faceCount() > 100);
+        const int e0 = rd->model().errors();
+        CHECK(e0 >= 2);
+        rd->applyCategory("IV");  // IV toifa: 60 ‰ — nishablik xatosi yo'qoladi
+        CHECK(rd->params().cat.laneWidth == 3.0);
+        CHECK(rd->model().errors() < e0);
+        const auto n0 = doc.size();
+        for (auto* b : rd->findChildren<QPushButton*>())
+            if (b->text() == QString::fromStdString(loc.tr("gui.rd.draw"))) b->click();
+        CHECK(doc.size() > n0 + 30);
+        CHECK(doc.layer("YOL_3D_OQ").has_value() && doc.layer("YOL_PROFIL").has_value());
+        w.runLine("UNDO");
+        CHECK(doc.size() == n0);
+        rd->close();
     }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

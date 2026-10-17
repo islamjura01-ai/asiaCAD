@@ -38,6 +38,7 @@ class SewerDialog;
 class BuildingDialog;
 class RebarDialog;
 class UtilityDialog;
+class RoadDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -56,6 +57,7 @@ public:
     BuildingDialog* openBuilding();         // "Monolit bino" menyusi
     RebarDialog* openRebar();               // "Armatura 3D" menyusi
     UtilityDialog* openUtility();           // "Yer osti tarmoqlari 3D" menyusi
+    RoadDialog* openRoad();                 // "Yo'l 3D" menyusi
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -97,6 +99,7 @@ private:
     BuildingDialog* building_ = nullptr;
     RebarDialog* rebar_ = nullptr;
     UtilityDialog* util_ = nullptr;
+    RoadDialog* road_ = nullptr;
 
     QHash<QString, QAction*> act_;  // "line" -> QAction
     QTabWidget* ribbon_ = nullptr;

@@ -5,6 +5,7 @@
 // Varaq nomlari UI tilida; import avval shu tildagi nom, keyin tartib raqami bo'yicha qidiradi.
 // Parametr varaqlarida A ustuni — mashina kaliti (tilga bog'liq emas).
 #include <asiacad/bim/rebar.h>
+#include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
 #include <asiacad/io/xlsx.h>
@@ -31,5 +32,9 @@ void rebarFromWorkbook(const xlsx::Workbook& wb, bim::BuildingParams& p, std::ma
 // Yer osti tarmoqlari: Tarmoqlar (tur, Ø — tahrirlanadi), Nuqtalar (Z — tahrirlanadi), Kesishmalar, Hajmlar, Tekshiruv
 xlsx::Workbook utilityWorkbook(const civil::UtilModel& m, const civil::UtilParams& p, const Tr& tr);
 void utilityFromWorkbook(const xlsx::Workbook& wb, civil::UtilModel& m, const civil::UtilParams& p, const Tr& tr);
+
+// Yo'l: Piketlar (loyiha belgisi tahrirlanadi; ishchi belgi, nishablik, hajmlar — formulalar), Hajmlar, Parametrlar, Tekshiruv
+xlsx::Workbook roadWorkbook(const civil::RoadModel& m, const civil::RoadParams& p, const Tr& tr);
+void roadFromWorkbook(const xlsx::Workbook& wb, civil::RoadModel& m, civil::RoadParams& p, const Tr& tr);
 
 } // namespace asiacad::excel

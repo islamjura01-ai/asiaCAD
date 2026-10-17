@@ -218,6 +218,16 @@ void Pipe3DView::addPrism(const std::vector<P3>& o, const std::vector<std::vecto
 
 void Pipe3DView::addLabel(const P3& at, const QString& text) { labels_.push_back({at, text}); }
 
+void Pipe3DView::addFace(const std::vector<P3>& pts, const QColor& c, int alpha, bool outline) {
+    if (pts.size() < 3) return;
+    Face f;
+    f.pts = pts;
+    f.color = c;
+    f.alpha = alpha;
+    f.outline = outline;
+    faces_.push_back(f);
+}
+
 void Pipe3DView::addPolyline(const std::vector<P3>& pts, const QColor& c, double widthPx, bool closed) {
     if (pts.size() < 2) return;
     Face f;

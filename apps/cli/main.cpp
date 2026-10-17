@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
             if (!interp.run(line)) break;
         }
     } else {
-        std::cout << loc.tr("app.banner", {"0.12"}) << '\n';
+        std::cout << loc.tr("app.banner", {"0.13"}) << '\n';
         std::string line;
         while (std::cout << loc.tr("app.prompt") << std::flush, std::getline(std::cin, line))
             if (!interp.run(line)) break;

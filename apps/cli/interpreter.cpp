@@ -3,6 +3,7 @@
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
+#include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
 #include <asiacad/core/dimension.h>
@@ -21,6 +22,7 @@
 #include <format>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 
@@ -105,8 +107,9 @@ const char* commandSyntax(const std::string& c) {
         {"BUILDING", "[n] [H] [t] [x,y] | file.json [x,y]"},
         {"REBAR", "[file.json] [x,y]"},
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
-        {"EXCEL", "SEWER|BUILDING|REBAR|UTIL in out"},
+        {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD in out"},
         {"UTIL", "[file.json] [+]"},
+        {"ROAD", "[file.json] [+] [x,y]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -620,6 +623,19 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
                 xlsx::save(excel::utilityWorkbook(m, p, tr), out);
                 say("xl.msg.exported", {out});
             }
+        } else if (mod == "ROAD") {
+            auto p = civil::defaultRoadParams();
+            civil::RoadModel m;
+            if (!in.empty() && extOf(in) == "json") civil::roadFromJson(readAll(in), m, p);
+            else m = civil::buildRoad(doc_, civil::autoRoadLayers(doc_), p);
+            if (!in.empty() && extOf(in) == "xlsx") {
+                excel::roadFromWorkbook(xlsx::load(in), m, p, tr);
+                writeAll(out, civil::roadToJson(m, p));
+                say("xl.msg.imported", {in, std::to_string(m.st.size()), std::to_string(m.errors()), "0"});
+            } else {
+                xlsx::save(excel::roadWorkbook(m, p, tr), out);
+                say("xl.msg.exported", {out});
+            }
         } else {
             throw Error("xl.err.module", {a[0]});
         }
@@ -663,6 +679,55 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             last_.clear();
             for (auto* c : adds) last_.push_back(c->entityId());
             say("util.msg.drawn", {std::to_string(last_.size())});
+        }
+    } else if (cmd == "ROAD") {
+        // ROAD — tahlil; + — 3D chizmaga; x,y — bo'ylama profil; fayl.json — GUI'da tuzatilgan model (3D chiziladi)
+        auto p = civil::defaultRoadParams();
+        civil::RoadModel m;
+        bool draw3d = false;
+        std::optional<Vec3> profileAt;
+        std::size_t k = 0;
+        if (!a.empty() && extOf(a[0]) == "json") {
+            std::ifstream f(a[0], std::ios::binary);
+            if (!f) throw Error("acad.err.open", {a[0]});
+            std::stringstream b;
+            b << f.rdbuf();
+            civil::roadFromJson(b.str(), m, p);
+            draw3d = true;
+            k = 1;
+        } else {
+            m = civil::buildRoad(doc_, civil::autoRoadLayers(doc_), p);
+        }
+        for (; k < a.size(); ++k) {
+            if (a[k] == "+") draw3d = true;
+            else profileAt = parsePoint(a[k]);
+        }
+        say("road.msg.summary", {std::format("{:.1f}", m.length), std::to_string(m.st.size()), std::format("{:.0f}", m.fillVolume),
+                                 std::format("{:.0f}", m.cutVolume), std::format("{:.0f}", m.asphaltArea), std::to_string(m.groundPoints),
+                                 std::to_string(m.designPoints), std::to_string(m.errors())});
+        for (const auto& [name, v] : m.pavementVolumes) say("road.msg.pav", {name.rfind("road.", 0) == 0 ? loc_.tr(name) : name, std::format("{:.1f}", v)});
+        for (const auto& i : m.issues)
+            out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args) << '\n';
+        if (draw3d || profileAt) {
+            std::vector<std::unique_ptr<IEntity>> es;
+            if (draw3d) es = civil::drawRoad3D(m);
+            if (profileAt)
+                for (auto& e : civil::drawRoadProfile(m, *profileAt, 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("road.lbl.design"), loc_.tr("road.lbl.pk")))
+                    es.push_back(std::move(e));
+            auto comp = std::make_unique<CompositeCommand>(cmd);
+            std::set<std::string> made;
+            for (const auto& e : es)
+                if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+            std::vector<AddEntityCommand*> adds;
+            for (auto& e : es) {
+                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+                adds.push_back(c.get());
+                comp->add(std::move(c));
+            }
+            stack_.execute(std::move(comp));
+            last_.clear();
+            for (auto* c : adds) last_.push_back(c->entityId());
+            say("road.msg.drawn", {std::to_string(last_.size())});
         }
     } else if (cmd == "PIPES") {
         const auto& cat = civil::PipeCatalog::builtin();

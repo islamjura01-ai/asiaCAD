@@ -6,6 +6,7 @@
 // Parametr varaqlarida A ustuni — mashina kaliti (tilga bog'liq emas).
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/sewer.h>
+#include <asiacad/civil/utility.h>
 #include <asiacad/io/xlsx.h>
 
 #include <functional>
@@ -26,5 +27,9 @@ xlsx::Workbook rebarWorkbook(const bim::BuildingParams& p, const std::map<std::s
                              const bim::BuildingModel& m, const bim::RebarSettings& rs, const bim::RebarModel& rm, const Tr& tr);
 void rebarFromWorkbook(const xlsx::Workbook& wb, bim::BuildingParams& p, std::map<std::string, bim::ElemKind>& layers,
                        bim::RebarSettings& rs, const Tr& tr);
+
+// Yer osti tarmoqlari: Tarmoqlar (tur, Ø — tahrirlanadi), Nuqtalar (Z — tahrirlanadi), Kesishmalar, Hajmlar, Tekshiruv
+xlsx::Workbook utilityWorkbook(const civil::UtilModel& m, const civil::UtilParams& p, const Tr& tr);
+void utilityFromWorkbook(const xlsx::Workbook& wb, civil::UtilModel& m, const civil::UtilParams& p, const Tr& tr);
 
 } // namespace asiacad::excel

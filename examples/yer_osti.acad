@@ -1,0 +1,50 @@
+{
+"format":"asiacad",
+"version":1,
+"generator":"AsiaCAD 0.11",
+"nextId":30,
+"layers":[
+{"name":"0","color":7,"visible":true,"locked":false,"frozen":false},
+{"name":"ALOQA","color":6,"visible":true,"locked":false,"frozen":false},
+{"name":"GAZ","color":2,"visible":true,"locked":false,"frozen":false},
+{"name":"K1_KANAL","color":30,"visible":true,"locked":false,"frozen":false},
+{"name":"KABEL_0.4KV","color":1,"visible":true,"locked":false,"frozen":false},
+{"name":"V1_SUV","color":5,"visible":true,"locked":false,"frozen":false},
+{"name":"YER_SATHI","color":8,"visible":true,"locked":false,"frozen":false},
+{"name":"YOZUV","color":7,"visible":true,"locked":false,"frozen":false}
+],
+"blocks":[
+
+],
+"entities":[
+{"id":1,"type":"TEXT","layer":"YER_SATHI","color":256,"ins":[0,0,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"100.20"},
+{"id":2,"type":"TEXT","layer":"YER_SATHI","color":256,"ins":[50,0,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"100.00"},
+{"id":3,"type":"TEXT","layer":"YER_SATHI","color":256,"ins":[100,0,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"99.70"},
+{"id":4,"type":"TEXT","layer":"YER_SATHI","color":256,"ins":[0,30,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"100.40"},
+{"id":5,"type":"TEXT","layer":"YER_SATHI","color":256,"ins":[50,30,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"100.10"},
+{"id":6,"type":"TEXT","layer":"YER_SATHI","color":256,"ins":[100,30,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"99.90"},
+{"id":7,"type":"POLYLINE","layer":"V1_SUV","color":256,"closed":false,"pts":[[0,5,0],[50,5,0],[100,5,0]]},
+{"id":8,"type":"TEXT","layer":"YOZUV","color":256,"ins":[20,5.6,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"V1 PE100 Ø110"},
+{"id":9,"type":"TEXT","layer":"YOZUV","color":256,"ins":[0.5,4,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"h=1.50"},
+{"id":10,"type":"TEXT","layer":"YOZUV","color":256,"ins":[100.5,4,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"h=1.60"},
+{"id":11,"type":"POLYLINE","layer":"K1_KANAL","color":256,"closed":false,"pts":[[0,15,0],[50,15,0],[100,15,0]]},
+{"id":12,"type":"CIRCLE","layer":"K1_KANAL","color":256,"c":[0,15,0],"r":0.5},
+{"id":13,"type":"CIRCLE","layer":"K1_KANAL","color":256,"c":[50,15,0],"r":0.5},
+{"id":14,"type":"CIRCLE","layer":"K1_KANAL","color":256,"c":[100,15,0],"r":0.5},
+{"id":15,"type":"TEXT","layer":"YOZUV","color":256,"ins":[25,15.6,0],"h":0.5,"rot":0,"halign":"L","valign":"B","text":"K1 Ø200"},
+{"id":16,"type":"TEXT","layer":"YOZUV","color":256,"ins":[0.8,14,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"98.30"},
+{"id":17,"type":"TEXT","layer":"YOZUV","color":256,"ins":[50.8,14,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"98.00"},
+{"id":18,"type":"TEXT","layer":"YOZUV","color":256,"ins":[100.8,14,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"97.65"},
+{"id":19,"type":"POLYLINE","layer":"GAZ","color":256,"closed":false,"pts":[[40,-5,0],[40,35,0]]},
+{"id":20,"type":"TEXT","layer":"YOZUV","color":256,"ins":[40.5,-4,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"h=1.00"},
+{"id":21,"type":"TEXT","layer":"YOZUV","color":256,"ins":[40.5,34,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"h=1.00"},
+{"id":22,"type":"POLYLINE","layer":"KABEL_0.4KV","color":256,"closed":false,"pts":[[70,-5,0],[70,35,0]]},
+{"id":23,"type":"TEXT","layer":"YOZUV","color":256,"ins":[70.5,-4,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"h=1.40"},
+{"id":24,"type":"TEXT","layer":"YOZUV","color":256,"ins":[70.5,34,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"h=0.80"},
+{"id":25,"type":"TEXT","layer":"YOZUV","color":256,"ins":[70.5,20,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"АВБбШв 4x120"},
+{"id":26,"type":"POLYLINE","layer":"ALOQA","color":256,"closed":false,"pts":[[0,25,0],[60,25,0]]},
+{"id":27,"type":"POLYLINE","layer":"ALOQA","color":256,"closed":false,"pts":[[60.5,25,0],[100,25,0]]},
+{"id":28,"type":"TEXT","layer":"YOZUV","color":256,"ins":[10,25.5,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"Ø110"},
+{"id":29,"type":"TEXT","layer":"YOZUV","color":256,"ins":[80,25.5,0],"h":0.4,"rot":0,"halign":"L","valign":"B","text":"Ø110"}
+]
+}

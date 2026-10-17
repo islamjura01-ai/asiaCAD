@@ -4,6 +4,7 @@
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/sewer.h>
+#include <asiacad/civil/utility.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/grips.h>
@@ -20,6 +21,7 @@
 #include <format>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 
 namespace asiacad::cli {
@@ -103,7 +105,8 @@ const char* commandSyntax(const std::string& c) {
         {"BUILDING", "[n] [H] [t] [x,y] | file.json [x,y]"},
         {"REBAR", "[file.json] [x,y]"},
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
-        {"EXCEL", "SEWER|BUILDING|REBAR in out"},
+        {"EXCEL", "SEWER|BUILDING|REBAR|UTIL in out"},
+        {"UTIL", "[file.json] [+]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -601,8 +604,65 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
                 else xlsx::save(excel::buildingWorkbook(bp, lm, bm, tr), out);
                 say("xl.msg.exported", {out});
             }
+        } else if (mod == "UTIL") {
+            auto p = civil::defaultUtilParams();
+            civil::UtilModel m;
+            if (!in.empty() && extOf(in) == "json") {
+                civil::utilFromJson(readAll(in), m, p);
+            } else {
+                m = civil::readUtilities(doc_, civil::autoUtilLayers(doc_), p);
+            }
+            if (!in.empty() && extOf(in) == "xlsx") {
+                excel::utilityFromWorkbook(xlsx::load(in), m, p, tr);
+                writeAll(out, civil::utilToJson(m, p));
+                say("xl.msg.imported", {in, std::to_string(m.lines.size()), std::to_string(m.errors()), "0"});
+            } else {
+                xlsx::save(excel::utilityWorkbook(m, p, tr), out);
+                say("xl.msg.exported", {out});
+            }
         } else {
             throw Error("xl.err.module", {a[0]});
+        }
+    } else if (cmd == "UTIL") {
+        // UTIL — chizmani tahlil; UTIL + — 3D ni chizmaga; UTIL fayl.json — GUI'da tuzatilgan modelni chizish
+        auto p = civil::defaultUtilParams();
+        civil::UtilModel m;
+        bool draw = false;
+        if (!a.empty() && extOf(a[0]) == "json") {
+            std::ifstream f(a[0], std::ios::binary);
+            if (!f) throw Error("acad.err.open", {a[0]});
+            std::stringstream b;
+            b << f.rdbuf();
+            civil::utilFromJson(b.str(), m, p);
+            draw = true;
+        } else {
+            m = civil::readUtilities(doc_, civil::autoUtilLayers(doc_), p);
+            draw = !a.empty() && a[0] == "+";
+        }
+        int warn = 0;
+        for (const auto& i : m.issues) warn += !i.error;
+        say("util.msg.summary", {std::to_string(m.lines.size()), std::to_string(m.nodes.size()), std::to_string(m.crossings.size()),
+                                 std::to_string(m.groundPoints), std::to_string(m.errors()), std::to_string(warn)});
+        for (const auto& [k, len] : m.lengthByKind) say("util.msg.len", {loc_.tr(std::string("util.kind.") + civil::utilKey(k)), std::format("{:.1f}", len)});
+        for (const auto& i : m.issues)
+            out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args)
+                 << std::format("  [X={:.2f} Y={:.2f}]", i.x, i.y) << '\n';
+        if (draw) {
+            auto es = civil::drawUtilities3D(m, 0.5);
+            auto comp = std::make_unique<CompositeCommand>(cmd);
+            std::set<std::string> made;
+            for (const auto& e : es)
+                if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+            std::vector<AddEntityCommand*> adds;
+            for (auto& e : es) {
+                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+                adds.push_back(c.get());
+                comp->add(std::move(c));
+            }
+            stack_.execute(std::move(comp));
+            last_.clear();
+            for (auto* c : adds) last_.push_back(c->entityId());
+            say("util.msg.drawn", {std::to_string(last_.size())});
         }
     } else if (cmd == "PIPES") {
         const auto& cat = civil::PipeCatalog::builtin();

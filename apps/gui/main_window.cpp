@@ -4,6 +4,7 @@
 #include "sewer_dialog.h"
 #include "building_dialog.h"
 #include "rebar_dialog.h"
+#include "utility_dialog.h"
 #include "icons.h"
 
 #include <asiacad/core/entities.h>
@@ -75,6 +76,7 @@ const ActDef kActs[] = {
     {"sewer", "pipes", "gui.act.sewer", false},
     {"building", "bim", "gui.act.building", false},
     {"rebar", "rebar", "gui.act.rebar", false},
+    {"util", "util", "gui.act.util", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -219,7 +221,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
             {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
             {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
@@ -277,6 +279,7 @@ void MainWindow::buildActions() {
     connect(act_["sewer"], &QAction::triggered, this, [this] { openSewer(); });
     connect(act_["building"], &QAction::triggered, this, [this] { openBuilding(); });
     connect(act_["rebar"], &QAction::triggered, this, [this] { openRebar(); });
+    connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
     // Asbob tugagach (Esc, Enter, buyruq bajarildi) — "Tanlash" tugmasi yonsin
     connect(view_, &Viewport::promptChanged, this, [this] {
         if (act_.contains(toolKey(view_->tool()))) act_[toolKey(view_->tool())]->setChecked(true);
@@ -297,7 +300,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimradius", "dimdiameter"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "building", "rebar"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "building", "rebar"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
         {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
@@ -825,6 +828,23 @@ RebarDialog* MainWindow::openRebar() {
     rebar_->raise();
     rebar_->activateWindow();
     return rebar_;
+}
+
+UtilityDialog* MainWindow::openUtility() {
+    if (!util_) {
+        util_ = new UtilityDialog(loc_, doc_, !theme_.lightCanvas, this);
+        util_->setStyleSheet(theme_.styleSheet);
+        connect(util_, &UtilityDialog::drawRequested, this, [this](const QString& path) {
+            runLine(QStringLiteral("UTIL \"%1\"").arg(path));
+            view_->zoomExtents();
+        });
+    } else {
+        util_->reread();
+    }
+    util_->show();
+    util_->raise();
+    util_->activateWindow();
+    return util_;
 }
 
 void MainWindow::activateTool(const QString& key) {

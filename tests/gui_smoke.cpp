@@ -5,6 +5,7 @@
 #include "building_dialog.h"
 #include "rebar_dialog.h"
 #include "excel_link.h"
+#include "utility_dialog.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -398,6 +399,37 @@ int main(int argc, char** argv) {
         rd->close();
     }
     bd->close();
+
+    // 22. Yer osti tarmoqlari: chizmadan 3D, xatolar, qo'lda tuzatish, chizmaga
+    w.runLine(QStringLiteral("OPEN \"%1/yer_osti.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
+    {
+        UtilityDialog* ud = w.openUtility();
+        CHECK(ud->model().lines.size() == 6);
+        CHECK(ud->sidebar()->count() >= 20);
+        CHECK(ud->view()->faceCount() > 20);
+        const int e0 = ud->model().errors();
+        CHECK(e0 >= 3);
+        // kabelni (4-chiziq) suv quvuri ostidan o'tkazish: ikkala uchini 2,4 m chuqurlikka
+        int cable = -1;
+        for (std::size_t i = 0; i < ud->model().lines.size(); ++i)
+            if (ud->model().lines[i].kind == asiacad::civil::UtilKind::Power) cable = static_cast<int>(i);
+        CHECK(cable >= 0);
+        if (cable >= 0) {
+            const auto& ln = ud->model().lines[static_cast<std::size_t>(cable)];
+            ud->setZ(cable, 0, ln.v[0].ground - 2.4);
+            ud->setZ(cable, 1, ud->model().lines[static_cast<std::size_t>(cable)].v[1].ground - 2.4);
+            CHECK(ud->model().errors() < e0);
+            CHECK(ud->model().lines[static_cast<std::size_t>(cable)].v[0].src == asiacad::civil::UtilVertex::Manual);
+        }
+        const auto n0 = doc.size();
+        for (auto* b : ud->findChildren<QPushButton*>())
+            if (b->text() == QString::fromStdString(loc.tr("gui.ut.draw"))) b->click();
+        CHECK(doc.size() > n0 + 6);
+        CHECK(doc.layer("3D_WATER").has_value());
+        w.runLine("UNDO");
+        CHECK(doc.size() == n0);
+        ud->close();
+    }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

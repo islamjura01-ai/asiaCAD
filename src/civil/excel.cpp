@@ -448,4 +448,125 @@ void rebarFromWorkbook(const Workbook& wb, bim::BuildingParams& p, std::map<std:
     }
 }
 
+// ================================================================ yer osti tarmoqlari
+namespace {
+std::string utilName(const Tr& tr, civil::UtilKind k) { return T(tr, std::string("util.kind.") + civil::utilKey(k)); }
+std::string srcName(const Tr& tr, civil::UtilVertex::Src s) {
+    static const char* k[] = {"util.src.z", "util.src.label", "util.src.depth", "util.src.interp", "util.src.default", "util.src.manual"};
+    return T(tr, k[static_cast<int>(s)]);
+}
+} // namespace
+
+Workbook utilityWorkbook(const civil::UtilModel& m, const civil::UtilParams& p, const Tr& tr) {
+    Workbook wb;
+    Sheet& l = wb.add(T(tr, "xl.sh.lines"));
+    l.add({Cell::s("ID", H), hd(tr, "gui.bim.col.layer"), hd(tr, "xl.c.kindkey"), hd(tr, "gui.bim.col.kind"), Cell::s("Ø, mm", H), hd(tr, "xl.c.len"),
+           hd(tr, "xl.c.zstart"), hd(tr, "xl.c.zend"), hd(tr, "xl.c.covermin"), hd(tr, "xl.c.status")});
+    l.widths = {6, 18, 10, 18, 8, 10, 10, 10, 12, 50};
+    for (std::size_t i = 0; i < m.lines.size(); ++i) {
+        const auto& ln = m.lines[i];
+        std::string status;
+        int st = 0;
+        for (const auto& is : m.issues)
+            if (is.line == static_cast<int>(i)) {
+                if (!status.empty()) status += "; ";
+                status += T(tr, is.key, is.args);
+                st = std::max(st, is.error ? 2 : 1);
+            }
+        double cover = 1e9;
+        for (const auto& v : ln.v) cover = std::min(cover, v.ground - v.z - ln.dn / 2000.0);
+        l.add({Cell::n(ln.id, INT), Cell::s(ln.layer), Cell::s(civil::utilKey(ln.kind), WARN), Cell::s(utilName(tr, ln.kind)), Cell::n(ln.dn, WARN),
+               Cell::n(ln.length(), N2), Cell::n(ln.v.front().z, N3), Cell::n(ln.v.back().z, N3), Cell::n(cover, N2),
+               Cell::s(status.empty() ? "OK" : status, st == 2 ? ERR : st == 1 ? WARN : 0)});
+    }
+    const int lastL = static_cast<int>(l.rows.size());
+    l.add({Cell::s(T(tr, "gui.bim.total"), TOT), {}, {}, {}, {}, Cell::f(std::format("SUM(F2:F{})", lastL), [&] { double t = 0; for (const auto& x : m.lines) t += x.length(); return t; }(), TOT)});
+    l.add({});
+    l.add({Cell::s(T(tr, "xl.kinds"), H)});
+    for (civil::UtilKind k : civil::utilKinds()) l.add({Cell::s(""), Cell::s(""), Cell::s(civil::utilKey(k)), Cell::s(utilName(tr, k))});
+
+    Sheet& v = wb.add(T(tr, "xl.sh.points"));
+    v.add({Cell::s("ID", H), Cell::s("№", H), Cell::s("X", H), Cell::s("Y", H), hd(tr, "xl.c.zaxis"), hd(tr, "xl.c.zinv"), hd(tr, "xl.c.ground"),
+           hd(tr, "xl.c.depthtop"), hd(tr, "xl.c.source")});
+    v.widths = {6, 5, 12, 12, 11, 11, 11, 12, 18};
+    for (const auto& ln : m.lines)
+        for (std::size_t j = 0; j < ln.v.size(); ++j) {
+            const auto& q = ln.v[j];
+            const int row = static_cast<int>(v.rows.size());
+            const double r = ln.dn / 2000.0;
+            v.add({Cell::n(ln.id, INT), Cell::n(static_cast<double>(j + 1), INT), Cell::n(q.x, N3), Cell::n(q.y, N3), Cell::n(q.z, WARN),
+                   Cell::f(std::format("E{}-{}", r1(row), r), q.z - r, N3), Cell::n(q.ground, N3),
+                   Cell::f(std::format("G{0}-E{0}-{1}", r1(row), r), q.ground - q.z - r, N2), Cell::s(srcName(tr, q.src))});
+        }
+
+    Sheet& c = wb.add(T(tr, "xl.sh.cross"));
+    c.add({hd(tr, "xl.c.linea"), hd(tr, "xl.c.lineb"), Cell::s("X", H), Cell::s("Y", H), hd(tr, "xl.c.za"), hd(tr, "xl.c.zb"), hd(tr, "xl.c.clear"),
+           hd(tr, "xl.c.required"), hd(tr, "xl.c.status")});
+    c.widths = {22, 22, 11, 11, 10, 10, 11, 10, 10};
+    for (const auto& x : m.crossings) {
+        const auto& A = m.lines[static_cast<std::size_t>(x.a)];
+        const auto& B = m.lines[static_cast<std::size_t>(x.b)];
+        const bool bad = x.clear + 1e-9 < x.required;
+        const int row = static_cast<int>(c.rows.size());
+        c.add({Cell::s(std::format("{} · {}", A.id, utilName(tr, A.kind))), Cell::s(std::format("{} · {}", B.id, utilName(tr, B.kind))), Cell::n(x.x, N2),
+               Cell::n(x.y, N2), Cell::n(x.za, N3), Cell::n(x.zb, N3), Cell::n(x.clear, N2), Cell::n(x.required, N2),
+               Cell::s(bad ? "✗" : "✓", bad ? ERR : 0)});
+        (void)row;
+    }
+
+    Sheet& q = wb.add(T(tr, "xl.sh.quant"));
+    q.add({hd(tr, "gui.bim.col.kind"), Cell::s("Ø, mm", H), hd(tr, "xl.c.len")});
+    q.widths = {22, 10, 12};
+    std::map<std::pair<std::string, double>, double> agg;
+    for (const auto& ln : m.lines) agg[{utilName(tr, ln.kind), ln.dn}] += ln.length();
+    for (const auto& [k, len] : agg) q.add({Cell::s(k.first), Cell::n(k.second, INT), Cell::n(len, N2)});
+    const int lastQ = static_cast<int>(q.rows.size());
+    q.add({Cell::s(T(tr, "gui.bim.total"), TOT), Cell::s("", TOT), Cell::f(std::format("SUM(C2:C{})", lastQ), [&] { double t = 0; for (const auto& [k2, x] : agg) t += x; return t; }(), TOT)});
+    q.add({});
+    q.add({Cell::s(T(tr, "util.nodes"), H), Cell::n(static_cast<double>(m.nodes.size()), INT)});
+
+    std::vector<std::tuple<int, std::string, std::string, std::string>> iss;
+    for (const auto& is : m.issues)
+        iss.emplace_back(is.error ? 2 : 1, is.line >= 0 ? std::to_string(m.lines[static_cast<std::size_t>(is.line)].id) : std::string(),
+                         T(tr, is.key, is.args), std::format("X={:.2f} Y={:.2f}", is.x, is.y));
+    issuesSheet(wb, tr, iss);
+    (void)p;
+    return wb;
+}
+
+void utilityFromWorkbook(const Workbook& wb, civil::UtilModel& m, const civil::UtilParams& p, const Tr& tr) {
+    std::map<int, std::size_t> byId;
+    for (std::size_t i = 0; i < m.lines.size(); ++i) byId[m.lines[i].id] = i;
+    if (const Sheet* l = findSheet(wb, tr, "xl.sh.lines", 0)) {
+        for (std::size_t r = 1; r < l->rows.size(); ++r) {
+            const auto id = l->num(r, 0);
+            if (!id || !byId.count(static_cast<int>(*id))) continue;
+            auto& ln = m.lines[byId[static_cast<int>(*id)]];
+            civil::UtilKind k;
+            if (civil::utilFromKey(l->str(r, 2), k)) ln.kind = k;
+            if (const auto d = l->num(r, 4); d && std::abs(*d - ln.dn) > 1e-6) {
+                ln.dn = *d;
+                ln.dnManual = true;
+            }
+        }
+    }
+    if (const Sheet* v = findSheet(wb, tr, "xl.sh.points", 1)) {
+        for (std::size_t r = 1; r < v->rows.size(); ++r) {
+            const auto id = v->num(r, 0), j = v->num(r, 1), z = v->num(r, 4);
+            if (!id || !j || !z || !byId.count(static_cast<int>(*id))) continue;
+            auto& ln = m.lines[byId[static_cast<int>(*id)]];
+            const std::size_t k = static_cast<std::size_t>(std::lround(*j)) - 1;
+            if (k >= ln.v.size()) continue;
+            if (std::abs(ln.v[k].z - *z) > 1e-6) {
+                ln.v[k].z = *z;
+                ln.v[k].src = civil::UtilVertex::Manual;
+            }
+            if (const auto x = v->num(r, 2)) ln.v[k].x = *x;
+            if (const auto y = v->num(r, 3)) ln.v[k].y = *y;
+            if (const auto g = v->num(r, 6)) ln.v[k].ground = *g;
+        }
+    }
+    civil::checkUtilities(m, p);
+}
+
 } // namespace asiacad::excel

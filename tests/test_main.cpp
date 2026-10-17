@@ -3,6 +3,7 @@
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/sewer.h>
+#include <asiacad/civil/utility.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -333,7 +334,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 49);
+    CHECK(loc.canonicalCommands().size() == 50);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -1885,6 +1886,74 @@ TEST(cli_rebar_command) {
     const auto u = runScript("uz", {"QATLAM USTUN", "JORIY USTUN", "POLICHIZIQ 0,0 0.4,0 0.4,0.4 0,0.4 YOPIQ", "ARMATURA 20,10"});
     CHECK(u.find("Armatura jami") != std::string::npos);
     CHECK(u.find("Armatura vedomosti chizildi") != std::string::npos);
+}
+
+// ---------- Yer osti tarmoqlari ----------
+TEST(util_labels_and_layers) {
+    double v = 0;
+    CHECK(civil::parseUtilLabel("K1 Ø200", v) == 'd' && v == 200);
+    CHECK(civil::parseUtilLabel("%%c110x6,6", v) == 'd' && v == 110);
+    CHECK(civil::parseUtilLabel("Ду150", v) == 'd' && v == 150);
+    CHECK(civil::parseUtilLabel("DN 300", v) == 'd' && v == 300);
+    CHECK(civil::parseUtilLabel("h=1,80", v) == 'h' && std::abs(v - 1.8) < 1e-12);
+    CHECK(civil::parseUtilLabel("Н=2.1", v) == 'h' && std::abs(v - 2.1) < 1e-12);
+    CHECK(civil::parseUtilLabel("98,45", v) == 'z' && std::abs(v - 98.45) < 1e-12);
+    CHECK(civil::parseUtilLabel("▽ 101.20", v) == 'z' && std::abs(v - 101.2) < 1e-12);
+    CHECK(civil::parseUtilLabel("отм. 99.5", v) == 'z');
+    CHECK(civil::parseUtilLabel("АВБбШв 4x120", v) == 0);
+    CHECK(civil::parseUtilLabel("L=45", v) == 0);
+    CHECK(civil::guessUtil("V1_SUV") == civil::UtilKind::Water);
+    CHECK(civil::guessUtil("К1") == civil::UtilKind::Sewer);
+    CHECK(civil::guessUtil("K2_YOMGIR") == civil::UtilKind::Storm);
+    CHECK(civil::guessUtil("ГАЗ_НД") == civil::UtilKind::Gas);
+    CHECK(civil::guessUtil("KABEL_0.4KV") == civil::UtilKind::Power);
+    CHECK(civil::guessUtil("СВЯЗЬ") == civil::UtilKind::Telecom);
+    CHECK(civil::guessUtil("YER_SATHI") == civil::UtilKind::Ground);
+    CHECK(civil::guessUtil("YER_OSTI_SUV") == civil::UtilKind::Water);
+    CHECK(civil::guessUtil("KONTUR") == civil::UtilKind::Ignore);
+}
+
+TEST(util_example_drawing_to_3d) {
+    const auto r = loadAcad(std::string(ASIACAD_EXAMPLES_DIR) + "/yer_osti.acad");
+    const auto p = civil::defaultUtilParams();
+    auto m = civil::readUtilities(r.doc, civil::autoUtilLayers(r.doc), p);
+    CHECK(m.lines.size() == 6);
+    CHECK(m.nodes.size() == 3);
+    CHECK(m.groundPoints == 6);
+    auto byLayer = [&](const std::string& l) -> const civil::UtilLine* {
+        for (const auto& x : m.lines) if (x.layer == l) return &x;
+        return nullptr;
+    };
+    const auto* w = byLayer("V1_SUV");
+    const auto* k = byLayer("K1_KANAL");
+    const auto* g = byLayer("GAZ");
+    CHECK(w && w->dn == 110 && w->dnFromLabel);
+    CHECK(k && k->dn == 200);
+    if (k) {
+        NEAR(k->v[0].z, 98.30 + 0.1);  // tub belgisi + radius
+        CHECK(k->v[1].src == civil::UtilVertex::FromLabel);
+    }
+    if (w) {
+        CHECK(w->v[0].src == civil::UtilVertex::FromDepth && w->v[1].src == civil::UtilVertex::Interpolated);
+        NEAR(w->v[0].ground - w->v[0].z, 1.5 + 0.055);
+    }
+    CHECK(g && !g->dnFromLabel && g->dn == 63);
+    auto has = [&](const char* key) {
+        for (const auto& i : m.issues) if (i.key == key) return true;
+        return false;
+    };
+    CHECK(has("util.chk.no_dn"));   // gaz
+    CHECK(has("util.chk.gap"));     // aloqa 0,5 m
+    CHECK(has("util.chk.clear"));   // kabel suv ustidan yaqin
+    CHECK(m.crossings.size() >= 6);
+    // qo'lda tuzatish: kabelni 0,5 m pastga tushirish -> suv bilan kesishma tuzaladi? (kabel endi suv ostida)
+    // JSON orqali saqlash/o'qish
+    civil::UtilModel m2;
+    auto p2 = p;
+    civil::utilFromJson(civil::utilToJson(m, p), m2, p2);
+    CHECK(m2.lines.size() == m.lines.size() && m2.issues.size() == m.issues.size());
+    NEAR(m2.lines[0].v[0].z, m.lines[0].v[0].z);
+    CHECK(!civil::drawUtilities3D(m, 0.5).empty());
 }
 
 // ---------- Excel (.xlsx) ----------

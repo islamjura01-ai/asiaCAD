@@ -1,0 +1,53 @@
+# AsiaCAD — namuna: ko'cha bo'ylab yer osti tarmoqlari plani (2D chizma + yozuvlar). UTIL buyrug'i 3D modelni quradi.
+# Ataylab qoldirilgan xatolar: elektr kabeli suv quvuriga juda yaqin kesishadi, aloqa liniyasida 0,5 m uzilish,
+# gaz quvurida diametr yozuvi yo'q.
+NEW !
+LAYER V1_SUV 5
+LAYER K1_KANAL 30
+LAYER GAZ 2
+LAYER KABEL_0.4KV 1
+LAYER ALOQA 6
+LAYER YER_SATHI 8
+LAYER YOZUV 7
+CLAYER YER_SATHI
+TEXT 0,0 0.5 "100.20"
+TEXT 50,0 0.5 "100.00"
+TEXT 100,0 0.5 "99.70"
+TEXT 0,30 0.5 "100.40"
+TEXT 50,30 0.5 "100.10"
+TEXT 100,30 0.5 "99.90"
+CLAYER V1_SUV
+PLINE 0,5 50,5 100,5
+CLAYER YOZUV
+TEXT 20,5.6 0.5 "V1 PE100 Ø110"
+TEXT 0.5,4 0.4 "h=1.50"
+TEXT 100.5,4 0.4 "h=1.60"
+CLAYER K1_KANAL
+PLINE 0,15 50,15 100,15
+CIRCLE 0,15 0.5
+CIRCLE 50,15 0.5
+CIRCLE 100,15 0.5
+CLAYER YOZUV
+TEXT 25,15.6 0.5 "K1 Ø200"
+TEXT 0.8,14 0.4 "98.30"
+TEXT 50.8,14 0.4 "98.00"
+TEXT 100.8,14 0.4 "97.65"
+CLAYER GAZ
+PLINE 40,-5 40,35
+CLAYER YOZUV
+TEXT 40.5,-4 0.4 "h=1.00"
+TEXT 40.5,34 0.4 "h=1.00"
+CLAYER KABEL_0.4KV
+PLINE 70,-5 70,35
+CLAYER YOZUV
+TEXT 70.5,-4 0.4 "h=1.40"
+TEXT 70.5,34 0.4 "h=0.80"
+TEXT 70.5,20 0.4 "АВБбШв 4x120"
+CLAYER ALOQA
+PLINE 0,25 60,25
+PLINE 60.5,25 100,25
+CLAYER YOZUV
+TEXT 10,25.5 0.4 "Ø110"
+TEXT 80,25.5 0.4 "Ø110"
+CLAYER 0
+SAVE examples/yer_osti.acad

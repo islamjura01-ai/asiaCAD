@@ -220,6 +220,19 @@ Har bir menyuda **"Chizmalar"** paneli: bir nechta DXF/.acad fayl, har biriga va
   ("Поз." | "Наименование" | "Кол." | "Масса"). 3D sterjenlar shu qavat plitasida (pastki/yuqori, himoya qatlami bilan).
   Taqqoslash: chizmadagi soni ↔ spetsifikatsiya, Ø mosligi, umumiy massa. Namuna: `examples/bino_qolip/kj_plita_1_2.dxf`.
 
+## Suv yo'li: quvurlar, beton kanal, ariq, lotok (v0.15) — `civil/waterway`, `WATERWAY`
+
+Plan chizmasidan (o'q — KANAL/ARIQ/LOTOK/ВОДОВОД qatlami; yer — rel'ef qatlami, 3D nuqtalar/gorizontallar; tub belgilari
+o'q yonida: "дно 485.20", "Л 485,20", "▽485,20", "tub", "taban") 3D model **absolyut belgilarda**.
+- Turlar: bosimli quvur (Hazen-Williams, pyezometrik chiziq, manfiy bosim), o'zi oqar quvur (Manning, to'lish),
+  beton kanal (to'g'ri to'rtburchak/trapetsiya), tuproq ariq, parabolik lotok (ЛР — o'lchamlar taxminiy, katalogdan tekshiring).
+- Normal chuqurlik, tezlik, Froud, o'tkazish qobiliyati (zaxira bilan); qazish, damba, beton qoplama, lotok elementlari.
+- Tekshiruv (SNiP 2.06.03-85 asosida, tasdiqlanmagan): sig'maslik, zaxira, loyqa bosish/yuvilish tezliklari, teskari
+  nishablik, kritik rejim, quvur ustidagi qatlam; yer belgilari yo'q bo'lsa — xato.
+- GUI "Suv yo'li": kesim shablonlari, 3D, bo'ylama profil, piketlar (tub qo'lda tuzatiladi — oraliqlar qayta
+  interpolyatsiya), Excel bilan bog'langan. CLI: `WATERWAY [fayl.json] [Q=0.5] [SEC=n] [+] [x,y]`, `EXCEL WATERWAY`.
+  Namuna: `examples/suv_yoli.acs` (ataylab teskari nishablik bilan).
+
 ## Absolyut balandliklar (Boltiq) — barcha 3D modellarda
 
 Syomka tahlili bilan bir tizimda ishlash uchun 3D model balandliklari **absolyut**:

@@ -8,6 +8,7 @@
 #include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
+#include <asiacad/civil/waterway.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -338,7 +339,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 52);
+    CHECK(loc.canonicalCommands().size() == 53);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2381,6 +2382,84 @@ TEST(kj_auto_scale_text_height) {
     CHECK(bim::parseBarMark("\xC3\x98" "16AIII, \xD1\x88.200", m));
     NEAR(m.spacing, 0.2);
     CHECK(m.cls == "A400");
+}
+
+TEST(waterway_hydraulics) {
+    civil::WwSection r;
+    r.type = civil::WwType::ConcreteCanal;
+    r.b = 1; r.h = 1; r.m = 0; r.n = 0.015;
+    const double y = civil::wwNormalDepth(r, 0.5, 0.001);
+    CHECK(std::abs(y - 0.5722) < 0.001);                      // Manning: A=y, P=1+2y
+    CHECK(std::abs(civil::wwFlow(r, y, 0.001) - 0.5) < 1e-6);
+    civil::WwSection pp;
+    pp.type = civil::WwType::GravityPipe;
+    pp.d = 1.0; pp.n = 0.013;
+    CHECK(std::abs(civil::wwFlow(pp, 1.0, 0.001) - 0.7582) < 0.001);   // to'la quvur
+    CHECK(civil::wwFlow(pp, 0.938, 0.001) > civil::wwFlow(pp, 1.0, 0.001));
+    CHECK(civil::wwNormalDepth(pp, 5.0, 0.001) < 0);                  // sig'maydi
+    civil::WwSection f;
+    f.type = civil::WwType::Flume;
+    f.B = 1.24; f.h = 0.6;
+    NEAR(civil::wwArea(f, 0.6), 2.0 / 3.0 * 1.24 * 0.6);
+    double v = 0;
+    CHECK(civil::wwLabel("\xD0\xB4\xD0\xBD\xD0\xBE 485.20", v) == 'b' && std::abs(v - 485.2) < 1e-9);   // "дно 485.20"
+    CHECK(civil::wwLabel("\xD0\x9B 485,20", v) == 'b');                                             // "Л 485,20"
+    CHECK(civil::wwLabel("\xD0\x93\xD0\x92 486.10", v) == 'w');                                     // "ГВ 486.10"
+    CHECK(civil::wwLabel("485.20", v) == 'z');
+}
+
+TEST(waterway_example_canal) {
+    const auto r = loadAcad(std::string(ASIACAD_EXAMPLES_DIR) + "/suv_yoli.acad");
+    auto p = civil::defaultWwParams();
+    auto m = civil::buildWaterway(r.doc, civil::autoWwLayers(r.doc), p);
+    CHECK(m.groundPoints > 100);
+    CHECK(m.designPoints == 4);
+    CHECK(m.st.size() > 30);
+    NEAR(m.st.front().bottom, 413.20);                        // absolyut belgilar chizmadan
+    NEAR(m.st.back().bottom, 412.10);
+    CHECK(std::abs(m.length - (400 + std::hypot(300.0, 200.0))) < 0.01);
+    bool reverse = false, noGround = false;
+    for (const auto& i : m.issues) {
+        reverse |= i.key == "ww.chk.reverse" && i.error;
+        noGround |= i.key == "ww.chk.no_ground";
+    }
+    CHECK(reverse);                                           // ataylab: PK5+50 da tub ko'tariladi
+    CHECK(!noGround);
+    CHECK(m.capacity > 0 && m.cutVolume > 0 && m.concrete > 0);
+    for (const auto& t : m.st) CHECK(t.ground > 413 && t.ground < 416);
+    // qo'lda tuzatish: teskari nishablikni yo'qotish
+    for (auto& t : m.st)
+        if (t.control && std::abs(t.bottom - 412.95) < 1e-9) t.bottom = 412.50;
+    civil::recomputeWaterway(m, p);
+    reverse = false;
+    for (const auto& i : m.issues) reverse |= i.key == "ww.chk.reverse";
+    CHECK(!reverse);
+    // JSON
+    civil::WwModel m2;
+    civil::WwParams p2;
+    civil::wwFromJson(civil::wwToJson(m, p), m2, p2);
+    CHECK(m2.st.size() == m.st.size());
+    NEAR(m2.cutVolume, m.cutVolume);
+    // Excel: tub belgisini o'zgartirish
+    const excel::Tr tr = [](const std::string& k, const std::vector<std::string>&) { return k; };
+    auto wb = excel::wwWorkbook(m, p, tr);
+    auto* sh = const_cast<xlsx::Sheet*>(wb.find("xl.sh.stations"));
+    CHECK(sh != nullptr);
+    if (sh) sh->rows[1][5] = xlsx::Cell::n(413.50);
+    excel::wwFromWorkbook(xlsx::fromBytes(xlsx::toBytes(wb)), m, p, tr);
+    NEAR(m.st.front().bottom, 413.50);
+    // lotok va bosimli quvur
+    p.sec = civil::builtinWwSections()[9];                    // ЛР-6
+    CHECK(p.sec.type == civil::WwType::Flume);
+    civil::recomputeWaterway(m, p);
+    CHECK(m.pieces == static_cast<int>(std::ceil(m.length / 6.0 - 1e-9)));
+    for (const auto& s : civil::builtinWwSections())
+        if (s.type == civil::WwType::PressurePipe) { p.sec = s; break; }
+    p.q = 0.05;
+    civil::recomputeWaterway(m, p);
+    CHECK(m.headLoss > 0);
+    CHECK(m.st.back().water < m.st.front().water);
+    CHECK(!civil::drawWaterway3D(m, p).empty());
 }
 
 int main() {

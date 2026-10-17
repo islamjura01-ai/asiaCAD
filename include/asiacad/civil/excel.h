@@ -6,6 +6,7 @@
 // Parametr varaqlarida A ustuni — mashina kaliti (tilga bog'liq emas).
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/road.h>
+#include <asiacad/civil/waterway.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
 #include <asiacad/io/xlsx.h>
@@ -36,5 +37,8 @@ void utilityFromWorkbook(const xlsx::Workbook& wb, civil::UtilModel& m, const ci
 // Yo'l: Piketlar (loyiha belgisi tahrirlanadi; ishchi belgi, nishablik, hajmlar — formulalar), Hajmlar, Parametrlar, Tekshiruv
 xlsx::Workbook roadWorkbook(const civil::RoadModel& m, const civil::RoadParams& p, const Tr& tr);
 void roadFromWorkbook(const xlsx::Workbook& wb, civil::RoadModel& m, civil::RoadParams& p, const Tr& tr);
+// Suv yo'li: piketlar (tub belgisi tahrirlanadi), hajmlar, parametrlar (kesim, sarf), tekshiruv
+xlsx::Workbook wwWorkbook(const civil::WwModel& m, const civil::WwParams& p, const Tr& tr);
+void wwFromWorkbook(const xlsx::Workbook& wb, civil::WwModel& m, civil::WwParams& p, const Tr& tr);
 
 } // namespace asiacad::excel

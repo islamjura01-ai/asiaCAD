@@ -9,6 +9,7 @@
 #include "rebar_dialog.h"
 #include "utility_dialog.h"
 #include "road_dialog.h"
+#include "waterway_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -59,6 +60,7 @@ int main(int argc, char** argv) {
     bool rebar = false;
     bool util = false;
     bool road = false;
+    bool waterway = false;
     QStringList sheetArgs, kjArgs;
     QString rebarKind;
     bool noConcrete = false;
@@ -88,6 +90,7 @@ int main(int argc, char** argv) {
         else if (a == "--rebar") rebar = true;
         else if (a == "--util") util = true;  // Yer osti tarmoqlari 3D
         else if (a == "--road") road = true;
+        else if (a == "--waterway") waterway = true;
         else if (a == "--sheet") sheetArgs << next();  // ROL,yo'l[,dan,gacha] — yer osti (--util) yoki bino chizmalari
         else if (a == "--kj") kjArgs << next();        // ROL,yo'l,dan,gacha — armatura KJ chizmalari  // Yo'l 3D (--sewer-tab 1 — profil)  // Armatura 3D menyusi (bino --building N dan)
         else if (a == "--rebar-kind") rebarKind = next();
@@ -146,6 +149,10 @@ int main(int argc, char** argv) {
                 auto* rd = w.openRoad();
                 if (!sewerTab.isEmpty()) rd->showTab(sewerTab.toInt());
             }
+            if (waterway) {
+                auto* wd = w.openWaterway();
+                if (!sewerTab.isEmpty()) wd->showTab(sewerTab.toInt());
+            }
             if (util) {
                 auto* ud = w.openUtility();
                 if (!sheetArgs.isEmpty()) addSheets(ud->drawings(), sheetArgs);
@@ -192,7 +199,8 @@ int main(int argc, char** argv) {
                     (building > 0 && !rebar && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
                     (rebar && tl->isVisible() && tl->inherits("asiacad::gui::RebarDialog")) ||
                     (util && tl->isVisible() && tl->inherits("asiacad::gui::UtilityDialog")) ||
-                    (road && tl->isVisible() && tl->inherits("asiacad::gui::RoadDialog")))
+                    (road && tl->isVisible() && tl->inherits("asiacad::gui::RoadDialog")) ||
+                    (waterway && tl->isVisible() && tl->inherits("asiacad::gui::WaterwayDialog")))
                     target = tl;
             target->grab().save(shot);
             QApplication::exit(0);

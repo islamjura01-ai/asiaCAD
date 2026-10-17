@@ -8,6 +8,7 @@
 #include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
+#include <asiacad/civil/waterway.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/grips.h>
@@ -109,10 +110,11 @@ const char* commandSyntax(const std::string& c) {
         {"BUILDING", "[n] [H] [t] [x,y] | file.json [x,y]"},
         {"REBAR", "[file.json] [x,y]"},
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
-        {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD in out"},
+        {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD|WATERWAY in out"},
         {"UTIL", "[file.json] [+]"},
         {"KJ", "file.dxf [fTop|-] [fT] [abs±0.000]"},
         {"ROAD", "[file.json] [+] [x,y]"},
+        {"WATERWAY", "[file.json] [Q=m3/s] [SEC=n] [+] [x,y]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -639,6 +641,19 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
                 xlsx::save(excel::roadWorkbook(m, p, tr), out);
                 say("xl.msg.exported", {out});
             }
+        } else if (mod == "WATERWAY") {
+            auto p = civil::defaultWwParams();
+            civil::WwModel m;
+            if (!in.empty() && extOf(in) == "json") civil::wwFromJson(readAll(in), m, p);
+            else m = civil::buildWaterway(doc_, civil::autoWwLayers(doc_), p);
+            if (!in.empty() && extOf(in) == "xlsx") {
+                excel::wwFromWorkbook(xlsx::load(in), m, p, tr);
+                writeAll(out, civil::wwToJson(m, p));
+                say("xl.msg.imported", {in, std::to_string(m.st.size()), std::to_string(m.errors()), "0"});
+            } else {
+                xlsx::save(excel::wwWorkbook(m, p, tr), out);
+                say("xl.msg.exported", {out});
+            }
         } else {
             throw Error("xl.err.module", {a[0]});
         }
@@ -748,6 +763,69 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             if (draw3d) es = civil::drawRoad3D(m);
             if (profileAt)
                 for (auto& e : civil::drawRoadProfile(m, *profileAt, 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("road.lbl.design"), loc_.tr("road.lbl.pk")))
+                    es.push_back(std::move(e));
+            auto comp = std::make_unique<CompositeCommand>(cmd);
+            std::set<std::string> made;
+            for (const auto& e : es)
+                if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+            std::vector<AddEntityCommand*> adds;
+            for (auto& e : es) {
+                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+                adds.push_back(c.get());
+                comp->add(std::move(c));
+            }
+            stack_.execute(std::move(comp));
+            last_.clear();
+            for (auto* c : adds) last_.push_back(c->entityId());
+            say("road.msg.drawn", {std::to_string(last_.size())});
+        }
+    } else if (cmd == "WATERWAY") {
+        // WATERWAY — suv yo'li (quvur, beton kanal, ariq, lotok): tahlil; Q= sarf; SEC= shablon raqami; + — 3D; x,y — profil
+        auto p = civil::defaultWwParams();
+        civil::WwModel m;
+        bool draw3d = false, fromJson = false;
+        std::optional<Vec3> profileAt;
+        std::size_t k = 0;
+        if (!a.empty() && extOf(a[0]) == "json") {
+            std::ifstream f(a[0], std::ios::binary);
+            if (!f) throw Error("acad.err.open", {a[0]});
+            std::stringstream b;
+            b << f.rdbuf();
+            civil::wwFromJson(b.str(), m, p);
+            draw3d = fromJson = true;
+            k = 1;
+        }
+        bool changed = false;
+        for (; k < a.size(); ++k) {
+            const std::string up = utf8::toUpper(a[k]);
+            if (a[k] == "+") draw3d = true;
+            else if (up.rfind("Q=", 0) == 0) { p.q = parseNumber(a[k].substr(2)); changed = true; }
+            else if (up.rfind("SEC=", 0) == 0) {
+                const auto secs = civil::builtinWwSections();
+                const int i = static_cast<int>(parseNumber(a[k].substr(4)));
+                if (i < 1 || i > static_cast<int>(secs.size())) throw Error("err.number_expected", {a[k]});
+                p.sec = secs[static_cast<std::size_t>(i - 1)];
+                changed = true;
+            } else profileAt = parsePoint(a[k]);
+        }
+        if (!fromJson) m = civil::buildWaterway(doc_, civil::autoWwLayers(doc_), p);
+        else if (changed) civil::recomputeWaterway(m, p);
+        say("ww.msg.summary", {p.sec.name, loc_.tr(std::string("ww.type.") + civil::wwTypeKey(p.sec.type)), std::format("{:.1f}", m.length),
+                               std::to_string(m.st.size()), std::format("{:.3f}", p.q), std::format("{:.3f}", m.capacity),
+                               std::to_string(m.groundPoints), std::to_string(m.designPoints), std::to_string(m.errors())});
+        say("ww.msg.volumes", {std::format("{:.0f}", m.cutVolume), std::format("{:.0f}", m.fillVolume), std::format("{:.1f}", m.concrete),
+                               std::to_string(m.pieces), std::format("{:.2f}", m.headLoss)});
+        if (!m.st.empty())
+            say("ww.msg.levels", {std::format("{:.2f}", m.st.front().bottom), std::format("{:.2f}", m.st.back().bottom),
+                                  std::format("{:.2f}", m.st.front().ground), std::format("{:.2f}", m.st.back().ground)});
+        for (const auto& i : m.issues)
+            out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args) << '\n';
+        if (draw3d || profileAt) {
+            std::vector<std::unique_ptr<IEntity>> es;
+            if (draw3d) es = civil::drawWaterway3D(m, p);
+            if (profileAt)
+                for (auto& e : civil::drawWaterwayProfile(m, p, *profileAt, 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("ww.lbl.bottom"),
+                                                          loc_.tr("ww.lbl.water"), loc_.tr("road.lbl.pk")))
                     es.push_back(std::move(e));
             auto comp = std::make_unique<CompositeCommand>(cmd);
             std::set<std::string> made;

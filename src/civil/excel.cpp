@@ -670,4 +670,110 @@ void roadFromWorkbook(const Workbook& wb, civil::RoadModel& m, civil::RoadParams
     civil::recomputeRoad(m, p);
 }
 
+// ---------------------------------------------------------------- suv yo'li
+Workbook wwWorkbook(const civil::WwModel& m, const civil::WwParams& p, const Tr& tr) {
+    Workbook wb;
+    Sheet& s = wb.add(T(tr, "xl.sh.stations"));
+    s.add({hd(tr, "xl.c.pk"), hd(tr, "xl.c.s"), Cell::s("X", H), Cell::s("Y", H), hd(tr, "xl.c.ground"), hd(tr, "ww.lbl.bottom"),
+           hd(tr, "xl.c.grade"), hd(tr, "gui.ww.col.yn"), hd(tr, "gui.ww.col.v"), hd(tr, "ww.lbl.water"), hd(tr, "xl.c.cutA"), hd(tr, "xl.c.fillA"),
+           hd(tr, "xl.c.cutV"), hd(tr, "xl.c.fillV")});
+    s.widths = {13, 10, 12, 12, 11, 12, 10, 10, 9, 11, 10, 10, 11, 11};
+    const int n = static_cast<int>(m.st.size());
+    for (int i = 0; i < n; ++i) {
+        const auto& t = m.st[static_cast<std::size_t>(i)];
+        const std::string R = r1(i + 1), Rn = r1(i + 2);
+        const bool lastRow = i + 1 == n;
+        const auto* nx = lastRow ? nullptr : &m.st[static_cast<std::size_t>(i + 1)];
+        const double cutV = nx ? (t.cut + nx->cut) / 2 * (nx->s - t.s) : 0;
+        const double fillV = nx ? (t.fill + nx->fill) / 2 * (nx->s - t.s) : 0;
+        s.add({Cell::s(civil::pk(t.s)), Cell::n(t.s, N2), Cell::n(t.x, N3), Cell::n(t.y, N3), Cell::n(t.ground, N2), Cell::n(t.bottom, WARN),
+               lastRow ? Cell::s("") : Cell::f(std::format("(F{0}-F{1})/(B{1}-B{0})*1000", R, Rn), t.slope * 1000, N2), Cell::n(t.depthN, N3),
+               Cell::n(t.v, N2), Cell::n(t.water, N2), Cell::n(t.cut, N2), Cell::n(t.fill, N2),
+               lastRow ? Cell::s("") : Cell::f(std::format("(K{0}+K{1})/2*(B{1}-B{0})", R, Rn), cutV, N2),
+               lastRow ? Cell::s("") : Cell::f(std::format("(L{0}+L{1})/2*(B{1}-B{0})", R, Rn), fillV, N2)});
+    }
+    s.add({Cell::s(T(tr, "gui.bim.total"), TOT), Cell::f(std::format("B{}-B2", n + 1), m.length, TOT), {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+           Cell::f(std::format("SUM(M2:M{})", n + 1), m.cutVolume, TOT), Cell::f(std::format("SUM(N2:N{})", n + 1), m.fillVolume, TOT)});
+
+    Sheet& q = wb.add(T(tr, "xl.sh.quant"));
+    q.add({hd(tr, "xl.c.work"), hd(tr, "xl.c.qty")});
+    q.widths = {48, 16};
+    const std::string ss = sref(T(tr, "xl.sh.stations"));
+    q.add({Cell::s(T(tr, "gui.ww.q.len")), Cell::f(std::format("{}B{}", ss, n + 2), m.length, N2)});
+    q.add({Cell::s(T(tr, "xl.c.cutV")), Cell::f(std::format("{}M{}", ss, n + 2), m.cutVolume, TOT)});
+    q.add({Cell::s(T(tr, "xl.c.fillV")), Cell::f(std::format("{}N{}", ss, n + 2), m.fillVolume, TOT)});
+    q.add({Cell::s(T(tr, "gui.ww.q.concrete")), Cell::n(m.concrete, TOT)});
+    if (p.sec.type == civil::WwType::Flume) q.add({Cell::s(T(tr, "gui.ww.q.pieces")), Cell::n(m.pieces, INT)});
+    q.add({Cell::s(T(tr, "gui.ww.q.capacity")), Cell::n(m.capacity, N3)});
+    if (p.sec.type == civil::WwType::PressurePipe) q.add({Cell::s(T(tr, "gui.ww.q.headloss")), Cell::n(m.headLoss, N2)});
+
+    Sheet& pr = wb.add(T(tr, "xl.sh.params"));
+    pr.add({hd(tr, "xl.c.key"), hd(tr, "xl.c.value"), hd(tr, "xl.c.desc")});
+    pr.widths = {16, 14, 50};
+    pr.autoFilter = false;
+    auto row = [&](const char* key, double v, const char* desc) { pr.add({Cell::s(key), Cell::n(v, WARN), Cell::s(T(tr, desc))}); };
+    pr.add({Cell::s("type"), Cell::s(civil::wwTypeKey(p.sec.type), WARN), Cell::s(T(tr, std::string("ww.type.") + civil::wwTypeKey(p.sec.type)))});
+    pr.add({Cell::s("name"), Cell::s(p.sec.name, WARN), Cell::s(T(tr, "gui.ww.section"))});
+    row("q", p.q, "gui.ww.q");
+    row("b", p.sec.b, "gui.ww.b");
+    row("h", p.sec.h, "gui.ww.h");
+    row("m", p.sec.m, "gui.ww.m");
+    row("B", p.sec.B, "gui.ww.B");
+    row("d", p.sec.d, "gui.ww.d");
+    row("t", p.sec.t, "gui.ww.t");
+    row("n", p.sec.n, "gui.ww.n");
+    row("freeboard", p.sec.freeboard, "gui.ww.fb");
+    row("vmin", p.sec.vmin, "gui.ww.vmin");
+    row("vmax", p.sec.vmax, "gui.ww.vmax");
+    row("pieceLen", p.sec.pieceLen, "gui.ww.piece");
+    row("chw", p.sec.chw, "gui.ww.chw");
+    row("step", p.step, "gui.ww.step");
+    row("depth", p.depth, "gui.ww.depth");
+    row("slope", p.slope * 1000, "gui.ww.slope");
+    row("headStart", p.headStart, "gui.ww.head");
+
+    std::vector<std::tuple<int, std::string, std::string, std::string>> iss;
+    for (const auto& is : m.issues) iss.emplace_back(is.error ? 2 : 1, civil::pk(is.s), T(tr, is.key, is.args), "SNiP 2.06.03-85");
+    issuesSheet(wb, tr, iss);
+    return wb;
+}
+
+void wwFromWorkbook(const Workbook& wb, civil::WwModel& m, civil::WwParams& p, const Tr& tr) {
+    if (const Sheet* pr = findSheet(wb, tr, "xl.sh.params", 2)) {
+        const auto pm = readParams(*pr);
+        pnum(pm, "q", [&](double v) { p.q = v; });
+        pnum(pm, "b", [&](double v) { p.sec.b = v; });
+        pnum(pm, "h", [&](double v) { p.sec.h = v; });
+        pnum(pm, "m", [&](double v) { p.sec.m = v; });
+        pnum(pm, "B", [&](double v) { p.sec.B = v; });
+        pnum(pm, "d", [&](double v) { p.sec.d = v; });
+        pnum(pm, "t", [&](double v) { p.sec.t = v; });
+        pnum(pm, "n", [&](double v) { p.sec.n = v; });
+        pnum(pm, "freeboard", [&](double v) { p.sec.freeboard = v; });
+        pnum(pm, "vmin", [&](double v) { p.sec.vmin = v; });
+        pnum(pm, "vmax", [&](double v) { p.sec.vmax = v; });
+        pnum(pm, "pieceLen", [&](double v) { p.sec.pieceLen = v; });
+        pnum(pm, "chw", [&](double v) { p.sec.chw = v; });
+        pnum(pm, "step", [&](double v) { p.step = v; });
+        pnum(pm, "depth", [&](double v) { p.depth = v; });
+        pnum(pm, "slope", [&](double v) { p.slope = v / 1000; });
+        pnum(pm, "headStart", [&](double v) { p.headStart = v; });
+    }
+    const Sheet* s = findSheet(wb, tr, "xl.sh.stations", 0);
+    if (!s) throw Error("xlsx.err.sheet", {T(tr, "xl.sh.stations")});
+    for (std::size_t r = 1; r < s->rows.size(); ++r) {
+        const auto ch = s->num(r, 1), z = s->num(r, 5);
+        if (!ch || !z) continue;
+        for (auto& t : m.st)
+            if (std::abs(t.s - *ch) < 0.01) {
+                if (std::abs(t.bottom - *z) > 1e-6) {
+                    t.bottom = *z;
+                    t.control = true;
+                }
+                break;
+            }
+    }
+    civil::recomputeWaterway(m, p);
+}
+
 } // namespace asiacad::excel

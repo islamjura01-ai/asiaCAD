@@ -7,6 +7,7 @@
 #include "excel_link.h"
 #include "utility_dialog.h"
 #include "road_dialog.h"
+#include "waterway_dialog.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -452,6 +453,34 @@ int main(int argc, char** argv) {
         w.runLine("UNDO");
         CHECK(doc.size() == n0);
         rd->close();
+    }
+
+    // 23b. Suv yo'li: beton kanal chizmadan, lotok shabloni, qo'lda tuzatish, chizmaga (absolyut belgilar)
+    w.runLine(QStringLiteral("OPEN \"%1/suv_yoli.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
+    {
+        WaterwayDialog* wd = w.openWaterway();
+        CHECK(wd->model().designPoints == 4);
+        CHECK(std::abs(wd->model().st.front().bottom - 413.2) < 1e-9);
+        CHECK(wd->sidebar()->count() >= 15);
+        CHECK(wd->view()->faceCount() > 100);
+        const int e0 = wd->model().errors();
+        CHECK(e0 >= 1);  // teskari nishablik
+        int ri = -1;
+        for (std::size_t i = 0; i < wd->model().st.size(); ++i)
+            if (std::abs(wd->model().st[i].bottom - 412.95) < 1e-9) ri = static_cast<int>(i);
+        CHECK(ri > 0);
+        wd->setBottom(ri, 412.50);
+        CHECK(wd->model().errors() < e0);
+        wd->applySection(asiacad::civil::builtinWwSections()[9]);
+        CHECK(wd->model().pieces > 100);
+        const auto n0 = doc.size();
+        for (auto* b : wd->findChildren<QPushButton*>())
+            if (b->text() == QString::fromStdString(loc.tr("gui.rd.draw"))) b->click();
+        CHECK(doc.size() > n0 + 30);
+        CHECK(doc.layer("SUV_3D_TUB").has_value() && doc.layer("SUV_PROFIL").has_value());
+        w.runLine("UNDO");
+        CHECK(doc.size() == n0);
+        wd->close();
     }
 
     // 24. Alohida chizmalar: tarmoqlar (har biri o'z faylida), qavat qolip chizmalari, KJ armatura

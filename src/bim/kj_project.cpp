@@ -560,7 +560,7 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
     r.datumKnown = (p.datumAuto && dat) || !p.datumAuto || p.datum != 0;
     if (dat && !p.datumAuto && std::abs(dat->abs - p.datum) > 0.005)
         issue(false, "kj.chk.datum_differs", {std::format("{:.3f}", p.datum), std::format("{:.3f}", dat->abs)});
-    if (!r.datumKnown) issue(true, "kj.chk.no_datum");
+    if (!r.datumKnown) issue(false, "kj.chk.no_datum");  // bino: keyin ALIGN/MOVE bilan joylashtirish mumkin
     const bool fTopFromDatum = p.foundTopAuto && dat && dat->ref == 1;
     const double fTop = fTopFromDatum ? 0.0 : p.foundTop, fBot = fTop - p.foundT;
     r.foundTop = fTop;

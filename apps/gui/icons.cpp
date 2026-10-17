@@ -59,6 +59,10 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "survey") { C(12, 6, 2.5); L(12, 8.5, 6, 21); L(12, 8.5, 18, 21); L(12, 8.5, 12, 21); }
     else if (n == "terrain") { P({{2, 19}, {8, 10}, {12, 15}, {16, 8}, {22, 19}}, true); }
     else if (n == "road") { L(8, 3, 4, 21); L(16, 3, 20, 21); L(12, 4, 12, 7); L(12, 10.5, 12, 13.5); L(12, 17, 12, 20); }
+    else if (n == "waterway") {  // trapetsiya kanal + to'lqin
+        P({{2, 6}, {7, 19}, {17, 19}, {22, 6}});
+        QPainterPath w; w.moveTo(6, 12); w.cubicTo(8, 10, 10, 14, 12, 12); w.cubicTo(14, 10, 16, 14, 18, 12); p.drawPath(w);
+    }
     else if (n == "pipes") { P({{3, 8}, {13, 8}}); QPainterPath a; a.moveTo(13, 8); a.cubicTo(17, 8, 18, 10, 18, 14); a.lineTo(18, 21); p.drawPath(a); P({{3, 14}, {11, 14}}); }
     else if (n == "util") { L(2, 7, 22, 7); p.save(); QPen d = p.pen(); d.setStyle(Qt::DotLine); p.setPen(d); L(2, 10, 22, 10); p.restore(); L(4, 14, 20, 14); L(4, 19, 20, 19); L(8, 12, 8, 21); C(16, 16.5, 2.5); }
     else if (n == "rebar") { L(7, 3, 7, 21); L(17, 3, 17, 21); L(10, 5, 10, 19); L(14, 5, 14, 19); for (int i = 0; i < 4; ++i) R(5, 5 + i * 4.3, 14, 1.6, 0.4); }

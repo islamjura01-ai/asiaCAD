@@ -11,6 +11,7 @@
 #include "road_dialog.h"
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
+#include "generator_dialogs.h"
 
 #include <QApplication>
 #include <QDir>
@@ -63,6 +64,9 @@ int main(int argc, char** argv) {
     bool road = false;
     bool waterway = false;
     bool corridor = false;
+    bool city = false;
+    int cityTpl = -1;
+    QString scratch;
     int asmIndex = -1, station = -1;
     QStringList sheetArgs, kjArgs;
     QString rebarKind;
@@ -95,6 +99,9 @@ int main(int argc, char** argv) {
         else if (a == "--road") road = true;
         else if (a == "--waterway") waterway = true;
         else if (a == "--corridor") corridor = true;
+        else if (a == "--city") city = true;                     // Shahar mavzesi oynasi
+        else if (a == "--city-tpl") cityTpl = next().toInt();    // shablon raqami (0 dan)
+        else if (a == "--scratch") scratch = next();             // "0 dan" oynasi: building | road | waterway | util
         else if (a == "--asm") asmIndex = next().toInt();
         else if (a == "--station") station = next().toInt();
         else if (a == "--sheet") sheetArgs << next();  // ROL,yo'l[,dan,gacha] — yer osti (--util) yoki bino chizmalari
@@ -162,6 +169,11 @@ int main(int argc, char** argv) {
                 if (!sewerTab.isEmpty()) cd->showTab(sewerTab.toInt());
                 if (station >= 0) cd->showStation(station);
             }
+            if (city) {
+                auto* cd = w.openCity();
+                if (cityTpl >= 0) cd->sidebar()->activate(cityTpl);
+            }
+            if (!scratch.isEmpty()) w.openScratch(scratch);
             if (waterway) {
                 auto* wd = w.openWaterway();
                 if (!sewerTab.isEmpty()) wd->showTab(sewerTab.toInt());
@@ -214,7 +226,9 @@ int main(int argc, char** argv) {
                     (util && tl->isVisible() && tl->inherits("asiacad::gui::UtilityDialog")) ||
                     (road && tl->isVisible() && tl->inherits("asiacad::gui::RoadDialog")) ||
                     (waterway && tl->isVisible() && tl->inherits("asiacad::gui::WaterwayDialog")) ||
-                    (corridor && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")))
+                    (corridor && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")) ||
+                    (city && tl->isVisible() && tl->inherits("asiacad::gui::CityDialog")) ||
+                    (!scratch.isEmpty() && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
                     target = tl;
             target->grab().save(shot);
             QApplication::exit(0);

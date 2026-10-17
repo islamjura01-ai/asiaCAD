@@ -71,6 +71,8 @@ public:
     Pipe3DView* view() const { return view_; }
 
 signals:
+    void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
+    void locateRequested(double x, double y);   // tuzatish: tekshiruvdagi joyni chizmada ko'rsatish
     void drawRequested(const QString& jsonPath);
 
 private:

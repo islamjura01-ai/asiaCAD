@@ -8,9 +8,12 @@
 #include "road_dialog.h"
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
+#include "generator_dialogs.h"
 #include "icons.h"
 
 #include <asiacad/core/entities.h>
+
+#include <functional>
 
 #include <QAction>
 #include <QActionGroup>
@@ -83,6 +86,7 @@ const ActDef kActs[] = {
     {"road", "road", "gui.act.road", false},
     {"waterway", "waterway", "gui.act.waterway", false},
     {"corridor", "corridor", "gui.act.corridor", false},
+    {"city", "city", "gui.act.city", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -205,7 +209,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.15"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.16"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -227,7 +231,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
             {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
             {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
@@ -289,6 +293,7 @@ void MainWindow::buildActions() {
     connect(act_["road"], &QAction::triggered, this, [this] { openRoad(); });
     connect(act_["waterway"], &QAction::triggered, this, [this] { openWaterway(); });
     connect(act_["corridor"], &QAction::triggered, this, [this] { openCorridor(); });
+    connect(act_["city"], &QAction::triggered, this, [this] { openCity(); });
     // Asbob tugagach (Esc, Enter, buyruq bajarildi) — "Tanlash" tugmasi yonsin
     connect(view_, &Viewport::promptChanged, this, [this] {
         if (act_.contains(toolKey(view_->tool()))) act_[toolKey(view_->tool())]->setChecked(true);
@@ -309,7 +314,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimradius", "dimdiameter"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
         {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
@@ -385,7 +390,8 @@ void MainWindow::buildModuleBars() {
     const struct { const char* key; const char* icon; const char* color; } mods[] = {
         {"gui.module.drawing", "drawing", "#4B4FD1"}, {"gui.module.survey", "survey", "#0E9F8E"},
         {"gui.module.terrain", "terrain", "#3E9B3A"}, {"gui.module.road", "road", "#E7881B"},
-        {"gui.module.pipes", "pipes", "#1F7BE0"},     {"gui.module.bim", "bim", "#D9466A"}};
+        {"gui.module.pipes", "pipes", "#1F7BE0"},     {"gui.module.bim", "bim", "#D9466A"},
+        {"gui.module.city", "city", "#8E5BD6"}};
     auto* grp = new QActionGroup(this);
     for (const auto& m : mods) {
         auto* a = rail_->addAction(makeIcon(m.icon, Qt::white, QColor(m.color)), QString());
@@ -399,6 +405,12 @@ void MainWindow::buildModuleBars() {
                 rail_->actions().first()->setChecked(true);
             } else if (key == "gui.module.pipes") {
                 openSewer();
+                rail_->actions().first()->setChecked(true);
+            } else if (key == "gui.module.road") {
+                openCorridor();
+                rail_->actions().first()->setChecked(true);
+            } else if (key == "gui.module.city") {
+                openCity();
                 rail_->actions().first()->setChecked(true);
             } else if (key != "gui.module.drawing") {
                 statusBar()->showMessage(t("gui.module.soon", {QString::fromStdString(loc_.tr(key.toStdString()))}), 4000);
@@ -802,6 +814,8 @@ BuildingDialog* MainWindow::openBuilding() {
     if (!building_) {
         building_ = new BuildingDialog(loc_, doc_, !theme_.lightCanvas, this);
         building_->setStyleSheet(theme_.styleSheet);
+        connect(building_, &BuildingDialog::scratchRequested, this, [this] { openScratch("building"); });
+        connect(building_, &BuildingDialog::locateRequested, this, &MainWindow::locate);
         connect(building_, &BuildingDialog::rebarRequested, this, [this] { openRebar(); });
         connect(building_, &BuildingDialog::tableRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
@@ -843,6 +857,8 @@ UtilityDialog* MainWindow::openUtility() {
     if (!util_) {
         util_ = new UtilityDialog(loc_, doc_, !theme_.lightCanvas, this);
         util_->setStyleSheet(theme_.styleSheet);
+        connect(util_, &UtilityDialog::scratchRequested, this, [this] { openScratch("util"); });
+        connect(util_, &UtilityDialog::locateRequested, this, &MainWindow::locate);
         connect(util_, &UtilityDialog::drawRequested, this, [this](const QString& path) {
             runLine(QStringLiteral("UTIL \"%1\"").arg(path));
             view_->zoomExtents();
@@ -860,6 +876,8 @@ RoadDialog* MainWindow::openRoad() {
     if (!road_) {
         road_ = new RoadDialog(loc_, doc_, !theme_.lightCanvas, this);
         road_->setStyleSheet(theme_.styleSheet);
+        connect(road_, &RoadDialog::scratchRequested, this, [this] { openScratch("road"); });
+        connect(road_, &RoadDialog::locateRequested, this, &MainWindow::locate);
         connect(road_, &RoadDialog::drawRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.min.x : 0, y = b.valid() ? b.min.y - 30 : -30;
@@ -880,6 +898,8 @@ CorridorDialog* MainWindow::openCorridor() {
     if (!corridor_) {
         corridor_ = new CorridorDialog(loc_, doc_, !theme_.lightCanvas, this);
         corridor_->setStyleSheet(theme_.styleSheet);
+        connect(corridor_, &CorridorDialog::scratchRequested, this, [this] { openScratch("corridor"); });
+        connect(corridor_, &CorridorDialog::locateRequested, this, &MainWindow::locate);
         connect(corridor_, &CorridorDialog::drawRequested, this, [this](const QString& path) {
             runLine(QStringLiteral("CORRIDOR \"%1\" +").arg(path));
             view_->zoomExtents();
@@ -897,6 +917,8 @@ WaterwayDialog* MainWindow::openWaterway() {
     if (!waterway_) {
         waterway_ = new WaterwayDialog(loc_, doc_, !theme_.lightCanvas, this);
         waterway_->setStyleSheet(theme_.styleSheet);
+        connect(waterway_, &WaterwayDialog::scratchRequested, this, [this] { openScratch("waterway"); });
+        connect(waterway_, &WaterwayDialog::locateRequested, this, &MainWindow::locate);
         connect(waterway_, &WaterwayDialog::drawRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.min.x : 0, y = b.valid() ? b.min.y - 30 : -30;
@@ -911,6 +933,81 @@ WaterwayDialog* MainWindow::openWaterway() {
     waterway_->raise();
     waterway_->activateWindow();
     return waterway_;
+}
+
+CityDialog* MainWindow::openCity() {
+    if (!city_) {
+        city_ = new CityDialog(loc_, doc_, !theme_.lightCanvas, this);
+        city_->setStyleSheet(theme_.styleSheet);
+        connect(city_, &CityDialog::drawRequested, this, [this](const QString& path) {
+            runLine(QStringLiteral("CITY \"%1\"").arg(path));
+            view_->zoomExtents();
+        });
+    } else {
+        city_->recompute();
+    }
+    city_->show();
+    city_->raise();
+    city_->activateWindow();
+    return city_;
+}
+
+// "0 dan chizish": modulga mos kiritish oynasi; tasdiqlansa — generator buyrug'i (undo bilan), keyin modul chizmani qayta o'qiydi.
+// Shunday qilib 0 dan chizilgan va import qilingan chizma bitta yo'ldan o'tadi va bir xil tuzatiladi.
+QDialog* MainWindow::openScratch(const QString& module) {
+    const bool dark = !theme_.lightCanvas;
+    QDialog* d = nullptr;
+    std::function<QString()> cmd;
+    std::function<void()> after;
+    if (module == "building") {
+        auto* g = new GridInputDialog(loc_, dark, this);
+        d = g;
+        cmd = [g] { return g->command(); };
+        after = [this, g] {
+            const auto spec = g->spec();
+            auto* b = openBuilding();
+            if (b->drawings()->count()) b->drawings()->setSheets({});  // alohida fayllar emas — joriy chizma o'qiladi
+            auto p = b->params();
+            p.floors = spec.floors;
+            p.floorHeight = spec.floorH;
+            b->setParams(p, b->layerMap());
+        };
+    } else if (module == "util") {
+        auto* n = new NetInputDialog(loc_, dark, this);
+        d = n;
+        cmd = [n] { return n->command(); };
+        after = [this] {
+            auto* u = openUtility();
+            if (u->drawings()->count()) u->drawings()->setSheets({});
+        };
+    } else {
+        auto* a = new AlignInputDialog(loc_, dark, module == "waterway", this);
+        d = a;
+        cmd = [a] { return a->command(); };
+        after = [this, module] {
+            if (module == "waterway") openWaterway();
+            else if (module == "corridor") openCorridor();
+            else openRoad();
+        };
+    }
+    d->setAttribute(Qt::WA_DeleteOnClose);
+    d->setStyleSheet(theme_.styleSheet);
+    connect(d, &QDialog::accepted, this, [this, cmd, after] {
+        runLine(cmd());
+        view_->zoomExtents();
+        after();
+    });
+    d->show();
+    d->raise();
+    return d;
+}
+
+void MainWindow::locate(double x, double y) {
+    const double ppu = std::max(1.0, std::min(view_->width(), view_->height()) / 60.0);  // ~60 m ko'rinadi
+    view_->setView({x, y, 0}, ppu);
+    view_->update();
+    raise();
+    activateWindow();
 }
 
 void MainWindow::activateTool(const QString& key) {
@@ -938,6 +1035,10 @@ void MainWindow::startCommand(const QString& canonical) {
     }
     if (canonical == "SEWER") { openSewer(); return; }
     if (canonical == "BUILDING") { openBuilding(); return; }
+    if (canonical == "CITY") { openCity(); return; }
+    if (canonical == "GRID") { openScratch("building"); return; }
+    if (canonical == "ALIGN") { openScratch("road"); return; }
+    if (canonical == "UTILNET") { openScratch("util"); return; }
     if (canonical == "OPEN") { openFile(); return; }
     if (canonical == "SAVE") { saveFile(false); return; }
     if (canonical == "IMPORT") { importDxf(); return; }

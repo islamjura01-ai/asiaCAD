@@ -33,6 +33,7 @@ private:
     void need(const Args& a, std::size_t n, const std::string& canon) const;
     void addAndReport(const std::string& canon, std::unique_ptr<IEntity> e, const char* msgKey);
     void addMany(const char* name, std::vector<std::unique_ptr<IEntity>> es);
+    void addLayered(const std::string& name, std::vector<std::unique_ptr<IEntity>> es);  // qatlamlari saqlanadi (yo'qlari yaratiladi)
     void addDimension(const std::string& canon, std::unique_ptr<DimensionEntity> d);
     void say(const std::string& key, const std::vector<std::string>& args = {});
     void help();

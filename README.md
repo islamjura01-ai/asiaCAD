@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.15: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.16: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -289,6 +289,28 @@ AsiaCAD faylni o'zi tahlil qiladi — rol berish shart emas ("Armatura 3D" → K
   aylanalar — vertikal sterjenlar (fundamentda shpilkalar, vypusklar 640 + 960); ustun karkaslari — vypusklar joyida
   asosiy sterjenlar va xomutlar ("100/200").
 - CLI: `KJ fayl.dxf [fundament usti] [qalinligi]`. Namuna: `examples/kj_loyiha/` (`make_kj.py` — generator).
+
+## Har menyuda uch yo'l: 0 dan chizish · import · tuzatish (v0.16) — `civil/generators`
+
+Har bir modul (Bino, Yo'l, Suv yo'li, Koridor, Yer osti) oynasining pastida **✚ 0 dan** tugmasi bor. Kiritish oynasi
+jonli plan bilan ochiladi; "Chizmaga" bosilsa generator buyrug'i chizmaga AsiaCAD importi taniydigan obyektlarni yozadi
+(undo bilan), modul shu chizmani xuddi import qilingan fayl kabi o'qiydi. Shuning uchun 0 dan chizilgan, boshqa dasturdan
+import qilingan va AsiaCAD tayyorlagan chizma — bitta yo'ldan o'tadi va bir xil tuzatiladi.
+
+| Buyruq | Nima chizadi | Keyin o'qiydi |
+|---|---|---|
+| `GRID 6x5,4.5 6x3 [0.5x0.5] [x,y]` | o'qlar to'ri (1, 2… / А, Б…), ustunlar, tashqi devorlar, plita konturi | `BUILDING` |
+| `ALIGN file.json` | o'q: burilish nuqtalari (X, Y, R — yoy), piketlar, loyiha belgilari | `ROAD`, `WATERWAY`, `CORRIDOR` |
+| `UTILNET file.json` | quduqlar (nom, qopqoq, tub), quvurlar (Ø, i=, uzunlik yozuvlari) | `UTIL` |
+| `CITY [nx ny] [5-16] [x,y]` | ko'chalar (o'q + qatnov qismi), kvartallar, binolar, 3D massiv | `ROAD`/`CORRIDOR` (ko'cha o'qlari) |
+
+* **Tuzatish**: Yo'l, Suv yo'li, Koridor, Yer osti oynalarida "Tekshiruv" bandini bossangiz — chizmada o'sha joy ko'rsatiladi.
+  Element chizmada o'zgartiriladi, modul qayta o'qiydi; jadvallarda belgilar qo'lda tuzatiladi.
+* **Shahar mavzesi** (yangi menyu): 6 shablon (kam qavatli → 300 kvartalli yangi shahar), plan va 3D, ko'rsatkichlar
+  (hudud, qurilish izi, umumiy maydon, zichlik, ko'chalar km). Bino asosi chizmadagi yer belgilaridan (absolyut).
+  900 kvartal / 1800 bino < 2 s.
+* Burilish yoyi sig'masa radius kamaytiriladi va ogohlantiriladi; o'zi oqar quvurda teskari nishablik va sayoz quduq — ogohlantirish.
+* Binolar orasidagi oraliq balandlikdan kichik bo'lsa — ogohlantirish (insolyatsiya/yong'in me'yorlari bilan tekshirilmagan).
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

@@ -10,6 +10,7 @@
 #include <asiacad/civil/utility.h>
 #include <asiacad/civil/waterway.h>
 #include <asiacad/civil/corridor.h>
+#include <asiacad/civil/generators.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/grips.h>
@@ -117,6 +118,10 @@ const char* commandSyntax(const std::string& c) {
         {"ROAD", "[file.json] [+] [x,y]"},
         {"WATERWAY", "[file.json] [Q=m3/s] [SEC=n] [+] [x,y]"},
         {"CORRIDOR", "[file.json] [ASM=n] [+]"},
+        {"GRID", "dx dy [b×h] [x,y] | file.json"},
+        {"ALIGN", "file.json"},
+        {"UTILNET", "file.json"},
+        {"CITY", "[nx ny] [floors min-max] [x,y] | file.json"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -262,6 +267,22 @@ void Interpreter::addMany(const char* name, std::vector<std::unique_ptr<IEntity>
         e->setLayer(layer_);
         e->setColor(color_);
         auto c = std::make_unique<AddEntityCommand>(std::move(e));
+        adds.push_back(c.get());
+        comp->add(std::move(c));
+    }
+    stack_.execute(std::move(comp));
+    last_.clear();
+    for (auto* c : adds) last_.push_back(c->entityId());
+}
+
+void Interpreter::addLayered(const std::string& name, std::vector<std::unique_ptr<IEntity>> es) {
+    auto comp = std::make_unique<CompositeCommand>(name);
+    std::set<std::string> made;
+    for (const auto& e : es)
+        if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+    std::vector<AddEntityCommand*> adds;
+    for (auto& e : es) {
+        auto c = std::make_unique<AddEntityCommand>(std::move(e), name);
         adds.push_back(c.get());
         comp->add(std::move(c));
     }
@@ -845,6 +866,102 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             last_.clear();
             for (auto* cc : adds) last_.push_back(cc->entityId());
             say("road.msg.drawn", {std::to_string(last_.size())});
+        }
+    } else if (cmd == "GRID" || cmd == "ALIGN" || cmd == "UTILNET" || cmd == "CITY") {
+        // "0 dan chizish" generatorlari: chizmaga AsiaCAD importi taniydigan obyektlar yoziladi (keyin BINO/YO'L/YEROSTI/KORIDOR o'qiydi)
+        auto readFile = [](const std::string& path) {
+            std::ifstream f(path, std::ios::binary);
+            if (!f) throw Error("acad.err.open", {path});
+            std::stringstream b;
+            b << f.rdbuf();
+            return b.str();
+        };
+        const bool js = !a.empty() && extOf(a[0]) == "json";
+        auto usage = [&]() { return Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))}); };
+        if (cmd == "GRID") {
+            civil::GridSpec g;
+            if (js) g = civil::gridFromJson(readFile(a[0]));
+            else {
+                if (a.size() < 2) throw usage();
+                g.dx = civil::parseSpacing(a[0]);
+                g.dy = civil::parseSpacing(a[1]);
+                if (g.dx.empty()) throw Error("gen.err.spacing", {a[0]});
+                if (g.dy.empty()) throw Error("gen.err.spacing", {a[1]});
+                for (std::size_t k = 2; k < a.size(); ++k) {
+                    std::string t = a[k];
+                    for (const char* m : {"\xC3\x97", "\xD1\x85"})
+                        for (std::size_t q; (q = t.find(m)) != std::string::npos;) t.replace(q, 2, "x");
+                    if (const auto x = t.find_first_of("xX"); x != std::string::npos && t.find(',') == std::string::npos) {
+                        g.colB = parseNumber(t.substr(0, x));
+                        g.colH = parseNumber(t.substr(x + 1));
+                    } else {
+                        const Vec3 p = parsePoint(a[k]);
+                        g.x0 = p.x;
+                        g.y0 = p.y;
+                    }
+                }
+            }
+            auto es = civil::generateGrid(g);
+            double W = 0, D = 0;
+            for (double d : g.dx) W += d;
+            for (double d : g.dy) D += d;
+            addLayered(cmd, std::move(es));
+            say("gen.msg.grid", {std::to_string(g.dx.size() + 1), std::to_string(g.dy.size() + 1), std::to_string((g.dx.size() + 1) * (g.dy.size() + 1)),
+                                 std::format("{:g}", W), std::format("{:g}", D), loc_.commandName("BUILDING")});
+        } else if (cmd == "ALIGN") {
+            if (!js) throw usage();
+            const auto al = civil::alignFromJson(readFile(a[0]));
+            std::vector<std::string> warn;
+            auto es = civil::generateAlignment(al, &warn);
+            double L = 0;
+            int arcs = 0;
+            if (auto* pl = dynamic_cast<PolylineEntity*>(es.front().get())) {
+                L = pl->length2d();
+                for (double b : pl->bulges()) arcs += std::abs(b) > 1e-12;
+            }
+            addLayered(cmd, std::move(es));
+            say("gen.msg.align", {std::format("{:.2f}", L), std::to_string(arcs), std::to_string(al.pvi.size())});
+            for (const auto& w : warn) {
+                std::vector<std::string> f;
+                for (std::size_t i = 0, j; i <= w.size(); i = j + 1) {
+                    j = w.find('|', i);
+                    if (j == std::string::npos) j = w.size();
+                    f.push_back(w.substr(i, j - i));
+                }
+                out_ << "  " << loc_.tr("sewer.lvl.warning") << ": "
+                     << (f[0] == "pvi" ? loc_.tr("gen.warn.pvi", {f[1], f[2]}) : loc_.tr("gen.warn.radius", {f[0], f[1], f[2]})) << '\n';
+            }
+        } else if (cmd == "UTILNET") {
+            if (!js) throw usage();
+            const auto n = civil::netFromJson(readFile(a[0]));
+            addLayered(cmd, civil::generateNetwork(n));
+            say("gen.msg.net", {std::to_string(n.nodes.size()), std::to_string(n.pipes.size()), loc_.commandName("UTIL")});
+        } else {
+            civil::CitySpec c;
+            if (js) c = civil::cityFromJson(readFile(a[0]));
+            else {
+                std::vector<double> ints;
+                for (const auto& t : a) {
+                    if (t.find(',') != std::string::npos) {
+                        const Vec3 p = parsePoint(t);
+                        c.x0 = p.x;
+                        c.y0 = p.y;
+                    } else if (const auto d = t.find('-'); d != std::string::npos && d > 0) {
+                        c.floorsMin = static_cast<int>(parseNumber(t.substr(0, d)));
+                        c.floorsMax = static_cast<int>(parseNumber(t.substr(d + 1)));
+                    } else ints.push_back(parseNumber(t));
+                }
+                if (ints.size() == 1 || ints.size() > 2) throw usage();
+                if (ints.size() == 2) { c.nx = static_cast<int>(ints[0]); c.ny = static_cast<int>(ints[1]); }
+            }
+            int gp = 0;
+            const auto gfun = civil::groundFromDoc(doc_, &gp);
+            auto r = civil::generateCity(c, gfun);
+            const std::size_t nb = r.buildings.size();
+            addLayered(cmd, std::move(r.entities));
+            say("gen.msg.city", {std::to_string(c.nx * c.ny), std::to_string(nb), std::format("{:.1f}", r.siteArea / 10000),
+                                 std::format("{:.0f}", r.gfa), std::format("{:.2f}", r.far()), std::format("{:.2f}", r.streetLength / 1000)});
+            if (!gp) out_ << "  " << loc_.tr("sewer.lvl.warning") << ": " << loc_.tr("gen.warn.city_ground", {std::format("{:.2f}", c.ground)}) << '\n';
         }
     } else if (cmd == "WATERWAY") {
         // WATERWAY — suv yo'li (quvur, beton kanal, ariq, lotok): tahlil; Q= sarf; SEC= shablon raqami; + — 3D; x,y — profil

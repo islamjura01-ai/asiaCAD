@@ -204,6 +204,10 @@ void BuildingDialog::buildUi() {
 
     // ---- past
     auto* bottom = new QHBoxLayout;
+    auto* scratch = new QPushButton(t("gui.gen.scratch"), this);
+    scratch->setToolTip(t("gui.gen.scratch.tip"));
+    bottom->addWidget(scratch);
+    connect(scratch, &QPushButton::clicked, this, [this] { emit scratchRequested(); });
     summary_ = new QLabel(this);
     summary_->setObjectName("title");
     auto* toRebar = new QPushButton(t("gui.bim.rebar"), this);

@@ -22,6 +22,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 
@@ -292,6 +293,10 @@ void WaterwayDialog::buildUi() {
     quant_ = new QListWidget(tabs);
     checks_ = new QListWidget(tabs);
     checks_->setWordWrap(true);
+    connect(checks_, &QListWidget::itemClicked, this, [this](QListWidgetItem* it) {
+        const QVariant v = it->data(Qt::UserRole);
+        if (v.isValid()) emit locateRequested(v.toPointF().x(), v.toPointF().y());
+    });
     tabs->addTab(st_, t("gui.rd.stations"));
     tabs->addTab(quant_, t("gui.rd.quant"));
     tabs->addTab(checks_, t("gui.bim.checks"));
@@ -301,6 +306,10 @@ void WaterwayDialog::buildUi() {
 
     // ---- past
     auto* bottom = new QHBoxLayout;
+    auto* scratch = new QPushButton(t("gui.gen.scratch"), this);
+    scratch->setToolTip(t("gui.gen.scratch.tip"));
+    bottom->addWidget(scratch);
+    connect(scratch, &QPushButton::clicked, this, [this] { emit scratchRequested(); });
     summary_ = new QLabel(this);
     summary_->setObjectName("title");
     bottom->addWidget(summary_, 1);
@@ -514,6 +523,11 @@ void WaterwayDialog::fillTables() {
     for (const auto& is : m_.issues) {
         auto* it = new QListWidgetItem(QString::fromStdString(loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") + ": " + loc_.tr(is.key, is.args)));
         it->setForeground(is.error ? QColor(232, 70, 80) : QColor(230, 160, 30));
+        if (!m_.st.empty()) {
+            const auto& q = *std::min_element(m_.st.begin(), m_.st.end(), [&](const auto& a, const auto& b) { return std::abs(a.s - is.s) < std::abs(b.s - is.s); });
+            it->setData(Qt::UserRole, QPointF(q.x, q.y));
+            it->setToolTip(t("gui.gen.locate"));
+        }
         checks_->addItem(it);
     }
     if (m_.issues.empty()) checks_->addItem(t("gui.bim.ok"));

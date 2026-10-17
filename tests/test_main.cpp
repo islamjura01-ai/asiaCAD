@@ -10,6 +10,7 @@
 #include <asiacad/civil/utility.h>
 #include <asiacad/civil/waterway.h>
 #include <asiacad/civil/corridor.h>
+#include <asiacad/civil/generators.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -340,7 +341,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 54);
+    CHECK(loc.canonicalCommands().size() == 58);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2571,4 +2572,147 @@ int main() {
     }
     std::cout << '\n' << registry().size() << " test, " << g_checks << " tekshiruv, " << g_fail << " xato\n";
     return g_fail == 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------- 0 dan chizish generatorlari
+namespace {
+bool NEAR_EQ(double a, double b) { return std::abs(a - b) < 1e-9; }
+Document docOf(civil::Entities es) {
+    Document d;
+    for (auto& e : es) {
+        if (!d.layer(e->layer())) d.addLayer(Layer{e->layer()});
+        d.add(std::move(e));
+    }
+    return d;
+}
+}  // namespace
+
+TEST(gen_spacing_parse) {
+    auto v = civil::parseSpacing("6x5, 4.5");
+    CHECK(v.size() == 6 && NEAR_EQ(v[0], 6) && NEAR_EQ(v[5], 4.5));
+    CHECK(civil::parseSpacing("3*2;7.2").size() == 3);
+    CHECK(civil::parseSpacing("6\xC3\x97" "3").size() == 3);  // 6×3
+    CHECK(civil::parseSpacing("6x").empty());
+    CHECK(civil::parseSpacing("abc").empty());
+    CHECK(civil::gridLetter(0) == "\xD0\x90" && civil::gridLetter(7) == "\xD0\x98");   // А, И (Ё З yo'q)
+}
+
+TEST(gen_grid_reads_back_as_building) {
+    civil::GridSpec g;
+    g.dx = civil::parseSpacing("6x5,4.5");
+    g.dy = civil::parseSpacing("6x3");
+    g.colB = g.colH = 0.5;
+    auto doc = docOf(civil::generateGrid(g));
+    const auto plan = bim::readPlan(doc, bim::autoLayerMap(doc));
+    CHECK(plan.columns.size() == 28);
+    CHECK(plan.walls.size() == 18);
+    CHECK(plan.slabs.size() == 1);
+    bim::BuildingParams bp;
+    bp.floors = 3;
+    const auto m = bim::buildModel(plan, bp);
+    // devorlar ustunlarga kirmaydi: 1-qavat devor hajmi = (perimetr − ustunlar) × t × (H − plita)
+    double wall = 0;
+    for (const auto& r : m.pto)
+        if (r.kind == bim::ElemKind::Wall && r.level == 1) wall = r.volume;
+    CHECK(wall > 0);
+    const auto g2 = civil::gridFromJson(civil::gridToJson(g));
+    CHECK(g2.dx.size() == 6 && g2.dy.size() == 3 && NEAR_EQ(g2.colB, 0.5));
+}
+
+TEST(gen_alignment_reads_back_as_road) {
+    civil::AlignSpec a;
+    a.pi = {{0, 0, 0}, {400, 0, 300}, {700, 300, 250}, {900, 300, 0}};
+    a.pvi = {{0, 450}, {300, 452.5}, {600, 449.8}};
+    std::vector<std::string> w;
+    auto doc = docOf(civil::generateAlignment(a, &w));
+    CHECK(w.empty());
+    auto rp = civil::defaultRoadParams();
+    const auto m = civil::buildRoad(doc, civil::autoRoadLayers(doc), rp);
+    CHECK(m.curves.size() == 2);
+    if (m.curves.size() == 2) {
+        CHECK(std::abs(m.curves[0].radius - 300) < 0.01);
+        CHECK(std::abs(m.curves[1].radius - 250) < 0.01);
+        // 45° burilish: yoy uzunligi R·π/4
+        CHECK(std::abs((m.curves[0].s1 - m.curves[0].s0) - 300 * 3.14159265 / 4) < 0.5);
+    }
+    CHECK(m.designPoints == 3);
+    // tangenslar: 400 − T1 + yoy1 + ...: to'g'ri chiziq uzunligidan qisqa
+    CHECK(m.length < 400 + std::hypot(300, 300) + 200 && m.length > 950);
+    bool z300 = false;
+    for (const auto& s : m.st)
+        if (std::abs(s.s - 300) < 0.5) z300 = std::abs(s.design - 452.5) < 0.05;
+    CHECK(z300);
+    // sig'maydigan radius kamaytiriladi va ogohlantiriladi
+    civil::AlignSpec b;
+    b.pi = {{0, 0, 0}, {50, 0, 500}, {50, 50, 0}};
+    w.clear();
+    civil::generateAlignment(b, &w);
+    CHECK(w.size() == 1);
+    const auto a2 = civil::alignFromJson(civil::alignToJson(a));
+    CHECK(a2.pi.size() == 4 && a2.pvi.size() == 3 && NEAR_EQ(a2.pi[1].r, 300));
+}
+
+TEST(gen_network_reads_back_as_utilities) {
+    const auto n = civil::netFromJson(
+        R"({"nodes":[{"name":"K1","x":0,"y":0,"ground":480.5,"invert":478.2},{"name":"K2","x":40,"y":0,"ground":480.2,"invert":477.95},)"
+        R"({"name":"K3","x":80,"y":10,"ground":479.9,"invert":477.7}],"pipes":[{"from":1,"to":2,"dn":300},{"from":"K2","to":"K3","kind":"SEWER","dn":400}]})");
+    CHECK(n.pipes.size() == 2 && n.pipes[1].from == 1 && n.pipes[1].to == 2);
+    auto doc = docOf(civil::generateNetwork(n));
+    const auto m = civil::readUtilities(doc, civil::autoUtilLayers(doc), civil::defaultUtilParams());
+    CHECK(m.nodes.size() == 3);
+    CHECK(m.lines.size() == 2);
+    int named = 0;
+    for (const auto& q : m.nodes) {
+        named += !q.name.empty();
+        if (q.name == "K2") {
+            CHECK(std::abs(q.ground - 480.2) < 1e-6);
+            CHECK(q.inverts.size() == 1 && std::abs(q.inverts[0] - 477.95) < 1e-6);
+        }
+    }
+    CHECK(named == 3);
+    std::set<int> dns;
+    for (const auto& l : m.lines) {
+        dns.insert(static_cast<int>(l.dn));
+        CHECK(l.dnFromLabel && l.slopeLabel > 0 && l.lengthLabel > 0);
+    }
+    CHECK(dns == std::set<int>({300, 400}));
+    const auto n2 = civil::netFromJson(civil::netToJson(n));
+    CHECK(n2.nodes.size() == 3 && n2.pipes[1].dn == 400 && n2.pipes[1].from == 1);
+}
+
+TEST(gen_city_large_and_ground) {
+    civil::CitySpec c;
+    c.nx = 30; c.ny = 30;
+    c.floorsMin = 9; c.floorsMax = 25;
+    const auto t0 = std::chrono::steady_clock::now();
+    auto r = civil::generateCity(c, [](double x, double y) { return 400 + 0.01 * x + 0.005 * y; });
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(r.buildings.size() == 30u * 30u * 2u);
+    CHECK(ms < 2000);
+    int fmin = 99, fmax = 0;
+    for (const auto& b : r.buildings) { fmin = std::min(fmin, b.floors); fmax = std::max(fmax, b.floors); }
+    CHECK(fmin >= 9 && fmax <= 25 && fmax > fmin);
+    // asos — burchaklardagi eng past yer
+    const auto& b0 = r.buildings.front();
+    CHECK(std::abs(b0.base - (400 + 0.01 * b0.footprint[0][0] + 0.005 * b0.footprint[0][1])) < 1e-9);
+    NEAR(r.blockArea, 900 * 120.0 * 90.0);
+    CHECK(r.far() > 1 && r.far() < 10);
+    // ko'cha o'qlari yo'l moduli taniydigan qatlamda
+    CHECK(civil::guessRoadLayer("KOCHA_O'Q") == civil::RoadLayer::Axis);
+    // shahar binolari bino moduliga "kontur" bo'lib aralashmaydi
+    CHECK(bim::guessKind("SHAHAR_BINO") == bim::ElemKind::Ignore);
+    // 3D: chizmaga yozib, yer sathidan
+    Document d;
+    d.addLayer(Layer{"YER_SATHI"});
+    d.add(std::make_unique<TextEntity>(Vec3{0, 0, 0}, 1, "412.30"));
+    int cnt = 0;
+    auto gf = civil::groundFromDoc(d, &cnt);
+    CHECK(cnt == 0);  // "0" qatlamda — yer emas
+    Document d2;
+    d2.addLayer(Layer{"YER_SATHI"});
+    auto t = std::make_unique<TextEntity>(Vec3{0, 0, 0}, 1, "412.30");
+    t->setLayer("YER_SATHI");
+    d2.add(std::move(t));
+    auto gf2 = civil::groundFromDoc(d2, &cnt);
+    CHECK(cnt == 1 && gf2 && std::abs(gf2(100, 100) - 412.3) < 1e-9);
 }

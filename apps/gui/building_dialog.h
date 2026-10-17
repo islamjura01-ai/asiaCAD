@@ -43,6 +43,8 @@ public:
     void applyTypology(const QString& id);  // btpl.* — bino tiplari
 
 signals:
+    void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
+    void locateRequested(double x, double y);   // tuzatish: tekshiruvdagi joyni chizmada ko'rsatish
     void tableRequested(const QString& jsonPath);
     void rebarRequested();
 

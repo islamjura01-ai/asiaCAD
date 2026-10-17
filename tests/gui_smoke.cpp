@@ -9,6 +9,7 @@
 #include "road_dialog.h"
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
+#include "generator_dialogs.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -580,6 +581,86 @@ int main(int argc, char** argv) {
         CHECK(rdp->view()->faceCount() >= 0);
         rdp->close();
         bdlg->close();
+    }
+
+    // 25. "0 dan chizish" — har menyuda: kiritish → chizmaga (undo bilan) → modul o'qiydi → tuzatish (tekshiruvdan joyga)
+    {
+        w.runLine("NEW !");
+        // bino: o'qlar to'ri
+        auto* gd = qobject_cast<GridInputDialog*>(w.openScratch("building"));
+        CHECK(gd != nullptr);
+        gd->setSpacing("6x5,4.5", "6x3");
+        CHECK(gd->preview()->count() > 50);
+        gd->setSpacing("6x", "6x3");
+        CHECK(!gd->valid());
+        gd->setSpacing("6x5,4.5", "6x3");
+        const auto n0 = doc.size();
+        gd->accept();
+        CHECK(doc.size() > n0 + 50);
+        BuildingDialog* bd = w.openBuilding();
+        int cols = 0;
+        for (const auto& pr : bd->model().prisms) cols += pr.kind == asiacad::bim::ElemKind::Column && pr.level == 1;
+        CHECK(cols == 28);
+        CHECK(bd->params().floors == 5);
+        bd->close();
+        w.runLine("UNDO");
+        CHECK(doc.size() == n0);
+
+        // yo'l o'qi: burilish nuqtalari va profil
+        auto* ad = qobject_cast<AlignInputDialog*>(w.openScratch("road"));
+        CHECK(ad != nullptr && ad->pi()->rowCount() == 3);
+        ad->accept();
+        RoadDialog* rd = w.openRoad();
+        CHECK(rd->model().curves.size() == 1);
+        CHECK(rd->model().designPoints == 3);
+        rd->close();
+
+        // kanal o'qi — suv yo'li moduli taniydigan qatlamda
+        w.runLine("NEW !");
+        auto* ac = qobject_cast<AlignInputDialog*>(w.openScratch("waterway"));
+        ac->accept();
+        CHECK(doc.layer("CANAL_O'Q").has_value());
+        WaterwayDialog* wwd = w.openWaterway();
+        CHECK(wwd->model().length > 500);
+        wwd->close();
+
+        // yer osti tarmog'i
+        w.runLine("NEW !");
+        auto* nd = qobject_cast<NetInputDialog*>(w.openScratch("util"));
+        CHECK(nd != nullptr && nd->nodes()->rowCount() == 4);
+        nd->chain();
+        CHECK(nd->pipes()->rowCount() == 3);
+        nd->accept();
+        UtilityDialog* ud = w.openUtility();
+        CHECK(ud->model().nodes.size() == 4);
+        CHECK(ud->model().lines.size() == 3);
+        // tuzatish: tekshiruv bandi bosilsa chizmada joy ko'rsatiladi
+        w.locate(40, 0);
+        ud->close();
+
+        // shahar mavzesi: shablon, 3D, chizmaga
+        w.runLine("NEW !");
+        CityDialog* cd = w.openCity();
+        CHECK(cd->sidebar()->count() == 6);
+        cd->sidebar()->activate(2);
+        CHECK(cd->result().buildings.size() > 10);
+        CHECK(cd->view()->faceCount() > 100);
+        cd->sidebar()->activate(5);   // 300 kvartal
+        CHECK(cd->result().buildings.size() >= 600);
+        QElapsedTimer tm;
+        tm.start();
+        const auto c0 = doc.size();
+        for (auto* b : cd->findChildren<QPushButton*>())
+            if (b->text() == QString::fromStdString(loc.tr("gui.gen.draw"))) b->click();
+        CHECK(doc.size() > c0 + 3000);
+        CHECK(tm.elapsed() < 15000);
+        CHECK(doc.layer("KOCHA_O'Q").has_value() && doc.layer("SHAHAR_3D").has_value());
+        cd->close();
+        // ko'cha o'qi koridor uchun ham o'q (eng uzuni olinadi)
+        CorridorDialog* cr = w.openCorridor();
+        CHECK(cr->model().length > 1000);
+        if (cr->model().length <= 1000) std::printf("  koridor L=%.1f, kesim %zu\n", cr->model().length, cr->model().sec.size());
+        cr->close();
     }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

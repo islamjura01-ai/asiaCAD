@@ -24,6 +24,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -436,6 +437,10 @@ void CorridorDialog::buildUi() {
     st_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     checks_ = new QListWidget(tabs);
     checks_->setWordWrap(true);
+    connect(checks_, &QListWidget::itemClicked, this, [this](QListWidgetItem* it) {
+        const QVariant v = it->data(Qt::UserRole);
+        if (v.isValid()) emit locateRequested(v.toPointF().x(), v.toPointF().y());
+    });
     layers_ = new QTableWidget(0, 2, tabs);
     layers_->setHorizontalHeaderLabels({t("gui.bim.col.layer"), t("gui.bim.col.kind")});
     layers_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -450,6 +455,10 @@ void CorridorDialog::buildUi() {
 
     // ---- past
     auto* bottom = new QHBoxLayout;
+    auto* scratch = new QPushButton(t("gui.gen.scratch"), this);
+    scratch->setToolTip(t("gui.gen.scratch.tip"));
+    bottom->addWidget(scratch);
+    connect(scratch, &QPushButton::clicked, this, [this] { emit scratchRequested(); });
     summary_ = new QLabel(this);
     summary_->setObjectName("title");
     bottom->addWidget(summary_, 1);
@@ -592,6 +601,7 @@ void CorridorDialog::fillPalette() {
 }
 
 void CorridorDialog::fillLayers() {
+    const auto prev = layerMap();  // foydalanuvchi tanlovlari saqlanadi
     updating_ = true;
     layers_->setRowCount(0);
     for (const auto& [name, l] : doc_.layers()) {
@@ -609,6 +619,7 @@ void CorridorDialog::fillLayers() {
         auto* cb = new QComboBox(layers_);
         for (auto kk : {civil::WwLayer::Ignore, civil::WwLayer::Axis, civil::WwLayer::Ground, civil::WwLayer::Design})
             cb->addItem(t((std::string("cor.layer.") + civil::wwLayerKey(kk)).c_str()), QString::fromLatin1(civil::wwLayerKey(kk)));
+        if (auto pv = prev.find(name); pv != prev.end()) w = pv->second;
         cb->setCurrentIndex(std::max(0, cb->findData(QString::fromLatin1(civil::wwLayerKey(w)))));
         connect(cb, &QComboBox::currentIndexChanged, this, [this] { if (!updating_) reread(); });
         layers_->setCellWidget(row, 1, cb);
@@ -762,6 +773,16 @@ void CorridorDialog::setDesign(int i, double z) {
 }
 
 void CorridorDialog::reread() {
+    {   // chizmada qatlamlar o'zgargan bo'lsa (yangi chizma, generator) — jadval yangilanadi
+        std::size_t n = 0;
+        bool same = true;
+        for (const auto& [name, l] : doc_.layers()) {
+            if (name.rfind("KOR_", 0) == 0) continue;
+            same = same && static_cast<int>(n) < layers_->rowCount() && layers_->item(static_cast<int>(n), 0)->text().toStdString() == name;
+            ++n;
+        }
+        if (!same || static_cast<int>(n) != layers_->rowCount()) fillLayers();
+    }
     p_.step = step_->value();
     p_.maxDaylight = maxDl_->value();
     p_.ground = ground_->value();
@@ -837,6 +858,11 @@ void CorridorDialog::fillTables() {
     for (const auto& is : c_.issues) {
         auto* it = new QListWidgetItem(QString::fromStdString(loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") + ": " + loc_.tr(is.key, is.args)));
         it->setForeground(is.error ? QColor(232, 70, 80) : QColor(230, 160, 30));
+        if (!c_.sec.empty()) {
+            const auto& q = *std::min_element(c_.sec.begin(), c_.sec.end(), [&](const auto& a, const auto& b) { return std::abs(a.s - is.s) < std::abs(b.s - is.s); });
+            it->setData(Qt::UserRole, QPointF(q.x, q.y));
+            it->setToolTip(t("gui.gen.locate"));
+        }
         checks_->addItem(it);
     }
     if (c_.issues.empty()) checks_->addItem(t("gui.bim.ok"));

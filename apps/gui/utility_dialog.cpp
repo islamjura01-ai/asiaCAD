@@ -21,6 +21,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 
@@ -202,6 +203,10 @@ void UtilityDialog::buildUi() {
     cross_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     checks_ = new QListWidget(tabs);
     checks_->setWordWrap(true);
+    connect(checks_, &QListWidget::itemClicked, this, [this](QListWidgetItem* it) {
+        const QVariant v = it->data(Qt::UserRole);
+        if (v.isValid()) emit locateRequested(v.toPointF().x(), v.toPointF().y());
+    });
     tabs->addTab(lines_, t("gui.ut.lines"));
     tabs->addTab(points_, t("gui.ut.points"));
     tabs->addTab(cross_, t("gui.ut.cross"));
@@ -215,6 +220,10 @@ void UtilityDialog::buildUi() {
 
     // ---- past
     auto* bottom = new QHBoxLayout;
+    auto* scratch = new QPushButton(t("gui.gen.scratch"), this);
+    scratch->setToolTip(t("gui.gen.scratch.tip"));
+    bottom->addWidget(scratch);
+    connect(scratch, &QPushButton::clicked, this, [this] { emit scratchRequested(); });
     summary_ = new QLabel(this);
     summary_->setObjectName("title");
     bottom->addWidget(summary_, 1);
@@ -448,6 +457,10 @@ void UtilityDialog::fillTables() {
     for (const auto& is : m_.issues) {
         auto* it = new QListWidgetItem(QString::fromStdString(loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") + ": " + loc_.tr(is.key, is.args)));
         it->setForeground(is.error ? QColor(232, 70, 80) : QColor(230, 160, 30));
+        if (is.x != 0 || is.y != 0) {
+            it->setData(Qt::UserRole, QPointF(is.x, is.y));
+            it->setToolTip(t("gui.gen.locate"));
+        }
         checks_->addItem(it);
     }
     if (m_.issues.empty()) checks_->addItem(t("gui.bim.ok"));

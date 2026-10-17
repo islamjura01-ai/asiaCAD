@@ -62,6 +62,9 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "corridor") {  // yig'ma: o'q, polosalar, qiyaliklar
         P({{2, 19}, {6, 13}, {10, 12}, {14, 12}, {18, 13}, {22, 19}}); L(12, 4, 12, 12); L(10, 6, 14, 6); dot(6, 13); dot(18, 13);
     }
+    else if (n == "city") {  // kvartal binolari: har xil balandlik
+        R(3, 11, 5, 10, 0.5); R(10, 4, 5, 17, 0.5); R(17, 8, 4, 13, 0.5); L(2, 21, 22, 21);
+    }
     else if (n == "waterway") {  // trapetsiya kanal + to'lqin
         P({{2, 6}, {7, 19}, {17, 19}, {22, 6}});
         QPainterPath w; w.moveTo(6, 12); w.cubicTo(8, 10, 10, 14, 12, 12); w.cubicTo(14, 10, 16, 14, 18, 12); p.drawPath(w);

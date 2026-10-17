@@ -20,6 +20,7 @@
 
 class QAction;
 class QComboBox;
+class QDialog;
 class QDockWidget;
 class QLabel;
 class QLineEdit;
@@ -41,6 +42,7 @@ class UtilityDialog;
 class RoadDialog;
 class WaterwayDialog;
 class CorridorDialog;
+class CityDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -62,6 +64,9 @@ public:
     RoadDialog* openRoad();                 // "Yo'l 3D" menyusi
     WaterwayDialog* openWaterway();         // "Suv yo'li" menyusi (quvur, kanal, ariq, lotok)
     CorridorDialog* openCorridor();         // "Koridor": yig'malar + qismlar palitrasi (Civil 3D Corridor kabi)
+    CityDialog* openCity();                 // "Shahar mavzesi" — 0 dan: ko'chalar, kvartallar, binolar
+    QDialog* openScratch(const QString& module);  // "0 dan chizish": building | road | waterway | corridor | util
+    void locate(double x, double y);        // tuzatish: chizmada joyni ko'rsatish
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -106,6 +111,7 @@ private:
     RoadDialog* road_ = nullptr;
     WaterwayDialog* waterway_ = nullptr;
     CorridorDialog* corridor_ = nullptr;
+    CityDialog* city_ = nullptr;
 
     QHash<QString, QAction*> act_;  // "line" -> QAction
     QTabWidget* ribbon_ = nullptr;

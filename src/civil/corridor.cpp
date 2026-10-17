@@ -764,16 +764,17 @@ void recomputeCorridor(Corridor& c, const CorridorParams& p) {
 Corridor buildCorridor(const Document& doc, const CorridorParams& p) {
     Corridor c;
     // qatlamlar: yo'l va suv yo'li taxminlari birlashtiriladi
+    // qo'lda berilganlari ustun; chizmaga keyin qo'shilgan qatlamlar (masalan "0 dan" generator) — taxmin bo'yicha
     std::map<std::string, WwLayer> lm = p.layers;
-    if (lm.empty())
-        for (const auto& [name, l] : doc.layers()) {
-            const RoadLayer r = guessRoadLayer(name);
-            WwLayer w = guessWwLayer(name);
-            if (r == RoadLayer::Axis) w = WwLayer::Axis;
-            else if (w == WwLayer::Ignore && r == RoadLayer::Ground) w = WwLayer::Ground;
-            else if (w == WwLayer::Ignore && r == RoadLayer::Design) w = WwLayer::Design;
-            lm[name] = w;
-        }
+    for (const auto& [name, l] : doc.layers()) {
+        if (lm.count(name)) continue;
+        const RoadLayer r = guessRoadLayer(name);
+        WwLayer w = guessWwLayer(name);
+        if (r == RoadLayer::Axis) w = WwLayer::Axis;
+        else if (w == WwLayer::Ignore && r == RoadLayer::Ground) w = WwLayer::Ground;
+        else if (w == WwLayer::Ignore && r == RoadLayer::Design) w = WwLayer::Design;
+        lm[name] = w;
+    }
     WwParams wp = defaultWwParams();
     wp.step = p.step;
     wp.ground = p.ground;

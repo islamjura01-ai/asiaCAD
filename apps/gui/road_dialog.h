@@ -58,6 +58,8 @@ public:
     void showTab(int i);
 
 signals:
+    void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
+    void locateRequested(double x, double y);   // tuzatish: tekshiruvdagi joyni chizmada ko'rsatish
     void drawRequested(const QString& jsonPath);
 
 private:

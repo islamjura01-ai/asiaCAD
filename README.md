@@ -220,6 +220,23 @@ Har bir menyuda **"Chizmalar"** paneli: bir nechta DXF/.acad fayl, har biriga va
   ("Поз." | "Наименование" | "Кол." | "Масса"). 3D sterjenlar shu qavat plitasida (pastki/yuqori, himoya qatlami bilan).
   Taqqoslash: chizmadagi soni ↔ spetsifikatsiya, Ø mosligi, umumiy massa. Namuna: `examples/bino_qolip/kj_plita_1_2.dxf`.
 
+## Koridor: yig'malar va qismlar (Civil 3D Corridor kabi) — `civil/corridor`, `CORRIDOR`
+
+Bitta oynada: chapda palitra (vertikal yorliqlar: Yig'malar, Asosiy, Polosalar, Yo'l yoqasi, Ajratuvchi, Bordyur,
+Qiyalik, Kanal/lotok, Transheya, Devor), yonida yig'ma muharriri (chap/o'ng ro'yxat, ↑ ↓ ✕, parametrlar jadvali, kesma/
+to'kmada jonli ko'rinish), o'rtada 3D | Kesimlar (piket bo'yicha, materiallar rangda) | Profil, o'ngda Hajmlar.
+- Qismlar: polosa (3 qatlam qoplama), yo'l yoqasi, bordyur, trotuar, ajratuvchi, oddiy chiziq, qiyalik yergacha,
+  kyuvet+qiyalik, bermali qiyalik, ariq, kanal (trapetsiya/to'rtburchak, qoplama, qirg'oq), parabolik lotok (yostiq bilan),
+  quvur transheyasi (to'shama, qayta ko'mish), tirgak devor.
+- 13 tayyor yig'ma: yo'llar (II, III, IV toifa, magistral, shahar ko'chasi, tirgak devorli), kanallar (trapetsiya,
+  to'rtburchak, ariq, lotok, damba ichida), transheyalar. Qism bosilsa — qiyalikdan oldin qo'shiladi.
+- Aniqlik: qiyalik yer bilan bisection'da kesishadi; kesma/to'kma maydoni tanaffus nuqtalari bo'yicha aniq integral;
+  hajmlar ikki usulda — o'rtacha maydon (Civil 3D) va aniq: prizmoidal (o'rta kesim, Simpson) + egri chiziqda Pappus
+  tuzatmasi. Sinov: R=100 m yoyda aniq usul 0.5% ichida, o'rtacha maydon ~5% kam.
+- Kanal/lotok: Q berilsa Manning bo'yicha suv sathi; suv yo'lida teskari nishablik — xato. Balandliklar absolyut.
+- CLI: `CORRIDOR [fayl.json] [ASM=n] [+]`, `EXCEL CORRIDOR`. Excel: piketlar (loyiha belgisi), hajmlar, yig'ma
+  parametrlari ("R1.LANE.w") — tahrirlab qaytarish mumkin.
+
 ## Suv yo'li: quvurlar, beton kanal, ariq, lotok (v0.15) — `civil/waterway`, `WATERWAY`
 
 Plan chizmasidan (o'q — KANAL/ARIQ/LOTOK/ВОДОВОД qatlami; yer — rel'ef qatlami, 3D nuqtalar/gorizontallar; tub belgilari

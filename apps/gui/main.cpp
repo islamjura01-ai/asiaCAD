@@ -10,6 +10,7 @@
 #include "utility_dialog.h"
 #include "road_dialog.h"
 #include "waterway_dialog.h"
+#include "corridor_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -61,6 +62,8 @@ int main(int argc, char** argv) {
     bool util = false;
     bool road = false;
     bool waterway = false;
+    bool corridor = false;
+    int asmIndex = -1, station = -1;
     QStringList sheetArgs, kjArgs;
     QString rebarKind;
     bool noConcrete = false;
@@ -91,6 +94,9 @@ int main(int argc, char** argv) {
         else if (a == "--util") util = true;  // Yer osti tarmoqlari 3D
         else if (a == "--road") road = true;
         else if (a == "--waterway") waterway = true;
+        else if (a == "--corridor") corridor = true;
+        else if (a == "--asm") asmIndex = next().toInt();
+        else if (a == "--station") station = next().toInt();
         else if (a == "--sheet") sheetArgs << next();  // ROL,yo'l[,dan,gacha] — yer osti (--util) yoki bino chizmalari
         else if (a == "--kj") kjArgs << next();        // ROL,yo'l,dan,gacha — armatura KJ chizmalari  // Yo'l 3D (--sewer-tab 1 — profil)  // Armatura 3D menyusi (bino --building N dan)
         else if (a == "--rebar-kind") rebarKind = next();
@@ -149,6 +155,13 @@ int main(int argc, char** argv) {
                 auto* rd = w.openRoad();
                 if (!sewerTab.isEmpty()) rd->showTab(sewerTab.toInt());
             }
+            if (corridor) {
+                auto* cd = w.openCorridor();
+                const auto all = asiacad::civil::builtinAssemblies();
+                if (asmIndex >= 0 && asmIndex < static_cast<int>(all.size())) cd->applyAssembly(all[static_cast<std::size_t>(asmIndex)]);
+                if (!sewerTab.isEmpty()) cd->showTab(sewerTab.toInt());
+                if (station >= 0) cd->showStation(station);
+            }
             if (waterway) {
                 auto* wd = w.openWaterway();
                 if (!sewerTab.isEmpty()) wd->showTab(sewerTab.toInt());
@@ -200,7 +213,8 @@ int main(int argc, char** argv) {
                     (rebar && tl->isVisible() && tl->inherits("asiacad::gui::RebarDialog")) ||
                     (util && tl->isVisible() && tl->inherits("asiacad::gui::UtilityDialog")) ||
                     (road && tl->isVisible() && tl->inherits("asiacad::gui::RoadDialog")) ||
-                    (waterway && tl->isVisible() && tl->inherits("asiacad::gui::WaterwayDialog")))
+                    (waterway && tl->isVisible() && tl->inherits("asiacad::gui::WaterwayDialog")) ||
+                    (corridor && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")))
                     target = tl;
             target->grab().save(shot);
             QApplication::exit(0);

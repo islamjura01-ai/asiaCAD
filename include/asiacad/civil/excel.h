@@ -7,6 +7,7 @@
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/road.h>
 #include <asiacad/civil/waterway.h>
+#include <asiacad/civil/corridor.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
 #include <asiacad/io/xlsx.h>
@@ -40,5 +41,8 @@ void roadFromWorkbook(const xlsx::Workbook& wb, civil::RoadModel& m, civil::Road
 // Suv yo'li: piketlar (tub belgisi tahrirlanadi), hajmlar, parametrlar (kesim, sarf), tekshiruv
 xlsx::Workbook wwWorkbook(const civil::WwModel& m, const civil::WwParams& p, const Tr& tr);
 void wwFromWorkbook(const xlsx::Workbook& wb, civil::WwModel& m, civil::WwParams& p, const Tr& tr);
+// Koridor: piketlar (loyiha belgisi tahrirlanadi), hajmlar (o'rtacha / aniq), yig'ma parametrlari ("R1.LANE.w"), tekshiruv
+xlsx::Workbook corridorWorkbook(const civil::Corridor& c, const civil::CorridorParams& p, const Tr& tr);
+void corridorFromWorkbook(const xlsx::Workbook& wb, civil::Corridor& c, civil::CorridorParams& p, const Tr& tr);
 
 } // namespace asiacad::excel

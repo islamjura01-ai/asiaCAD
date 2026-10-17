@@ -59,6 +59,9 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "survey") { C(12, 6, 2.5); L(12, 8.5, 6, 21); L(12, 8.5, 18, 21); L(12, 8.5, 12, 21); }
     else if (n == "terrain") { P({{2, 19}, {8, 10}, {12, 15}, {16, 8}, {22, 19}}, true); }
     else if (n == "road") { L(8, 3, 4, 21); L(16, 3, 20, 21); L(12, 4, 12, 7); L(12, 10.5, 12, 13.5); L(12, 17, 12, 20); }
+    else if (n == "corridor") {  // yig'ma: o'q, polosalar, qiyaliklar
+        P({{2, 19}, {6, 13}, {10, 12}, {14, 12}, {18, 13}, {22, 19}}); L(12, 4, 12, 12); L(10, 6, 14, 6); dot(6, 13); dot(18, 13);
+    }
     else if (n == "waterway") {  // trapetsiya kanal + to'lqin
         P({{2, 6}, {7, 19}, {17, 19}, {22, 6}});
         QPainterPath w; w.moveTo(6, 12); w.cubicTo(8, 10, 10, 14, 12, 12); w.cubicTo(14, 10, 16, 14, 18, 12); p.drawPath(w);

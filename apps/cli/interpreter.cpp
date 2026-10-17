@@ -9,6 +9,7 @@
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
 #include <asiacad/civil/waterway.h>
+#include <asiacad/civil/corridor.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/grips.h>
@@ -110,11 +111,12 @@ const char* commandSyntax(const std::string& c) {
         {"BUILDING", "[n] [H] [t] [x,y] | file.json [x,y]"},
         {"REBAR", "[file.json] [x,y]"},
         {"PIPES", "[PVC|PP|PE|AC|STEEL|DI|RC]"},
-        {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD|WATERWAY in out"},
+        {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD|WATERWAY|CORRIDOR in out"},
         {"UTIL", "[file.json] [+]"},
         {"KJ", "file.dxf [fTop|-] [fT] [abs±0.000]"},
         {"ROAD", "[file.json] [+] [x,y]"},
         {"WATERWAY", "[file.json] [Q=m3/s] [SEC=n] [+] [x,y]"},
+        {"CORRIDOR", "[file.json] [ASM=n] [+]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -641,6 +643,19 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
                 xlsx::save(excel::roadWorkbook(m, p, tr), out);
                 say("xl.msg.exported", {out});
             }
+        } else if (mod == "CORRIDOR") {
+            auto p = civil::defaultCorridorParams();
+            civil::Corridor c;
+            if (!in.empty() && extOf(in) == "json") civil::corridorFromJson(readAll(in), c, p);
+            else c = civil::buildCorridor(doc_, p);
+            if (!in.empty() && extOf(in) == "xlsx") {
+                excel::corridorFromWorkbook(xlsx::load(in), c, p, tr);
+                writeAll(out, civil::corridorToJson(c, p));
+                say("xl.msg.imported", {in, std::to_string(c.sec.size()), std::to_string(c.errors()), "0"});
+            } else {
+                xlsx::save(excel::corridorWorkbook(c, p, tr), out);
+                say("xl.msg.exported", {out});
+            }
         } else if (mod == "WATERWAY") {
             auto p = civil::defaultWwParams();
             civil::WwModel m;
@@ -777,6 +792,58 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             stack_.execute(std::move(comp));
             last_.clear();
             for (auto* c : adds) last_.push_back(c->entityId());
+            say("road.msg.drawn", {std::to_string(last_.size())});
+        }
+    } else if (cmd == "CORRIDOR") {
+        // CORRIDOR — yig'ma (ASM=n, shablon raqami) bo'yicha koridor: hajmlar (o'rtacha va aniq); + — 3D chizmaga
+        auto p = civil::defaultCorridorParams();
+        civil::Corridor c;
+        bool draw = false, fromJson = false;
+        std::size_t k = 0;
+        if (!a.empty() && extOf(a[0]) == "json") {
+            std::ifstream f(a[0], std::ios::binary);
+            if (!f) throw Error("acad.err.open", {a[0]});
+            std::stringstream b;
+            b << f.rdbuf();
+            civil::corridorFromJson(b.str(), c, p);
+            fromJson = draw = true;
+            k = 1;
+        }
+        for (; k < a.size(); ++k) {
+            const std::string up = utf8::toUpper(a[k]);
+            if (a[k] == "+") draw = true;
+            else if (up.rfind("ASM=", 0) == 0) {
+                const auto all = civil::builtinAssemblies();
+                const int i = static_cast<int>(parseNumber(a[k].substr(4)));
+                if (i < 1 || i > static_cast<int>(all.size())) throw Error("err.number_expected", {a[k]});
+                p.assemblies = {all[static_cast<std::size_t>(i - 1)]};
+                if (fromJson) civil::recomputeCorridor(c, p);
+            } else throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+        }
+        if (!fromJson) c = civil::buildCorridor(doc_, p);
+        say("cor.msg.summary", {p.assemblies.front().name, std::format("{:.1f}", c.length), std::to_string(c.sec.size()), std::to_string(c.groundPoints),
+                                std::to_string(c.designPoints), std::to_string(c.errors())});
+        say("cor.msg.earth", {std::format("{:.1f}", c.cutAvg), std::format("{:.1f}", c.cutExact), std::format("{:.1f}", c.fillAvg),
+                              std::format("{:.1f}", c.fillExact)});
+        for (const auto& [m, ae] : c.volumes)
+            say("cor.msg.mat", {loc_.tr("cor.mat." + m), std::format("{:.1f}", ae.first), std::format("{:.1f}", ae.second)});
+        for (const auto& i : c.issues)
+            out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args) << '\n';
+        if (draw) {
+            auto es = civil::drawCorridor3D(c);
+            auto comp = std::make_unique<CompositeCommand>(cmd);
+            std::set<std::string> made;
+            for (const auto& e : es)
+                if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+            std::vector<AddEntityCommand*> adds;
+            for (auto& e : es) {
+                auto cc = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+                adds.push_back(cc.get());
+                comp->add(std::move(cc));
+            }
+            stack_.execute(std::move(comp));
+            last_.clear();
+            for (auto* cc : adds) last_.push_back(cc->entityId());
             say("road.msg.drawn", {std::to_string(last_.size())});
         }
     } else if (cmd == "WATERWAY") {

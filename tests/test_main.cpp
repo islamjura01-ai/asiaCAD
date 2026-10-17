@@ -9,6 +9,7 @@
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
 #include <asiacad/civil/waterway.h>
+#include <asiacad/civil/corridor.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -339,7 +340,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
     }
-    CHECK(loc.canonicalCommands().size() == 53);
+    CHECK(loc.canonicalCommands().size() == 54);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2460,6 +2461,106 @@ TEST(waterway_example_canal) {
     CHECK(m.headLoss > 0);
     CHECK(m.st.back().water < m.st.front().water);
     CHECK(!civil::drawWaterway3D(m, p).empty());
+}
+
+TEST(corridor_section_exact) {
+    // tekis yer 99.0, loyiha 100.0: polosa 3.5 m (0.62 m qoplama), qiyalik 1:1.5 — to'kma aniq 2·(3.5·0.38 + 0.75)
+    civil::Assembly a;
+    a.right = {civil::defaultSub(civil::SubKind::Lane), civil::defaultSub(civil::SubKind::Daylight)};
+    a.right[0].set("slope", 0);
+    const auto s = civil::buildSection(a, 100.0, [](double) { return 99.0; }, 100);
+    NEAR(s.fill, 2 * (3.5 * 0.38 + 0.75));
+    NEAR(s.cut, 0.0);
+    CHECK(s.daylightL && s.daylightR);
+    CHECK(s.pts.front().code == "DAYLIGHT" && s.pts.back().code == "DAYLIGHT");
+    NEAR(s.pts.back().o, 3.5 + 1.5);
+    // kesmada: yer 101 — qiyalik 1:1.5 yuqoriga
+    const auto c = civil::buildSection(a, 100.0, [](double) { return 101.0; }, 100);
+    CHECK(c.cut > 0 && c.fill < 1e-9);
+    NEAR(c.pts.back().o, 3.5 + 1.5);
+    // kanal: suv sathi Manning bo'yicha
+    civil::Assembly k = civil::builtinAssemblies()[6];
+    CHECK(k.group == "CANAL");
+    const auto w = civil::buildSection(k, 100.0, [](double) { return 101.5; }, 100, 0.001);
+    CHECK(w.water > 100.0 && w.water < 101.2);
+    // transheya: to'shama + quvur + qayta ko'mish = kesma
+    civil::Assembly tr = civil::builtinAssemblies()[11];
+    CHECK(tr.group == "TRENCH");
+    const auto ts = civil::buildSection(tr, 100.0, [](double) { return 102.5; }, 100);
+    double sum = 0;
+    for (const auto& sh : ts.shapes) {
+        if (sh.material == "_MINUS_BACKFILL" || sh.material == "PIPE") continue;  // quvur qayta ko'mish ichida
+        sum += sh.area();
+    }
+    CHECK(std::abs(sum - ts.cut) < 0.002 * ts.cut);
+}
+
+TEST(corridor_curve_pappus) {
+    // 90° yoy R=100 (chapga burilish), o'ngda 10 m kenglik, 1 m to'kma: aniq hajm = 10·(R+5)·π/2
+    Document d;
+    d.addLayer(Layer{"OQ"});
+    d.addLayer(Layer{"YER_SATHI"});
+    d.addLayer(Layer{"LOYIHA"});
+    auto pl = std::make_unique<PolylineEntity>(std::vector<Vec3>{{100, 0, 0}, {0, 100, 0}}, std::vector<double>{std::tan(3.14159265358979 / 8), 0}, false);
+    pl->setLayer("OQ");
+    d.add(std::move(pl));
+    for (int x = -20; x <= 130; x += 10)
+        for (int y = -20; y <= 130; y += 10) {
+            auto tx = std::make_unique<TextEntity>(Vec3{double(x), double(y), 0}, 0.5, "99.00");
+            tx->setLayer("YER_SATHI");
+            d.add(std::move(tx));
+        }
+    for (Vec3 at : {Vec3{100, 2, 0}, Vec3{2, 100, 0}}) {
+        auto tx = std::make_unique<TextEntity>(at, 0.5, "\xE2\x96\xBD" "100.00");
+        tx->setLayer("LOYIHA");
+        d.add(std::move(tx));
+    }
+    auto p = civil::defaultCorridorParams();
+    civil::Assembly a;
+    a.symmetric = false;
+    a.right = {civil::defaultSub(civil::SubKind::GenericLink)};
+    a.right[0].set("w", 10);
+    p.assemblies = {a};
+    p.step = 10;
+    const auto c = civil::buildCorridor(d, p);
+    CHECK(c.designPoints == 2);
+    const double exact = 10 * 105 * 3.14159265358979 / 2;
+    CHECK(std::abs(c.fillExact - exact) < 0.005 * exact);       // aniq usul: 0.5% ichida
+    CHECK(std::abs(c.fillAvg - exact) > 0.03 * exact);          // o'rtacha maydon: ~5% kam
+}
+
+TEST(corridor_example_road_and_excel) {
+    const auto r = loadAcad(std::string(ASIACAD_EXAMPLES_DIR) + "/yol.acad");
+    auto p = civil::defaultCorridorParams();
+    p.assemblies = {civil::builtinAssemblies()[1]};             // III toifa, kyuvet
+    auto c = civil::buildCorridor(r.doc, p);
+    CHECK(c.designPoints == 5 && c.groundPoints > 100);
+    NEAR(c.length, 600);
+    CHECK(std::abs(c.volumes["ASPHALT"].second - 0.12 * 3.5 * 2 * 600) < 0.5);
+    CHECK(c.cutExact > 1000);
+    bool ditch = false;
+    for (const auto& s : c.sec)
+        for (const auto& q : s.pts) ditch |= q.code == "DITCH_IN";
+    CHECK(ditch);
+    for (const auto& s : c.sec) CHECK(s.design > 90 && s.design < 110);   // absolyut belgilar
+    civil::Corridor c2;
+    civil::CorridorParams p2;
+    civil::corridorFromJson(civil::corridorToJson(c, p), c2, p2);
+    CHECK(c2.sec.size() == c.sec.size());
+    NEAR(c2.cutExact, c.cutExact);
+    const excel::Tr tr = [](const std::string& k, const std::vector<std::string>&) { return k; };
+    auto wb = excel::corridorWorkbook(c, p, tr);
+    auto* ps = const_cast<xlsx::Sheet*>(wb.find("xl.sh.params"));
+    CHECK(ps != nullptr);
+    if (ps)
+        for (auto& row : ps->rows)
+            if (!row.empty() && row[0].text == "R1.LANE.w") row[1] = xlsx::Cell::n(3.75);
+    excel::corridorFromWorkbook(xlsx::fromBytes(xlsx::toBytes(wb)), c, p, tr);
+    CHECK(std::abs(c.volumes["ASPHALT"].second - 0.12 * 3.75 * 2 * 600) < 0.5);
+    CHECK(!civil::drawCorridor3D(c).empty());
+    // assembly JSON
+    const auto a2 = civil::assemblyFromJson(civil::assemblyToJson(civil::builtinAssemblies()[5]));
+    CHECK(!a2.symmetric && a2.right.size() == 3 && a2.left.size() == 3 && a2.right[2].kind == civil::SubKind::RetainingWall);
 }
 
 int main() {

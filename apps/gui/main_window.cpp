@@ -7,6 +7,7 @@
 #include "utility_dialog.h"
 #include "road_dialog.h"
 #include "waterway_dialog.h"
+#include "corridor_dialog.h"
 #include "icons.h"
 
 #include <asiacad/core/entities.h>
@@ -81,6 +82,7 @@ const ActDef kActs[] = {
     {"util", "util", "gui.act.util", false},
     {"road", "road", "gui.act.road", false},
     {"waterway", "waterway", "gui.act.waterway", false},
+    {"corridor", "corridor", "gui.act.corridor", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -225,7 +227,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
             {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
             {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
@@ -286,6 +288,7 @@ void MainWindow::buildActions() {
     connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
     connect(act_["road"], &QAction::triggered, this, [this] { openRoad(); });
     connect(act_["waterway"], &QAction::triggered, this, [this] { openWaterway(); });
+    connect(act_["corridor"], &QAction::triggered, this, [this] { openCorridor(); });
     // Asbob tugagach (Esc, Enter, buyruq bajarildi) — "Tanlash" tugmasi yonsin
     connect(view_, &Viewport::promptChanged, this, [this] {
         if (act_.contains(toolKey(view_->tool()))) act_[toolKey(view_->tool())]->setChecked(true);
@@ -306,7 +309,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimradius", "dimdiameter"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "building", "rebar"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
         {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
@@ -871,6 +874,23 @@ RoadDialog* MainWindow::openRoad() {
     road_->raise();
     road_->activateWindow();
     return road_;
+}
+
+CorridorDialog* MainWindow::openCorridor() {
+    if (!corridor_) {
+        corridor_ = new CorridorDialog(loc_, doc_, !theme_.lightCanvas, this);
+        corridor_->setStyleSheet(theme_.styleSheet);
+        connect(corridor_, &CorridorDialog::drawRequested, this, [this](const QString& path) {
+            runLine(QStringLiteral("CORRIDOR \"%1\" +").arg(path));
+            view_->zoomExtents();
+        });
+    } else {
+        corridor_->reread();
+    }
+    corridor_->show();
+    corridor_->raise();
+    corridor_->activateWindow();
+    return corridor_;
 }
 
 WaterwayDialog* MainWindow::openWaterway() {

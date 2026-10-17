@@ -8,6 +8,7 @@
 #include "utility_dialog.h"
 #include "road_dialog.h"
 #include "waterway_dialog.h"
+#include "corridor_dialog.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -453,6 +454,36 @@ int main(int argc, char** argv) {
         w.runLine("UNDO");
         CHECK(doc.size() == n0);
         rd->close();
+    }
+
+    // 23a. Koridor: palitra, yig'ma muharriri, qism qo'shish/olib tashlash, chizmaga
+    w.runLine(QStringLiteral("OPEN \"%1/yol.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
+    {
+        CorridorDialog* cd = w.openCorridor();
+        CHECK(cd->palette()->count() == 10);
+        cd->applyAssembly(asiacad::civil::builtinAssemblies()[1]);
+        CHECK(cd->model().sec.size() > 20);
+        CHECK(cd->view()->faceCount() > 100);
+        const auto n0 = cd->assembly().right.size();
+        const double cut0 = cd->model().cutExact;
+        cd->addSub(asiacad::civil::SubKind::Curb, 0);
+        CHECK(cd->assembly().right.size() == n0 + 1);
+        CHECK(cd->assembly().right[n0 - 1].kind == asiacad::civil::SubKind::Curb);  // qiyalikdan oldin
+        CHECK(cd->assembly().right.back().kind == asiacad::civil::SubKind::DaylightDitch);
+        cd->removeSub(1, static_cast<int>(n0 - 1));
+        CHECK(cd->assembly().right.size() == n0);
+        CHECK(std::abs(cd->model().cutExact - cut0) < 1e-6);
+        cd->setParam(1, 0, "w", 3.75);
+        CHECK(std::abs(cd->assembly().right[0].get("w") - 3.75) < 1e-12);
+        cd->showStation(5);
+        const auto d0 = doc.size();
+        for (auto* b : cd->findChildren<QPushButton*>())
+            if (b->text() == QString::fromStdString(loc.tr("gui.cor.draw"))) b->click();
+        CHECK(doc.size() > d0 + 20);
+        CHECK(doc.layer("KOR_KESIM").has_value() && doc.layer("KOR_DAYLIGHT").has_value());
+        w.runLine("UNDO");
+        CHECK(doc.size() == d0);
+        cd->close();
     }
 
     // 23b. Suv yo'li: beton kanal chizmadan, lotok shabloni, qo'lda tuzatish, chizmaga (absolyut belgilar)

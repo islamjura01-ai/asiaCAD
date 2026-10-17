@@ -776,4 +776,93 @@ void wwFromWorkbook(const Workbook& wb, civil::WwModel& m, civil::WwParams& p, c
     civil::recomputeWaterway(m, p);
 }
 
+// ---------------------------------------------------------------- koridor
+Workbook corridorWorkbook(const civil::Corridor& c, const civil::CorridorParams& p, const Tr& tr) {
+    Workbook wb;
+    Sheet& s = wb.add(T(tr, "xl.sh.stations"));
+    s.add({hd(tr, "xl.c.pk"), hd(tr, "xl.c.s"), Cell::s("X", H), Cell::s("Y", H), hd(tr, "xl.c.ground"), hd(tr, "xl.c.design"), hd(tr, "xl.c.workz"),
+           hd(tr, "xl.c.cutA"), hd(tr, "xl.c.fillA"), hd(tr, "xl.c.cutV"), hd(tr, "xl.c.fillV")});
+    s.widths = {13, 10, 12, 12, 11, 12, 10, 10, 10, 11, 11};
+    const int n = static_cast<int>(c.sec.size());
+    for (int i = 0; i < n; ++i) {
+        const auto& t = c.sec[static_cast<std::size_t>(i)];
+        const std::string R = r1(i + 1), Rn = r1(i + 2);
+        const bool last = i + 1 == n;
+        const auto* nx = last ? nullptr : &c.sec[static_cast<std::size_t>(i + 1)];
+        s.add({Cell::s(civil::pk(t.s)), Cell::n(t.s, N2), Cell::n(t.x, N3), Cell::n(t.y, N3), Cell::n(t.ground, N2), Cell::n(t.design, WARN),
+               Cell::f(std::format("F{0}-E{0}", R), t.design - t.ground, N2), Cell::n(t.cut, N2), Cell::n(t.fill, N2),
+               last ? Cell::s("") : Cell::f(std::format("(H{0}+H{1})/2*(B{1}-B{0})", R, Rn), nx ? (t.cut + nx->cut) / 2 * (nx->s - t.s) : 0, N2),
+               last ? Cell::s("") : Cell::f(std::format("(I{0}+I{1})/2*(B{1}-B{0})", R, Rn), nx ? (t.fill + nx->fill) / 2 * (nx->s - t.s) : 0, N2)});
+    }
+    s.add({Cell::s(T(tr, "gui.bim.total"), TOT), Cell::f(std::format("B{}-B2", n + 1), c.length, TOT), {}, {}, {}, {}, {}, {}, {},
+           Cell::f(std::format("SUM(J2:J{})", n + 1), c.cutAvg, TOT), Cell::f(std::format("SUM(K2:K{})", n + 1), c.fillAvg, TOT)});
+
+    Sheet& v = wb.add(T(tr, "xl.sh.quant"));
+    v.add({hd(tr, "gui.cor.col.mat"), hd(tr, "gui.cor.col.avg"), hd(tr, "gui.cor.col.exact"), hd(tr, "gui.cor.col.diff")});
+    v.widths = {34, 16, 16, 12};
+    auto vrow = [&](const std::string& name, double a, double e) {
+        const int r = static_cast<int>(v.rows.size());
+        v.add({Cell::s(name), Cell::n(a, N2), Cell::n(e, TOT), Cell::f(std::format("IF(B{0}=0,0,(C{0}-B{0})/B{0}*100)", r1(r)), a != 0 ? (e - a) / a * 100 : 0, N2)});
+    };
+    vrow(T(tr, "xl.c.cutV"), c.cutAvg, c.cutExact);
+    vrow(T(tr, "xl.c.fillV"), c.fillAvg, c.fillExact);
+    for (const auto& [m, ae] : c.volumes) vrow(T(tr, "cor.mat." + m), ae.first, ae.second);
+
+    Sheet& pr = wb.add(T(tr, "xl.sh.params"));
+    pr.add({hd(tr, "xl.c.key"), hd(tr, "xl.c.value"), hd(tr, "xl.c.desc")});
+    pr.widths = {22, 14, 50};
+    pr.autoFilter = false;
+    pr.add({Cell::s("step"), Cell::n(p.step, WARN), Cell::s(T(tr, "gui.cor.step"))});
+    pr.add({Cell::s("maxDaylight"), Cell::n(p.maxDaylight, WARN), Cell::s(T(tr, "gui.cor.maxdl"))});
+    if (!p.assemblies.empty()) {
+        const auto& a = p.assemblies.front();
+        pr.add({Cell::s("q"), Cell::n(a.q, WARN), Cell::s(T(tr, "gui.ww.q"))});
+        pr.add({Cell::s("n"), Cell::n(a.n, WARN), Cell::s(T(tr, "gui.ww.n"))});
+        auto side = [&](const std::vector<civil::Subassembly>& subs, char sd) {
+            for (std::size_t i = 0; i < subs.size(); ++i)
+                for (const auto& q : subs[i].p)
+                    pr.add({Cell::s(std::format("{}{}.{}.{}", sd, i + 1, civil::subKey(subs[i].kind), q.key)), Cell::n(q.value, WARN),
+                            Cell::s(T(tr, std::string("cor.sub.") + civil::subKey(subs[i].kind)) + " · " + T(tr, "cor.p." + q.key))});
+        };
+        side(a.right, 'R');
+        if (!a.symmetric) side(a.left, 'L');
+    }
+    std::vector<std::tuple<int, std::string, std::string, std::string>> iss;
+    for (const auto& is : c.issues) iss.emplace_back(is.error ? 2 : 1, civil::pk(is.s), T(tr, is.key, is.args), "");
+    issuesSheet(wb, tr, iss);
+    return wb;
+}
+
+void corridorFromWorkbook(const Workbook& wb, civil::Corridor& c, civil::CorridorParams& p, const Tr& tr) {
+    if (const Sheet* pr = findSheet(wb, tr, "xl.sh.params", 2)) {
+        const auto pm = readParams(*pr);
+        pnum(pm, "step", [&](double v) { p.step = v; });
+        pnum(pm, "maxDaylight", [&](double v) { p.maxDaylight = v; });
+        if (!p.assemblies.empty()) {
+            auto& a = p.assemblies.front();
+            pnum(pm, "q", [&](double v) { a.q = v; });
+            pnum(pm, "n", [&](double v) { a.n = v; });
+            auto side = [&](std::vector<civil::Subassembly>& subs, char sd) {
+                for (std::size_t i = 0; i < subs.size(); ++i)
+                    for (auto& q : subs[i].p)
+                        pnum(pm, std::format("{}{}.{}.{}", sd, i + 1, civil::subKey(subs[i].kind), q.key).c_str(), [&](double v) { q.value = v; });
+            };
+            side(a.right, 'R');
+            if (!a.symmetric) side(a.left, 'L');
+        }
+    }
+    const Sheet* s = findSheet(wb, tr, "xl.sh.stations", 0);
+    if (!s) throw Error("xlsx.err.sheet", {T(tr, "xl.sh.stations")});
+    for (std::size_t r = 1; r < s->rows.size(); ++r) {
+        const auto ch = s->num(r, 1), z = s->num(r, 5);
+        if (!ch || !z) continue;
+        for (auto& t : c.sec)
+            if (std::abs(t.s - *ch) < 0.01) {
+                t.design = *z;
+                break;
+            }
+    }
+    civil::recomputeCorridor(c, p);
+}
+
 } // namespace asiacad::excel

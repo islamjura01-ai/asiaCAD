@@ -3,10 +3,13 @@
 #include "theme.h"
 #include "viewport.h"
 
+#include <asiacad/bim/steel.h>
 #include <asiacad/civil/symbols.h>
 #include <asiacad/core/entities.h>
 
 #include <QCheckBox>
+#include <QComboBox>
+#include <QHBoxLayout>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -134,6 +137,111 @@ bool SymbolPalette::choose(const QString& key) {
             return true;
         }
     return false;
+}
+
+// ---------------------------------------------------------------- metall (КМ)
+SteelPanel::SteelPanel(const i18n::Localizer& loc, bool dark, QWidget* parent) : QWidget(parent), loc_(loc), dark_(dark) {
+    auto T = [&](const std::string& k) { return QString::fromStdString(loc_.tr(k)); };
+    auto* v = new QVBoxLayout(this);
+    v->setContentsMargins(6, 6, 6, 6);
+    family_ = new QComboBox(this);
+    for (auto f : {bim::SteelFamily::IBeam, bim::SteelFamily::Channel, bim::SteelFamily::Angle, bim::SteelFamily::Pipe, bim::SteelFamily::SquareTube})
+        family_->addItem(T(std::string("km.fam.") + bim::steelFamilyKey(f)), static_cast<int>(f));
+    size_ = new QComboBox(this);
+    v->addWidget(family_);
+    v->addWidget(size_);
+    preview_ = new QLabel(this);
+    preview_->setAlignment(Qt::AlignCenter);
+    preview_->setMinimumHeight(170);
+    v->addWidget(preview_);
+    props_ = new QLabel(this);
+    props_->setWordWrap(true);
+    props_->setTextFormat(Qt::RichText);
+    v->addWidget(props_);
+    auto* member = new QPushButton(T("gui.km.member"), this);
+    member->setObjectName("accent");
+    auto* sec = new QPushButton(T("gui.km.section"), this);
+    auto* spec = new QPushButton(T("gui.km.spec"), this);
+    v->addWidget(member);
+    auto* h = new QHBoxLayout;
+    h->addWidget(sec);
+    h->addWidget(spec);
+    v->addLayout(h);
+    auto* hint = new QLabel(T("gui.km.hint"), this);
+    hint->setWordWrap(true);
+    hint->setObjectName("muted");
+    v->addWidget(hint);
+    v->addStretch(1);
+    connect(family_, &QComboBox::currentIndexChanged, this, [this] { fillSizes(); });
+    connect(size_, &QComboBox::currentIndexChanged, this, [this] { update_(); });
+    connect(member, &QPushButton::clicked, this, [this] { emit drawMember(profile()); });
+    connect(sec, &QPushButton::clicked, this, [this] { emit drawSection(profile()); });
+    connect(spec, &QPushButton::clicked, this, [this] { emit specRequested(); });
+    fillSizes();
+}
+
+QString SteelPanel::profile() const { return size_->currentData().toString(); }
+
+bool SteelPanel::select(const QString& name) {
+    const auto p = bim::findSteel(name.toStdString());
+    if (!p) return false;
+    family_->setCurrentIndex(family_->findData(static_cast<int>(p->family)));
+    const int i = size_->findData(QString::fromStdString(p->name));
+    if (i < 0) return false;
+    size_->setCurrentIndex(i);
+    return true;
+}
+
+void SteelPanel::fillSizes() {
+    const auto f = static_cast<bim::SteelFamily>(family_->currentData().toInt());
+    size_->clear();
+    for (const auto& p : bim::steelCatalog())
+        if (p.family == f) size_->addItem(QString::fromStdString(p.name) + QString::fromUtf8("  ·  %1 kg/m").arg(p.mass, 0, 'f', 2), QString::fromStdString(p.name));
+    size_->setCurrentIndex(std::min(5, size_->count() - 1));
+    update_();
+}
+
+void SteelPanel::update_() {
+    const auto p = bim::findSteel(profile().toStdString());
+    if (!p) return;
+    // kesim rasmi (masshtab bilan, o'lcham yozuvlari)
+    const int W = 240, H = 170;
+    QPixmap pm(W, H);
+    pm.fill(dark_ ? QColor(24, 30, 48) : QColor(246, 244, 238));
+    QPainter g(&pm);
+    g.setRenderHint(QPainter::Antialiasing);
+    const auto loops = bim::steelSection(*p);
+    const double k = std::min((W - 60) / (p->b / 1000), (H - 40) / (p->h / 1000));
+    QPainterPath path;
+    path.setFillRule(Qt::OddEvenFill);
+    for (const auto& lp : loops) {
+        for (std::size_t i = 0; i < lp.size(); ++i) {
+            const QPointF q(W / 2.0 + lp[i].x * k, H / 2.0 - lp[i].y * k);
+            i ? path.lineTo(q) : path.moveTo(q);
+        }
+        path.closeSubpath();
+    }
+    g.fillPath(path, QColor(110, 140, 170));
+    g.setPen(QPen(dark_ ? QColor(220, 228, 240) : QColor(30, 40, 60), 1.2));
+    g.drawPath(path);
+    QFont f = g.font();
+    f.setPixelSize(11);
+    g.setFont(f);
+    g.drawText(QRectF(0, H - 18, W, 16), Qt::AlignCenter, QStringLiteral("b = %1").arg(p->b));
+    g.save();
+    g.translate(14, H / 2.0);
+    g.rotate(-90);
+    g.drawText(QRectF(-60, -8, 120, 16), Qt::AlignCenter, QStringLiteral("h = %1").arg(p->h));
+    g.restore();
+    g.end();
+    preview_->setPixmap(pm);
+    props_->setText(QStringLiteral("<b>%1</b> · %2<br>A = %3 sm² · <b>%4 kg/m</b><br>s = %5 · t = %6 mm%7")
+                        .arg(QString::fromStdString(p->name), QString::fromLatin1(p->standard))
+                        .arg(p->A, 0, 'f', 2)
+                        .arg(p->mass, 0, 'f', 2)
+                        .arg(p->s)
+                        .arg(p->t)
+                        .arg(p->Ix > 0 ? QStringLiteral("<br>Ix = %1 sm⁴ · Wx = %2 sm³").arg(p->Ix, 0, 'f', 0).arg(p->Wx, 0, 'f', 1) : QString()));
 }
 
 // ---------------------------------------------------------------- massiv

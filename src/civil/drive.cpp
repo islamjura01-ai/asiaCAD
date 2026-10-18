@@ -1,5 +1,6 @@
 #include <asiacad/civil/drive.h>
 
+#include <asiacad/bim/steel.h>
 #include <asiacad/civil/symbols.h>
 #include <asiacad/core/entities.h>
 
@@ -172,8 +173,33 @@ BBox DriveScene::bounds() const {
     return b;
 }
 
+// Metall element: kesim konturi o'q bo'ylab (balandlik — vertikal; tik element uchun — Y bo'ylab)
+void sweepSteel(DriveScene& sc, const bim::SteelMember& m) {
+    const Vec3 d = unit(m.b - m.a);
+    Vec3 r = crossV(d, {0, 0, 1});
+    if (r.length() < 0.1) r = {1, 0, 0};
+    r = unit(r);
+    const Vec3 up = crossV(r, d);
+    const auto loops = bim::steelSection(m.profile);
+    auto W = [&](const Vec3& base, const Vec3& q) { return base + r * q.x + up * q.y; };
+    for (std::size_t li = 0; li < loops.size(); ++li) {
+        const auto& lp = loops[li];
+        for (std::size_t i = 0; i < lp.size(); ++i) {
+            const Vec3& p = lp[i];
+            const Vec3& q = lp[(i + 1) % lp.size()];
+            sc.addQuad(W(m.a, p), W(m.a, q), W(m.b, q), W(m.b, p), 0x6f8aa0);
+        }
+    }
+    if (loops.size() == 1)  // uchlar (trubalarda ochiq)
+        for (const auto& t : triangulate(loops[0])) {
+            sc.tris.push_back({{W(m.a, loops[0][t[0]]), W(m.a, loops[0][t[1]]), W(m.a, loops[0][t[2]])}, 0x5d7488});
+            sc.tris.push_back({{W(m.b, loops[0][t[0]]), W(m.b, loops[0][t[1]]), W(m.b, loops[0][t[2]])}, 0x5d7488});
+        }
+}
+
 DriveScene sceneFromDocument(const Document& doc) {
     DriveScene sc;
+    for (const auto& m : bim::readSteel(doc)) sweepSteel(sc, m);
     struct Ring { std::vector<Vec3> pts; std::set<long long> zs; };
     std::unordered_map<std::string, Ring> rings;
     std::function<void(const IEntity&)> visit = [&](const IEntity& e) {
@@ -182,6 +208,7 @@ DriveScene sceneFromDocument(const Document& doc) {
             return;
         }
         if (e.layer().rfind("KOR_", 0) == 0) return;  // koridor yuzasi alohida (modeldan) quriladi
+        if (e.layer().rfind("KM_", 0) == 0) return;   // metall elementlar — kesim bilan (yuqorida)
         if (auto* pl = dynamic_cast<const PolylineEntity*>(&e); pl && pl->isClosed() && !pl->hasBulges() && pl->vertices().size() >= 3) {
             const auto& v = pl->vertices();
             bool flat = true;

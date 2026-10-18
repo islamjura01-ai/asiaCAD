@@ -56,6 +56,7 @@ add_library(asiacad_civil
   src/bim/rebar.cpp
   src/bim/rebar_import.cpp
   src/bim/kj_project.cpp
+  src/bim/steel.cpp
   src/civil/excel.cpp
   src/civil/utility.cpp
   src/civil/road.cpp

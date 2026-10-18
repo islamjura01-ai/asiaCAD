@@ -808,6 +808,57 @@ int main(int argc, char** argv) {
         CHECK(ad.command().startsWith("ARRAY 5 P 0,0 8 360"));
     }
 
+    // 28. PTO: zina va lift; piyoda zina orqali 2-qavatga chiqish
+    {
+        w.runLine("NEW !");
+        w.runLine("GRID 6x5,4.5 6.6x3");
+        BuildingDialog* bd = w.openBuilding();
+        CHECK(!bd->model().stairs.empty());
+        w.runLine("PLINE 20.3,1.0 20.3,5.5 18.9,5.5 18.9,1.0 18.9,-3");
+        w.viewport()->setSelection({w.document().ids().back()});
+        DriveDialog* dd = w.openDrive();
+        const auto& path = dd->path();
+        CHECK(path.length() > 10);
+        const double z0 = path.p.front().z, z1 = path.p.back().z;
+        CHECK(std::abs((z1 - z0) - 3.3) < 1e-6);   // fundament ustidan (−0.30) 2-qavat poliga (+3.00)
+        if (std::abs((z1 - z0) - 3.3) > 1e-6) {
+            for (std::size_t i = 0; i < path.p.size(); i += 4) std::printf("  %.2f %.2f %.3f\n", path.p[i].x, path.p[i].y, path.p[i].z);
+            for (const auto& st : bd->model().stairs) std::printf(" stair L%d n=%d h=%.3f w=%.2f fl=%.2f\n", st.level, st.risers, st.h, st.width, st.flight);
+        }
+        double zmid = 0;
+        for (const auto& q : path.p)
+            if (std::abs(q.y - 5.5) < 0.01 && q.x > 19.5) zmid = q.z;
+        CHECK(std::abs((zmid - z0) - 10 * 0.165) < 1e-6);  // oraliq maydoncha
+        dd->setStation(path.length() * 0.4);
+        dd->view()->renderNow();
+        CHECK(dd->view()->drawnTriangles() > 50);
+        dd->close();
+        bd->close();
+    }
+
+    // 29. Metall (KM) paneli: profil, element asbobi, vedomost
+    {
+        w.runLine("NEW !");
+        auto* sp = w.steelPanel();
+        CHECK(sp->select("I30") && sp->profile() == "I30");
+        CHECK(sp->select("[16") && sp->profile() == "[16");
+        sp->select("I20");
+        emit sp->drawMember(sp->profile());
+        CHECK(w.viewport()->tool() == Tool::SteelBeam);
+        w.viewport()->feedPoint({0, 0, 0});
+        w.viewport()->feedPoint({6, 0, 0});
+        w.viewport()->feedPoint({6, 6, 0});
+        w.viewport()->finishTool();
+        CHECK(doc.layer("KM_I20").has_value());
+        emit sp->drawSection("I20");
+        w.viewport()->feedPoint({20, 0, 0});
+        w.viewport()->cancelTool();
+        const auto n0 = doc.size();
+        emit sp->specRequested();
+        CHECK(doc.size() > n0 + 10);
+        CHECK(doc.layer("KM-SPEC").has_value());
+    }
+
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

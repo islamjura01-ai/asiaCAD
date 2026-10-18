@@ -27,6 +27,7 @@ struct DriveSource {
     std::function<double(double, double)> z;   // bo'sh — chiziqning o'z Z i; NaN — shu nuqtada yuza yo'q (chiziq Z qoladi)
     bool constant = false;                     // doimiy belgi (spin)
     bool walk = false;                         // piyoda rejimi uchun (bino qavati)
+    std::function<void()> reset;               // ketma-ket (holatli) manba: yo'l qayta qurilishidan oldin
 };
 
 class DriveProfile;

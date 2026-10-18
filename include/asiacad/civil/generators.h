@@ -32,6 +32,7 @@ struct GridSpec {
     double overhang = 0.2;
     int floors = 5;                    // BINO dialogiga uzatiladi (qavatlar chizmada emas, parametrda)
     double floorH = 3.0;
+    bool core = true;                  // zinapoya katagi (2+ qavat) va lift shaxtasi (5+ qavat) — o'rta oraliqda, 1-qatorda
 };
 // O'q nomlari: X bo'yicha 1, 2, 3 ...; Y bo'yicha А, Б, В ... (GOST 21.101: Ё З Й О Х Ц Ч Щ Ъ Ы Ь ishlatilmaydi)
 std::string gridLetter(int i);

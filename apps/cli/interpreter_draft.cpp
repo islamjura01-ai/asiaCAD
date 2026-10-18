@@ -1,6 +1,7 @@
 // AsiaCAD CLI — chizmachilik buyruqlari (AutoCAD "Home" lentasi: Draw / Modify / Layers / Annotation) va genplan belgilari.
 #include "interpreter.h"
 
+#include <asiacad/bim/steel.h>
 #include <asiacad/civil/symbols.h>
 #include <asiacad/core/draft.h>
 #include <asiacad/core/entities.h>
@@ -10,6 +11,7 @@
 #include <asiacad/i18n/utf8.h>
 
 #include <format>
+#include <optional>
 #include <set>
 
 namespace asiacad::cli {
@@ -383,6 +385,141 @@ bool Interpreter::dispatchDraft(const std::string& cmd, const Args& a) {
         last_.clear();
         for (auto* c : ac) last_.push_back(c->entityId());
         say("msg.symbol_placed", {loc_.tr("sym." + key), std::to_string(last_.size())});
+    }
+    // ---------------------------------------------------------------- metall konstruksiyalar (КМ)
+    else if (cmd == "STEEL") {
+        if (a.empty()) {
+            std::string fam;
+            for (const auto& p : bim::steelCatalog()) {
+                if (fam != bim::steelFamilyKey(p.family)) {
+                    fam = bim::steelFamilyKey(p.family);
+                    out_ << '\n' << loc_.tr("km.fam." + fam) << " (" << p.standard << "):\n ";
+                }
+                out_ << ' ' << p.name;
+            }
+            out_ << '\n';
+            return true;
+        }
+        std::string nm;
+        for (const auto& t : a) nm += t;  // "Двутавр 30" ham
+        const auto p = bim::findSteel(nm);
+        if (!p) throw Error("km.err.unknown", {nm});
+        say("km.msg.info", {p->name, loc_.tr(std::string("km.fam.") + bim::steelFamilyKey(p->family)), p->standard, std::format("{:g}", p->h),
+                            std::format("{:g}", p->b), std::format("{:g}", p->s), std::format("{:g}", p->t), std::format("{:.2f}", p->A),
+                            std::format("{:.2f}", p->mass),
+                            (p->Ix > 0 ? std::format("{:.0f}", p->Ix) : "—") + " / " + (p->Wx > 0 ? std::format("{:.1f}", p->Wx) : "—")});
+    } else if (cmd == "STEELSEC") {
+        need(a, 2, cmd);
+        const auto p = bim::findSteel(a[0]);
+        if (!p) throw Error("km.err.unknown", {a[0]});
+        const Vec3 o = parsePoint(a[1]);
+        const double k = a.size() > 2 ? parseNumber(a[2]) : 1.0;
+        if (k <= 0) throw Error("err.factor_positive");
+        EntityList es;
+        std::vector<PolylineEntity> loops;
+        for (const auto& lp : bim::steelSection(*p)) {
+            std::vector<Vec3> v;
+            for (const auto& q : lp) v.push_back(o + q * k);
+            loops.emplace_back(v, true);
+            auto pl = std::make_unique<PolylineEntity>(v, true);
+            pl->setLayer("KM-KESIM");
+            es.push_back(std::move(pl));
+        }
+        auto h = std::make_unique<HatchEntity>(loops, "ANSI31", std::max(0.002, p->h / 1000 * k / 12));
+        h->setLayer("KM-KESIM");
+        es.push_back(std::move(h));
+        const double th = std::max(p->h, p->b) / 1000 * k * 0.12;
+        auto t = std::make_unique<TextEntity>(o + Vec3{0, -p->h / 2000 * k - th * 1.6, 0}, th, p->name + "  " + p->standard, 0, TextHAlign::Center);
+        t->setLayer("KM-YOZUV");
+        es.push_back(std::move(t));
+        addLayered(cmd, std::move(es));
+        say("km.msg.section", {p->name});
+    } else if (cmd == "STEELBEAM") {
+        need(a, 3, cmd);
+        const auto p = bim::findSteel(a[0]);
+        if (!p) throw Error("km.err.unknown", {a[0]});
+        std::vector<Vec3> pts;
+        for (std::size_t k = 1; k < a.size(); ++k) pts.push_back(parsePoint(a[k]));
+        EntityList es;
+        std::unique_ptr<IEntity> axis;
+        if (pts.size() == 2) axis = std::make_unique<LineEntity>(pts[0], pts[1]);
+        else axis = std::make_unique<PolylineEntity>(pts, false);
+        axis->setLayer(bim::steelLayer(*p));
+        es.push_back(std::move(axis));
+        double L = 0;
+        for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
+            L += pts[i].distanceTo(pts[i + 1]);
+            const Vec3 m = (pts[i] + pts[i + 1]) * 0.5;
+            const double ang = std::atan2(pts[i + 1].y - pts[i].y, pts[i + 1].x - pts[i].x);
+            double rot = ang;
+            if (rot > kPi / 2) rot -= kPi;
+            if (rot < -kPi / 2) rot += kPi;
+            const double th = std::clamp(p->h / 1000 * 1.2, 0.15, 0.5);
+            auto t = std::make_unique<TextEntity>(Vec3{m.x - std::sin(rot) * th * 0.6, m.y + std::cos(rot) * th * 0.6, m.z}, th, p->name, rot, TextHAlign::Center);
+            t->setLayer("KM-YOZUV");
+            es.push_back(std::move(t));
+        }
+        addLayered(cmd, std::move(es));
+        say("km.msg.member", {p->name, std::format("{:.3f}", L), std::format("{:.1f}", L * p->mass)});
+    } else if (cmd == "STEELSPEC") {
+        double reserve = 2.0;
+        std::optional<Vec3> at;
+        for (const auto& t : a) {
+            if (looksPoint(t)) at = parsePoint(t);
+            else reserve = parseNumber(t);
+        }
+        std::vector<std::string> unknown;
+        const auto ms = bim::readSteel(doc_, &unknown);
+        if (ms.empty()) throw Error("km.err.none");
+        const auto sp = bim::steelSpec(ms, reserve);
+        for (const auto& r : sp.rows)
+            say("km.msg.row", {r.profile, r.standard, std::to_string(r.count), std::format("{:.2f}", r.length), std::format("{:.3f}", r.mass)});
+        say("km.msg.total", {std::format("{:.3f}", sp.total), std::format("{:g}", reserve), std::format("{:.3f}", sp.reserve), std::format("{:.3f}", sp.total + sp.reserve)});
+        for (const auto& u : unknown) out_ << "  " << loc_.tr("sewer.lvl.warning") << ": " << loc_.tr("km.warn.layer", {u}) << '\n';
+        if (at) {  // vedomost jadvali chizmaga (GOST 21.502 uslubida: profil, GOST, soni, uzunlik, massa)
+            EntityList es;
+            const double hgt = 2.5, rh = 8, cw[5] = {35, 45, 20, 30, 30};
+            const char* hdr[5] = {"km.col.profile", "km.col.standard", "km.col.count", "km.col.length", "km.col.mass"};
+            const std::size_t nrows = sp.rows.size() + 3;
+            double W = 0;
+            for (double c : cw) W += c;
+            auto line = [&](Vec3 p0, Vec3 p1) {
+                auto l = std::make_unique<LineEntity>(p0, p1);
+                l->setLayer("KM-SPEC");
+                es.push_back(std::move(l));
+            };
+            auto txt = [&](double x, double y, const std::string& v) {
+                auto t = std::make_unique<TextEntity>(Vec3{x, y, 0}, hgt, v, 0, TextHAlign::Left, TextVAlign::Middle);
+                t->setLayer("KM-SPEC");
+                es.push_back(std::move(t));
+            };
+            const Vec3 o = *at;
+            auto T = std::make_unique<TextEntity>(o + Vec3{0, hgt * 2, 0}, hgt * 1.4, loc_.tr("km.spec.title"));
+            T->setLayer("KM-SPEC");
+            es.push_back(std::move(T));
+            for (std::size_t r = 0; r <= nrows; ++r) line(o + Vec3{0, -rh * static_cast<double>(r), 0}, o + Vec3{W, -rh * static_cast<double>(r), 0});
+            double x = 0;
+            for (int c = 0; c <= 5; ++c) {
+                line(o + Vec3{x, 0, 0}, o + Vec3{x, -rh * static_cast<double>(nrows), 0});
+                if (c < 5) x += cw[c];
+            }
+            auto row = [&](std::size_t r, std::vector<std::string> v) {
+                double xx = 0;
+                for (int c = 0; c < 5; ++c) {
+                    if (c < static_cast<int>(v.size())) txt(o.x + xx + 2, o.y - rh * (static_cast<double>(r) + 0.5), v[static_cast<std::size_t>(c)]);
+                    xx += cw[c];
+                }
+            };
+            std::vector<std::string> h;
+            for (const char* k : hdr) h.push_back(loc_.tr(k));
+            row(0, h);
+            std::size_t r = 1;
+            for (const auto& s2 : sp.rows)
+                row(r++, {s2.profile, s2.standard, std::to_string(s2.count), std::format("{:.2f}", s2.length), std::format("{:.3f}", s2.mass)});
+            row(r++, {loc_.tr("km.spec.reserve", {std::format("{:g}", reserve)}), "", "", "", std::format("{:.3f}", sp.reserve)});
+            row(r++, {loc_.tr("km.spec.total"), "", "", "", std::format("{:.3f}", sp.total + sp.reserve)});
+            addLayered(cmd, std::move(es));
+        }
     } else {
         return false;
     }

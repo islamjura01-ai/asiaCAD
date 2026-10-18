@@ -62,6 +62,7 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "corridor") {  // yig'ma: o'q, polosalar, qiyaliklar
         P({{2, 19}, {6, 13}, {10, 12}, {14, 12}, {18, 13}, {22, 19}}); L(12, 4, 12, 12); L(10, 6, 14, 6); dot(6, 13); dot(18, 13);
     }
+    else if (n == "steel") { P({{5, 4}, {19, 4}}); P({{5, 20}, {19, 20}}); L(12, 4, 12, 20); L(5, 4, 5, 6); L(19, 4, 19, 6); L(5, 20, 5, 18); L(19, 20, 19, 18); }
     else if (n == "rect") { R(3, 6, 18, 12, 0.5); dot(3, 6); dot(21, 18); }
     else if (n == "polygon") { P({{12, 3}, {20, 8}, {20, 16}, {12, 21}, {4, 16}, {4, 8}}, true); }
     else if (n == "ellipse") { p.drawEllipse(QPointF(12, 12), 9, 5.5); dot(12, 12, 1.2); }

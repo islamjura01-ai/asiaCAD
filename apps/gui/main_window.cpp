@@ -106,6 +106,7 @@ const ActDef kActs[] = {
     {"layfrz", "layfrz", "gui.act.layfrz", false},   {"laylck", "laylck", "gui.act.laylck", false},
     {"layulk", "layulk", "gui.act.layulk", false},   {"layiso", "layiso", "gui.act.layiso", false},
     {"layuniso", "layuniso", "gui.act.layuniso", false}, {"layon", "layon", "gui.act.layon", false},
+    {"steel", "steel", "gui.act.steel", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -175,6 +176,8 @@ QString toolKey(Tool t) {
     case Tool::DimAngular: return "dimangular";
     case Tool::Symbol:
     case Tool::LayPick:
+    case Tool::SteelBeam:
+    case Tool::SteelSec:
     case Tool::Grip:
     case Tool::Select: return "select";
     }
@@ -272,7 +275,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.17"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.18"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -295,7 +298,7 @@ QIcon MainWindow::icon(const QString& name) const {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
             {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
-            {"rect", "#1C8C6E"}, {"polygon", "#1C8C6E"}, {"ellipse", "#1C8C6E"}, {"spline", "#1C8C6E"}, {"hatch", "#1C8C6E"}, {"symbols", "#3E9B3A"},
+            {"rect", "#1C8C6E"}, {"polygon", "#1C8C6E"}, {"ellipse", "#1C8C6E"}, {"spline", "#1C8C6E"}, {"hatch", "#1C8C6E"}, {"symbols", "#3E9B3A"}, {"steel", "#4F6D8A"},
             {"leader", "#C8324B"}, {"dimangular", "#C8324B"},
             {"layers", "#D99A1E"}, {"laymcur", "#2BA84A"}, {"laymatch", "#1C8C9E"}, {"layoff", "#6B7280"}, {"layfrz", "#2F7FD8"}, {"laylck", "#C2410C"}, {"layulk", "#E58A3A"}, {"layiso", "#7A3FC8"}, {"layuniso", "#A27BDB"}, {"layon", "#3E9B3A"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
@@ -379,6 +382,10 @@ void MainWindow::buildActions() {
         const QString pat = QInputDialog::getItem(this, t("gui.act.hatch"), t("gui.hatch.pattern"), pats, 1, false, &ok);
         if (ok) runLine("HATCH " + ids.join(',') + " " + pat);
     });
+    connect(act_["steel"], &QAction::triggered, this, [this] {
+        steelDock_->show();
+        steelDock_->raise();
+    });
     connect(act_["symbols"], &QAction::triggered, this, [this] {
         symDock_->show();
         symDock_->raise();
@@ -457,7 +464,7 @@ void MainWindow::buildRibbon() {
     struct Group { const char* title; std::vector<const char*> keys; std::vector<const char*> small = {}; bool iconsOnly = false; int rows = 3; };
     struct Page { const char* title; std::vector<Group> groups; };
     const std::vector<Page> pages = {
-        {"gui.tab.home", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch", "text", "symbols"}, true},
+        {"gui.tab.home", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch", "text", "symbols", "steel"}, true},
                           {"gui.grp.modify", {"select"}, {"move", "copy", "stretch", "rotate", "mirror", "scale", "trim", "extend", "fillet",
                                                           "chamfer", "array", "offset", "erase", "explode", "join", "break", "matchprop"}},
                           {"gui.grp.layers", {}, {"layprops", "laymcur", "laymatch", "layoff", "layfrz", "laylck", "layulk", "layiso", "layuniso", "layon"}, true, 2},
@@ -694,6 +701,31 @@ void MainWindow::buildDocks() {
     addDockWidget(Qt::RightDockWidgetArea, symDock_);
     tabifyDockWidget(propsDock_, symDock_);
     propsDock_->raise();
+    // Metall konstruksiyalar (КМ)
+    steelDock_ = new QDockWidget(this);
+    steelDock_->setObjectName("steelDock");
+    steelDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
+    steelPal_ = new SteelPanel(loc_, !theme_.lightCanvas, steelDock_);
+    steelDock_->setWidget(steelPal_);
+    addDockWidget(Qt::RightDockWidgetArea, steelDock_);
+    tabifyDockWidget(symDock_, steelDock_);
+    propsDock_->raise();
+    connect(steelPal_, &SteelPanel::drawMember, this, [this](const QString& p) {
+        view_->setSteelProfile(p);
+        view_->setTool(Tool::SteelBeam);
+        view_->setFocus();
+    });
+    connect(steelPal_, &SteelPanel::drawSection, this, [this](const QString& p) {
+        view_->setSteelProfile(p);
+        view_->setTool(Tool::SteelSec);
+        view_->setFocus();
+    });
+    connect(steelPal_, &SteelPanel::specRequested, this, [this] {
+        const BBox b = doc_.extents(true);
+        const double x = b.valid() ? b.max.x + 5 : 0, y = b.valid() ? b.max.y : 0;
+        runLine(QStringLiteral("STEELSPEC %1,%2").arg(x).arg(y));
+        view_->zoomExtents();
+    });
     connect(symPal_, &SymbolPalette::symbolChosen, this, [this](const QString& key, double k, double rot) {
         view_->setSymbol(key, k, rot);
         view_->setTool(Tool::Symbol);
@@ -846,6 +878,7 @@ void MainWindow::retranslate() {
         if (l->property("i18n").isValid()) l->setText(t(l->property("i18n").toByteArray().constData()));
     layersDock_->setWindowTitle(t("gui.panel.layers"));
     if (symDock_) symDock_->setWindowTitle(t("gui.panel.symbols"));
+    if (steelDock_) steelDock_->setWindowTitle(t("gui.panel.steel"));
     if (symPal_) symPal_->retranslate();
     propsDock_->setWindowTitle(t("gui.panel.props"));
     cmdDock_->setWindowTitle(t("gui.panel.command"));
@@ -1219,7 +1252,7 @@ DriveDialog* MainWindow::openDrive() {
     bool lineZ = false;
     for (EntityId id : view_->selection())
         if (const IEntity* e = doc_.find(id); e && dynamic_cast<const ICurve*>(e) && !dynamic_cast<const CircleEntity*>(e)) {
-            const auto dp = civil::makeDrivePath(*e, 1.0);
+            const auto dp = civil::makeDrivePath(*e, 0.25);  // zich — pog'onalarni ham his qilsin
             pts = dp.p;
             lineZ = civil::curveHasZ(*e);
             title = QString::fromStdString(e->layer());
@@ -1262,6 +1295,59 @@ DriveDialog* MainWindow::openDrive() {
         for (const auto& pr : m.prisms)
             if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::FoundationSlab)
                 top[pr.level] = top.count(pr.level) ? std::max(top[pr.level], pr.z1) : pr.z1;
+        // piyoda bino bo'ylab: oyoq ostidagi eng yuqori yuza (plita, zina pog'onasi, maydoncha), bir qadamda 0.6 m dan ko'p ko'tarilmaydi —
+        // 2D yo'l zina katagiga kirsa, pog'onalar bo'ylab keyingi qavatga chiqiladi
+        if (!top.empty()) {
+            auto walk = std::make_shared<std::vector<bim::Prism>>();
+            for (const auto& pr : m.prisms)
+                if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::FoundationSlab || pr.kind == bim::ElemKind::Stair) walk->push_back(pr);
+            {   // 1-qavat poli (gruntdagi pol modelda yo'q): 1-qavat vertikal elementlari asosida, 1-qavat plitasi konturida
+                double zf = 1e18;
+                for (const auto& pr : m.prisms)
+                    if (pr.level == 1 && (pr.kind == bim::ElemKind::Column || pr.kind == bim::ElemKind::Wall))
+                        zf = std::min(zf, pr.z0);
+                if (zf < 1e17)
+                    for (const auto& pr : m.prisms)
+                        if (pr.level == 1 && pr.kind == bim::ElemKind::Slab) walk->push_back({bim::ElemKind::Slab, 0, pr.outline, {}, zf - 0.1, zf, {}});
+            }
+            auto state = std::make_shared<double>(std::nan(""));
+            auto inPoly = [](const std::vector<Vec3>& poly, double x, double y) {
+                bool in = false;
+                for (std::size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++)
+                    if ((poly[i].y > y) != (poly[j].y > y) && x < (poly[j].x - poly[i].x) * (y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x) in = !in;
+                return in;
+            };
+            DriveSource d{t("drive.z.walk"), [walk, state, inPoly](double x, double y) {
+                              if (std::isnan(*state)) {  // boshlanish: oyoq ostidagi eng past yuza (1-qavat poli)
+                                  double lo = 1e18;
+                                  for (const auto& pr : *walk) {
+                                      if (pr.z1 >= lo || !inPoly(pr.outline, x, y)) continue;
+                                      bool hole = false;
+                                      for (const auto& h : pr.holes) hole = hole || inPoly(h, x, y);
+                                      if (!hole) lo = pr.z1;
+                                  }
+                                  *state = lo < 1e17 ? lo : 0.0;
+                              }
+                              double best = -1e18;
+                              for (const auto& pr : *walk) {
+                                  if (pr.z1 > *state + 0.6 || pr.z1 < best) continue;
+                                  if (!inPoly(pr.outline, x, y)) continue;
+                                  bool hole = false;
+                                  for (const auto& h : pr.holes) hole = hole || inPoly(h, x, y);
+                                  if (!hole) best = pr.z1;
+                              }
+                              if (best > -1e17) *state = best;
+                              return *state;
+                          }};
+            d.walk = true;
+            d.reset = [state] { *state = std::nan(""); };
+            src.push_back(d);
+            // 2D yo'l bino ichida boshlansa — boshqa yuzalardan (koridor, yer) ustun
+            bool inBuilding = false;
+            if (!lineZ && !pts.empty())
+                for (const auto& pr : *walk) inBuilding = inBuilding || inPoly(pr.outline, pts.front().x, pts.front().y);
+            if ((def < 0 && !lineZ) || inBuilding) def = static_cast<int>(src.size()) - 1;
+        }
         for (const auto& [lvl, z] : top) {
             const double zz = z;
             DriveSource d{t("drive.z.floor", {QString::number(lvl + 1), QString::number(z, 'f', 2)}), [zz](double, double) { return zz; }};
@@ -1281,6 +1367,8 @@ DriveDialog* MainWindow::openDrive() {
             if (pr.kind == bim::ElemKind::Column) col = 0xb3aca0;
             else if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::Roof) col = 0xc2beb6;
             else if (pr.kind == bim::ElemKind::FoundationSlab || pr.kind == bim::ElemKind::Lean) col = 0x958f85;
+            else if (pr.kind == bim::ElemKind::Stair) col = 0xd9c9a3;
+            else if (pr.kind == bim::ElemKind::Shaft) col = 0xa9b2c8;
             sc.addPrism(pr.outline, pr.z0, pr.z1, col);
         }
     if (!pts.empty()) {

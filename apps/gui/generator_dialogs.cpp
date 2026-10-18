@@ -91,6 +91,8 @@ void PlanPreview::paintEvent(QPaintEvent*) {
         if (l == "USTUN") return QColor(230, 90, 80);
         if (l == "DEVOR") return QColor(230, 170, 60);
         if (l == "PLITA") return QColor(110, 160, 230);
+        if (l == "ZINA") return QColor(230, 200, 120);
+        if (l == "LIFT_SHAXTA") return QColor(170, 120, 230);
         if (l.find("O'Q") != std::string::npos) return QColor(240, 80, 80);
         if (l == "KOCHA_CHETI") return QColor(150, 150, 150);
         if (l == "KOCHA_YUZA") return QColor(0, 0, 0, 0);
@@ -188,6 +190,8 @@ GridInputDialog::GridInputDialog(const i18n::Localizer& loc, bool dark, QWidget*
     wallT_ = dspin(0.1, 1, 0.05, 2, 0.25);
     slab_ = new QCheckBox(t("gui.gen.grid.slab"), left);
     slab_->setChecked(true);
+    core_ = new QCheckBox(t("gui.gen.grid.core"), left);
+    core_->setChecked(true);
     floors_ = new QSpinBox(left);
     floors_->setRange(1, 150);
     floors_->setValue(5);
@@ -203,6 +207,7 @@ GridInputDialog::GridInputDialog(const i18n::Localizer& loc, bool dark, QWidget*
     form->addRow(t("gui.gen.grid.col"), col);
     form->addRow(walls_, wallT_);
     form->addRow(slab_);
+    form->addRow(core_);
     form->addRow(t("gui.bim.floors"), floors_);
     form->addRow(t("gui.bim.height"), floorH_);
     form->addRow("X0", x0_);
@@ -231,7 +236,7 @@ GridInputDialog::GridInputDialog(const i18n::Localizer& loc, bool dark, QWidget*
     for (auto* e : {dx_, dy_}) connect(e, &QLineEdit::textChanged, this, [this] { update_(); });
     for (auto* s : {colB_, colH_, wallT_, floorH_, x0_, y0_}) connect(s, &QDoubleSpinBox::valueChanged, this, [this] { update_(); });
     connect(floors_, &QSpinBox::valueChanged, this, [this] { update_(); });
-    for (auto* c : {walls_, slab_}) connect(c, &QCheckBox::toggled, this, [this] { update_(); });
+    for (auto* c : {walls_, slab_, core_}) connect(c, &QCheckBox::toggled, this, [this] { update_(); });
     update_();
 }
 
@@ -249,6 +254,7 @@ civil::GridSpec GridInputDialog::spec() const {
     g.walls = walls_->isChecked();
     g.wallT = wallT_->value();
     g.slab = slab_->isChecked();
+    g.core = core_->isChecked();
     g.floors = floors_->value();
     g.floorH = floorH_->value();
     g.x0 = x0_->value();

@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.17: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.18: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -311,6 +311,27 @@ import qilingan va AsiaCAD tayyorlagan chizma — bitta yo'ldan o'tadi va bir xi
   900 kvartal / 1800 bino < 2 s.
 * Burilish yoyi sig'masa radius kamaytiriladi va ogohlantiriladi; o'zi oqar quvurda teskari nishablik va sayoz quduq — ogohlantirish.
 * Binolar orasidagi oraliq balandlikdan kichik bo'lsa — ogohlantirish (insolyatsiya/yong'in me'yorlari bilan tekshirilmagan).
+
+## PTO: zinapoya va lift shaxtasi (v0.18) — `bim/building`
+
+Qatlamlar: **ZINA / ЛЕСТНИЦА / STAIR** — zinapoya katagi konturi, **LIFT / ЛИФТ / SHAXTA** — lift shaxtasi ichki konturi.
+* Har qavatda ikki marshli zina quriladi: pog'onalar soni qavat balandligidan (h ≤ 0.18 m, juft), eni b = 0.30 m,
+  oraliq maydoncha, plitada teshik; marsh betoni (pog'ona + qiya plita) PTO jadvalida.
+* Shaxta: devor halqasi (0.20 m) har qavatda, plitada teshik (tomdan tashqari).
+* Tekshiruvlar: 2h + b = 600…650 mm, marsh eni ≥ 1.05 m, katak uzunligi (marsh + ikki maydoncha), marshda ≤ 18 pog'ona,
+  shaxta ichki o'lchami ≥ 1.5 m, qavat planlarida shaxta bir joyda, 2+ qavatda zina yo'q, 6+ qavatda lift yo'q
+  (chegaralar taxminiy — tasdiqlanmagan).
+* `GRID` 0 dan: "Zinapoya va lift" (o'rta oraliqda).
+* **Haydash → "bino bo'ylab (zina orqali)"**: 2D yo'l chizing — piyoda pog'onalar bo'ylab keyingi qavatga chiqadi.
+
+## Metall konstruksiyalar (КМ) — `bim/steel`, `STEEL*`
+
+Katalog: qo'shtavr GOST 8239-89 (I10…I60), shveller GOST 8240-97 (5…40), teng tomonli burchak GOST 8509-93,
+truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari eslab kiritilgan, tasdiqlanmagan.
+* Element — `KM_<profil>` qatlamidagi o'q chizig'i (`STEELBEAM I20 p1 p2 …`, panelda "Element chizish"); 3D (Z) bilan
+  Haydash sahnasida profil kesimi bilan ko'rinadi.
+* `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
+* `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
 
 ## Asosiy lenta — AutoCAD "Home" kabi (v0.17) — `core/draft`, `civil/symbols`
 

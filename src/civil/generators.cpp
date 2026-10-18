@@ -156,6 +156,16 @@ Entities generateGrid(const GridSpec& g) {
             for (std::size_t j = 0; j + 1 < Y.size(); ++j)
                 if (Y[j + 1] - hh - (Y[j] + hh) > 0.05) rect(out, x - t, Y[j] + hh, x + t, Y[j + 1] - hh, "DEVOR");
     }
+    if (g.core && g.floors >= 2) {
+        const std::size_t i = g.dx.size() / 2;
+        const double m = std::max(hb, hh) + 0.05;
+        const double bx = X[i] + m, by = Y[0] + m, bw = X[i + 1] - X[i] - 2 * m, bd = Y[1] - Y[0] - 2 * m;
+        const double sw = 2.7, sl = std::min(6.3, bd);
+        if (bw >= sw && sl >= 4.5) {
+            rect(out, bx, by, bx + sw, by + sl, "ZINA");
+            if (g.floors > 5 && bw >= sw + 0.45 + 1.8) rect(out, bx + sw + 0.45, by, bx + sw + 0.45 + 1.8, by + 2.0, "LIFT_SHAXTA");
+        }
+    }
     if (g.slab) {
         const double o = std::max({g.overhang, hb, hh, g.walls ? g.wallT / 2 : 0.0});
         rect(out, X.front() - o, Y.front() - o, X.back() + o, Y.back() + o, "PLITA");
@@ -166,8 +176,8 @@ Entities generateGrid(const GridSpec& g) {
 std::string gridToJson(const GridSpec& g) {
     return std::format(
         "{{\"format\":\"asiacad-grid\",\"version\":1,\"dx\":{},\"dy\":{},\"x0\":{},\"y0\":{},\"colB\":{},\"colH\":{},\"walls\":{},\"wallT\":{},"
-        "\"slab\":{},\"overhang\":{},\"floors\":{},\"floorH\":{}}}",
-        list(g.dx), list(g.dy), g.x0, g.y0, g.colB, g.colH, g.walls, g.wallT, g.slab, g.overhang, g.floors, g.floorH);
+        "\"slab\":{},\"overhang\":{},\"floors\":{},\"floorH\":{},\"core\":{}}}",
+        list(g.dx), list(g.dy), g.x0, g.y0, g.colB, g.colH, g.walls, g.wallT, g.slab, g.overhang, g.floors, g.floorH, g.core);
 }
 GridSpec gridFromJson(const std::string& t) {
     const auto r = parseOr(t);
@@ -182,6 +192,7 @@ GridSpec gridFromJson(const std::string& t) {
     g.colB = num(r, "colB", g.colB); g.colH = num(r, "colH", g.colH);
     if (const auto* v = r.find("walls"); v && v->isBool()) g.walls = v->boolean();
     if (const auto* v = r.find("slab"); v && v->isBool()) g.slab = v->boolean();
+    if (const auto* v = r.find("core"); v && v->isBool()) g.core = v->boolean();
     g.wallT = num(r, "wallT", g.wallT);
     g.overhang = num(r, "overhang", g.overhang);
     g.floors = static_cast<int>(num(r, "floors", g.floors));

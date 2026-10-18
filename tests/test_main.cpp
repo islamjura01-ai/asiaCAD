@@ -3,6 +3,7 @@
 #include <asiacad/bim/rebar.h>
 #include <asiacad/bim/rebar_import.h>
 #include <asiacad/bim/kj_project.h>
+#include <asiacad/bim/steel.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/civil/road.h>
@@ -344,7 +345,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO");
     }
-    CHECK(loc.canonicalCommands().size() == 83);
+    CHECK(loc.canonicalCommands().size() == 87);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2955,4 +2956,125 @@ TEST(corridor_tunnel_sections) {
     double z = 0;
     const auto& s5 = c.sec[5];
     CHECK(civil::corridorSurfaceZ(c, s5.x, s5.y, z) && std::abs(z - s5.design) < 1e-6);  // tonnel ichida — yo'l sathi
+}
+
+TEST(building_stairs_and_lift) {
+    auto rect = [](double x0, double y0, double x1, double y1) { return std::vector<Vec3>{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}; };
+    bim::PlanInput pl;
+    pl.slabs = {rect(0, 0, 24, 12)};
+    for (double x : {0.0, 6.0, 12.0, 18.0, 24.0})
+        for (double y : {0.0, 6.0, 12.0}) pl.columns.push_back(rect(x - 0.2, y - 0.2, x + 0.2, y + 0.2));
+    pl.stairs = {rect(6.3, 0.3, 9.0, 6.6)};   // 2.7 × 6.3
+    pl.shafts = {rect(9.5, 0.3, 11.5, 2.3)};  // 2.0 × 2.0
+    bim::BuildingParams bp;
+    bp.floors = 9;
+    bp.zeroAbsAuto = false;
+    bp.zeroAbs = 450;
+    auto m = bim::buildModel(pl, bp);
+    // 2..8-qavat: H=3.0 -> 18 pog'ona, h=166.7 mm, 2h+b = 633 mm — me'yorda; marsh eni 1.30
+    bool sawOk = false;
+    for (const auto& st : m.stairs)
+        if (st.level == 3) { sawOk = st.risers == 18 && std::abs(st.h - 3.0 / 18) < 1e-9 && std::abs(st.width - 1.3) < 1e-9; }
+    CHECK(sawOk);
+    for (const auto& i : m.issues) CHECK(i.key != "bim.chk.stair_fit" && i.key != "bim.chk.stair_width" && i.key != "bim.chk.no_lift");
+    // plita teshiklari: shaxta va zina (tom plitasida yo'q)
+    int holes = 0, roofHoles = 0, shaftWalls = 0;
+    for (const auto& pr : m.prisms) {
+        if (pr.kind == bim::ElemKind::Slab) holes += static_cast<int>(pr.holes.size());
+        if (pr.kind == bim::ElemKind::Roof) roofHoles += static_cast<int>(pr.holes.size());
+        if (pr.kind == bim::ElemKind::Shaft) ++shaftWalls;
+    }
+    CHECK(holes == 8 * 2 && roofHoles == 0 && shaftWalls == 9);
+    // shaxta devori hajmi: (2.4² − 2.0²) × balandlik
+    double v3 = 0;
+    for (const auto& pr : m.prisms)
+        if (pr.kind == bim::ElemKind::Shaft && pr.level == 3) v3 = pr.volume();
+    CHECK(std::abs(v3 - (2.4 * 2.4 - 4.0) * (3.0 - 0.2)) < 1e-6);
+    // marsh hajmi: pog'ona uchburchaklari + qiya plita (taxminan ±10%)
+    double stair3 = 0;
+    for (const auto& pr : m.prisms)
+        if (pr.kind == bim::ElemKind::Stair && pr.level == 3) stair3 += pr.volume();
+    const double h = 3.0 / 18, b = 0.3, w = 1.3;
+    const double flight = 8 * (b * h / 2 + 0.15 * std::sqrt(b * b + h * h)) * w;
+    const double landing = (6.3 - 1.8 - 2.4) * 2.7 * 0.2;
+    CHECK(std::abs(stair3 - (2 * flight + landing)) / (2 * flight + landing) < 0.1);
+    CHECK(m.prisms.front().z0 > 440);  // absolyut
+    // tor katak: sig'maydi; past qavat balandligi bilan Blondel buziladi
+    bim::PlanInput bad = pl;
+    bad.stairs = {rect(6.3, 0.3, 8.3, 4.3)};  // 2.0 × 4.0
+    bad.shafts = {rect(9.5, 0.3, 10.7, 1.5)}; // 1.2 × 1.2
+    auto mb = bim::buildModel(bad, bp);
+    bool fit = false, width = false, small = false;
+    for (const auto& i : mb.issues) {
+        fit |= i.key == "bim.chk.stair_fit";
+        width |= i.key == "bim.chk.stair_width";
+        small |= i.key == "bim.chk.shaft_small";
+    }
+    CHECK(fit && width && small);
+    // qavat planlari: 5-qavatda shaxta siljigan — xato
+    bim::FloorPlans fp;
+    bim::PlanInput f5 = pl;
+    f5.shafts = {rect(10.5, 0.3, 12.5, 2.3)};
+    fp.floors[5] = f5;
+    auto mf = bim::buildModel(pl, bp, fp);
+    bool mis = false;
+    for (const auto& i : mf.issues) mis |= i.key == "bim.chk.shaft_misaligned" && i.args[0] == "5";
+    CHECK(mis);
+    // qatlam nomlari
+    CHECK(bim::guessKind("ZINA") == bim::ElemKind::Stair && bim::guessKind("ЛЕСТНИЧНАЯ КЛЕТКА") == bim::ElemKind::Stair);
+    CHECK(bim::guessKind("LIFT_SHAXTA") == bim::ElemKind::Shaft && bim::guessKind("ШАХТА ЛИФТА") == bim::ElemKind::Shaft);
+}
+
+TEST(steel_catalog_and_spec) {
+    // katalog: massa = A · 0.785 (po'lat 7850 kg/m³) — 1% ichida (GOST jadvallari yaxlitlangan)
+    for (const auto& p : bim::steelCatalog()) {
+        CHECK(p.A > 0 && p.mass > 0);
+        if (p.family != bim::SteelFamily::SquareTube) CHECK(std::abs(p.mass - p.A * 0.785) / p.mass < 0.012);
+    }
+    auto i20 = bim::findSteel("I20");
+    CHECK(i20 && std::abs(i20->mass - 21.0) < 1e-9 && i20->h == 200);
+    CHECK(bim::findSteel("Двутавр 20") && bim::findSteel("Двутавр 20")->name == "I20");
+    CHECK(bim::findSteel("[16") && bim::findSteel("Швеллер16")->name == "[16");
+    CHECK(bim::findSteel("L75x6") && bim::findSteel("L75\xC3\x97" "6"));   // 75×6
+    auto tr = bim::findSteel("TR530x10");                                   // katalogda yo'q — formuladan
+    CHECK(tr && std::abs(tr->mass - 3.14159265 * 520 * 10 / 100 * 0.785) < 0.01);
+    CHECK(!bim::findSteel("I21"));
+    // kesim maydoni (fileysiz) GOST qiymatiga yaqin
+    auto area = [](const bim::SteelProfile& p) {
+        double a = 0;
+        auto loops = bim::steelSection(p);
+        for (std::size_t li = 0; li < loops.size(); ++li) {
+            double s2 = 0;
+            const auto& l = loops[li];
+            for (std::size_t i = 0; i < l.size(); ++i) s2 += l[i].x * l[(i + 1) % l.size()].y - l[(i + 1) % l.size()].x * l[i].y;
+            a += (li == 0 ? 1 : -1) * std::abs(s2) / 2;
+        }
+        return a * 1e4;  // sm²
+    };
+    CHECK(std::abs(area(*i20) - i20->A) / i20->A < 0.06);   // fileylar hisobga olinmagan
+    CHECK(std::abs(area(*tr) - tr->A) / tr->A < 0.01);
+    // chizmadan vedomost
+    Document d;
+    d.addLayer(Layer{"KM_I20"});
+    d.addLayer(Layer{"KM_KV100x5"});
+    d.addLayer(Layer{"KM_XYZ"});
+    auto add = [&](std::unique_ptr<IEntity> e, const char* l) {
+        e->setLayer(l);
+        d.add(std::move(e));
+    };
+    add(std::make_unique<LineEntity>(Vec3{0, 0, 3}, Vec3{6, 0, 3}), "KM_I20");
+    add(std::make_unique<PolylineEntity>(std::vector<Vec3>{{0, 0, 3}, {0, 6, 3}, {6, 6, 3}}, false), "KM_I20");
+    for (double x : {0.0, 6.0})
+        for (double y : {0.0, 6.0}) add(std::make_unique<LineEntity>(Vec3{x, y, 0}, Vec3{x, y, 3}), "KM_KV100x5");
+    add(std::make_unique<LineEntity>(Vec3{0, 0, 0}, Vec3{1, 0, 0}), "KM_XYZ");
+    std::vector<std::string> unk;
+    const auto ms = bim::readSteel(d, &unk);
+    CHECK(ms.size() == 7 && unk.size() == 1);
+    const auto sp = bim::steelSpec(ms, 2);
+    CHECK(sp.rows.size() == 2 && sp.rows[0].profile == "I20" && sp.rows[0].count == 3);
+    CHECK(std::abs(sp.rows[0].mass - 18 * 21.0 / 1000) < 1e-9);
+    CHECK(std::abs(sp.total - (18 * 21.0 + 12 * bim::findSteel("KV100x5")->mass) / 1000) < 1e-9);
+    // Haydash sahnasida — profil bilan
+    const auto sc = civil::sceneFromDocument(d);
+    CHECK(sc.tris.size() > 7 * 8);
 }

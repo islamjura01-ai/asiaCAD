@@ -66,7 +66,7 @@ private:
     void update_();
     QLineEdit *dx_ = nullptr, *dy_ = nullptr;
     QDoubleSpinBox *colB_ = nullptr, *colH_ = nullptr, *wallT_ = nullptr, *floorH_ = nullptr, *x0_ = nullptr, *y0_ = nullptr;
-    QCheckBox *walls_ = nullptr, *slab_ = nullptr;
+    QCheckBox *walls_ = nullptr, *slab_ = nullptr, *core_ = nullptr;
     QSpinBox* floors_ = nullptr;
     QLabel* info_ = nullptr;
     PlanPreview* prev_ = nullptr;

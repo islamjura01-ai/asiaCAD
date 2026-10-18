@@ -182,7 +182,7 @@ void Viewport::beginGrip(EntityId id, int index) {
 }
 
 void Viewport::cancelTool() {
-    if ((tool_ == Tool::Pline || tool_ == Tool::Spline || tool_ == Tool::Leader) && pts_.size() >= 2) { finishTool(); return; }
+    if ((tool_ == Tool::Pline || tool_ == Tool::Spline || tool_ == Tool::Leader || tool_ == Tool::SteelBeam) && pts_.size() >= 2) { finishTool(); return; }
     tool_ = Tool::Select;
     pts_.clear();
     snap_.reset();
@@ -202,6 +202,11 @@ void Viewport::finishTool() {
     }
     if (tool_ == Tool::Spline && pts_.size() >= 2) {
         QStringList parts{QStringLiteral("SPLINE")};
+        for (const auto& p : pts_) parts << fmtPoint(p);
+        emit runCommand(parts.join(' '));
+    }
+    if (tool_ == Tool::SteelBeam && pts_.size() >= 2) {
+        QStringList parts{QStringLiteral("STEELBEAM"), steel_};
         for (const auto& p : pts_) parts << fmtPoint(p);
         emit runCommand(parts.join(' '));
     }
@@ -261,6 +266,8 @@ void Viewport::emitPrompt() {
     case Tool::Symbol: key = "gui.prompt.symbol"; break;
     case Tool::MatchProp: key = modTarget_ == kInvalidId ? "gui.prompt.matchsrc" : "gui.prompt.matchdst"; break;
     case Tool::LayPick: key = "gui.prompt.laypick"; break;
+    case Tool::SteelBeam: key = pts_.empty() ? "gui.prompt.first" : "gui.prompt.splnext"; break;
+    case Tool::SteelSec: key = "gui.prompt.point"; break;
     }
     std::vector<std::string> args;
     if (tool_ == Tool::Offset) args = {num(offsetDist_).toStdString()};
@@ -401,7 +408,11 @@ void Viewport::clickPoint(const Vec3& p) {
         break;
     case Tool::Spline:
     case Tool::Leader:
+    case Tool::SteelBeam:
         if (pts_.empty() || pts_.back().distanceTo(p) > 1e-9) pts_.push_back(p);
+        break;
+    case Tool::SteelSec:
+        emit runCommand("STEELSEC " + steel_ + " " + fmtPoint(p));
         break;
     case Tool::Stretch:
         pts_.push_back(p);
@@ -1133,6 +1144,7 @@ void Viewport::drawOverlay(QPainter& p) {
                 } catch (...) {}
                 break;
             case Tool::Leader:
+            case Tool::SteelBeam:
             case Tool::Scale:
             case Tool::Mirror:
             case Tool::DimAngular: {

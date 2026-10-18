@@ -26,7 +26,7 @@ enum class Tool { Select, Line, Pline, Circle, Arc, Point, Text, Move, Copy, Rot
                   DimLinear, DimAligned, DimRadius, DimDiameter, Grip,
                   Offset, Trim, Extend, Fillet,
                   Rect, Polygon, Ellipse, Spline, Stretch, Scale, Mirror, Chamfer, Break, Leader, DimAngular,
-                  Symbol, MatchProp, LayPick };
+                  Symbol, MatchProp, LayPick, SteelBeam, SteelSec };
 
 class Viewport : public QOpenGLWidget {
     Q_OBJECT
@@ -56,7 +56,8 @@ public:
     void setPolygonSides(int n) { if (n >= 3) polySides_ = n; emitPrompt(); }
     int polygonSides() const { return polySides_; }
     void setSymbol(const QString& key, double scale, double rotDeg) { symKey_ = key; symScale_ = scale; symRot_ = rotDeg; }
-    void setLayerPickCommand(const QString& canon) { layCmd_ = canon; }  // LAYMCUR, LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO, LAYMATCH  // joriy masshtabda o'qiladigan "chiroyli" balandlik
+    void setLayerPickCommand(const QString& canon) { layCmd_ = canon; }
+    void setSteelProfile(const QString& name) { steel_ = name; }  // LAYMCUR, LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO, LAYMATCH  // joriy masshtabda o'qiladigan "chiroyli" balandlik
     // Tutqichlar: tanlangan obyektning tutqichi ustida bo'lsa (id, indeks)
     std::optional<std::pair<EntityId, int>> gripAt(const QPointF& screen) const;
     void beginGrip(EntityId id, int index);  // sinov va skriptlar uchun
@@ -159,7 +160,7 @@ private:
     }
     double chamferD_ = 1.0;
     int polySides_ = 6;
-    QString symKey_ = "TREE", layCmd_ = "LAYMCUR";
+    QString symKey_ = "TREE", layCmd_ = "LAYMCUR", steel_ = "I20";
     double symScale_ = 1.0, symRot_ = 0.0;
     // Ekran apertura bilan obyekt tanlash; nuqta obyekt ustiga tushiriladi (buyruq satri aperturasi kichik bo'lsa ham)
     EntityId pickAt(const Vec3& p, Vec3* onCurve, bool editableCurvesOnly = true) const;

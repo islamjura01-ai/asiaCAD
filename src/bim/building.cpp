@@ -104,6 +104,8 @@ void collect(const IEntity& e, ElemKind k, PlanInput& in) {
             case ElemKind::Roof: in.slabs.push_back(ring); break;
             case ElemKind::Opening: in.openings.push_back(ring); break;
             case ElemKind::Outline: in.outlines.push_back(ring); break;
+            case ElemKind::Stair: in.stairs.push_back(ring); break;
+            case ElemKind::Shaft: in.shafts.push_back(ring); break;
             case ElemKind::FoundationSlab: in.foundations.push_back(ring); break;
             case ElemKind::Lean: in.leans.push_back(ring); break;
             case ElemKind::StripFooting: in.strips.push_back(ring); break;
@@ -117,6 +119,32 @@ void collect(const IEntity& e, ElemKind k, PlanInput& in) {
         const auto& v = pl->vertices();
         for (std::size_t i = 0; i + 1 < v.size(); ++i) in.wallLines.push_back({v[i], v[i + 1]});
     }
+}
+
+// Kontur ramkasi: u — eng uzun qirra yo'nalishi, kontur [0,L]×[0,W] ichida (origin — burchak)
+struct Frame {
+    Vec3 o, u, v;
+    double L = 0, W = 0;
+    Vec3 at(double a, double b) const { return {o.x + u.x * a + v.x * b, o.y + u.y * a + v.y * b, 0}; }
+    std::vector<Vec3> rect(double a0, double b0, double a1, double b1) const { return {at(a0, b0), at(a1, b0), at(a1, b1), at(a0, b1)}; }
+};
+Frame frameOf(const std::vector<Vec3>& r) {
+    Frame f;
+    double best = -1;
+    for (std::size_t i = 0; i < r.size(); ++i) {
+        const Vec3 d = r[(i + 1) % r.size()] - r[i];
+        if (d.length2d() > best) { best = d.length2d(); f.u = Vec3{d.x, d.y, 0} / d.length2d(); }
+    }
+    f.v = {-f.u.y, f.u.x, 0};
+    double a0 = 1e18, a1 = -1e18, b0 = 1e18, b1 = -1e18;
+    for (const auto& q : r) {
+        const double a = q.x * f.u.x + q.y * f.u.y, b = q.x * f.v.x + q.y * f.v.y;
+        a0 = std::min(a0, a); a1 = std::max(a1, a); b0 = std::min(b0, b); b1 = std::max(b1, b);
+    }
+    f.o = f.u * a0 + f.v * b0;
+    f.L = a1 - a0;
+    f.W = b1 - b0;
+    return f;
 }
 
 std::vector<Vec3> wallRect(const Vec3& a, const Vec3& b, double t) {
@@ -139,6 +167,8 @@ const char* kindKey(ElemKind k) {
         case ElemKind::Roof: return "ROOF";
         case ElemKind::Opening: return "OPENING";
         case ElemKind::Outline: return "OUTLINE";
+        case ElemKind::Stair: return "STAIR";
+        case ElemKind::Shaft: return "SHAFT";
         case ElemKind::Ignore: return "IGNORE";
     }
     return "IGNORE";
@@ -146,7 +176,7 @@ const char* kindKey(ElemKind k) {
 
 bool kindFromKey(const std::string& s, ElemKind& out) {
     for (ElemKind k : {ElemKind::Lean, ElemKind::FoundationSlab, ElemKind::StripFooting, ElemKind::Column, ElemKind::Wall, ElemKind::Slab,
-                       ElemKind::Roof, ElemKind::Opening, ElemKind::Outline, ElemKind::Ignore})
+                       ElemKind::Roof, ElemKind::Opening, ElemKind::Outline, ElemKind::Stair, ElemKind::Shaft, ElemKind::Ignore})
         if (s == kindKey(k)) { out = k; return true; }
     return false;
 }
@@ -158,6 +188,8 @@ ElemKind guessKind(const std::string& layer) {
             if (u.find(utf8::toUpper(k)) != std::string::npos) return true;
         return false;
     };
+    if (has({"ZINA", "ЗИНА", "ЛЕСТН", "STAIR", "MERDIVEN", "БАСПАЛДАҚ", "ТЕПКИЧ"})) return ElemKind::Stair;
+    if (has({"LIFT", "ЛИФТ", "SHAXTA", "ШАХТ", "ELEVATOR", "ASANSÖR", "ASANSOR"})) return ElemKind::Shaft;
     if (has({"PADBETON", "ПОДБЕТОН", "ПАДБЕТОН", "LEAN", "GROBETON", "ГРОБЕТОН", "TESVIYE"})) return ElemKind::Lean;
     if (has({"LENTA", "ЛЕНТ", "STRIP"})) return ElemKind::StripFooting;
     if (has({"FUNDAMENT", "ФУНДАМЕНТ", "FOUND", "TEMEL", "ІРГЕТАС", "ПОДУШК"})) return ElemKind::FoundationSlab;
@@ -358,10 +390,65 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
         if (own && pl.columns.empty() && w.empty()) issue(false, "bim.chk.no_vertical_floor", {std::to_string(k)});
         for (const auto& c : pl.columns) m.prisms.push_back({ElemKind::Column, k, c, {}, z0, top - t, p.classFrame});
         for (const auto& wl : w) m.prisms.push_back({ElemKind::Wall, k, wl, {}, z0, top - t, p.classFrame});
+        // lift shaxtalari: devor halqasi (ichki kontur + qalinlik), plitada teshik (tomdan tashqari)
+        std::vector<std::vector<Vec3>> slabHoles = pl.openings;
+        for (const auto& sh : pl.shafts) {
+            m.prisms.push_back({ElemKind::Shaft, k, offsetRing(sh, p.shaftWallT), {sh}, z0, top - t, p.classFrame});
+            if (!roof) slabHoles.push_back(sh);
+        }
+        // zinapoya: ikki marshli (u — katak uzunligi bo'ylab). Qavat maydonchasi — plita (u < landing), qolgani — teshik
+        for (const auto& cell : pl.stairs) {
+            const Frame f = frameOf(cell);
+            const double H = top - z0;  // pol — keyingi pol (plita usti)
+            StairInfo si;
+            si.level = k;
+            si.cell = cell;
+            si.cellL = f.L;
+            int n = static_cast<int>(std::ceil(H / p.riserMax - 1e-9));
+            if (n % 2) ++n;
+            n = std::max(n, 4);
+            si.risers = n;
+            si.h = H / n;
+            si.b = p.stepTread;
+            si.width = (f.W - 0.10) / 2;           // ikki marsh orasida 0.10 m bo'shliq
+            si.flight = (n / 2 - 1) * p.stepTread;  // marsh gorizontal proyeksiyasi
+            si.landing = std::max(si.width, (f.L - si.flight) / 2);
+            const double land1 = std::max(0.0, f.L - si.flight - si.landing);  // qavat maydonchasi (katak boshida)
+            m.stairs.push_back(si);
+            if (roof) continue;  // tom ustiga zina yo'q
+            // pog'onalar: qiya plita bilan teng hajmli pog'ona-prizmalar (soffit — zinapoyasimon)
+            const double teff = p.stairT * std::sqrt(si.b * si.b + si.h * si.h) / std::max(1e-9, si.b);
+            const double zmid = z0 + n / 2 * si.h;
+            const double zBase = z0;  // pastki qavat poli
+            for (int i = 0; i + 1 < n / 2; ++i) {   // 1-marsh: v ∈ [0, w], u o'sadi
+                const double zt = zBase + (i + 1) * si.h;
+                m.prisms.push_back({ElemKind::Stair, k, f.rect(land1 + i * si.b, 0, land1 + (i + 1) * si.b, si.width), {}, zt - si.h / 2 - teff, zt, p.classSlab});
+            }
+            m.prisms.push_back({ElemKind::Stair, k, f.rect(land1 + si.flight, 0, f.L, f.W), {}, zmid - t, zmid, p.classSlab});  // oraliq maydoncha
+            for (int j = 0; j + 1 < n / 2; ++j) {   // 2-marsh: v ∈ [W−w, W], u kamayadi
+                const double zt = zmid + (j + 1) * si.h;
+                const double u1 = land1 + si.flight - j * si.b, u0 = u1 - si.b;
+                m.prisms.push_back({ElemKind::Stair, k, f.rect(u0, f.W - si.width, u1, f.W), {}, zt - si.h / 2 - teff, zt, p.classSlab});
+            }
+            slabHoles.push_back(f.rect(land1, 0, f.L, f.W));
+            // tekshiruvlar (har qavat bir xil bo'lsa — bir marta)
+            bool seen = false;
+            for (std::size_t q = 0; q + 1 < m.stairs.size(); ++q)
+                seen = seen || (std::abs(m.stairs[q].h - si.h) < 1e-6 && std::abs(m.stairs[q].cellL - si.cellL) < 1e-6 && m.stairs[q].risers == si.risers);
+            if (seen) continue;
+            const std::string kk = std::to_string(k);
+            const double blondel = 2 * si.h + si.b;
+            if (blondel < 0.60 - 1e-9 || blondel > 0.65 + 1e-9)
+                issue(false, "bim.chk.stair_blondel", {kk, std::format("{:.0f}", si.h * 1000), std::format("{:.0f}", si.b * 1000), std::format("{:.0f}", blondel * 1000)});
+            if (si.width < p.stairWidthMin - 1e-9) issue(true, "bim.chk.stair_width", {kk, std::format("{:.2f}", si.width), std::format("{:.2f}", p.stairWidthMin)});
+            if (f.L + 1e-9 < si.flight + 2 * si.width)
+                issue(true, "bim.chk.stair_fit", {kk, std::format("{:.2f}", f.L), std::format("{:.2f}", si.flight + 2 * si.width), std::to_string(n)});
+            if (n / 2 > 18) issue(false, "bim.chk.stair_steps", {kk, std::to_string(n / 2)});
+        }
         auto slabs = pl.slabs.empty() ? outlinesOf(pl, false) : pl.slabs;
         for (const auto& s : slabs) {
             Prism pr{roof ? ElemKind::Roof : ElemKind::Slab, k, s, {}, top - t, top, p.classSlab};
-            for (const auto& o : pl.openings)
+            for (const auto& o : slabHoles)
                 if (inside(s, centroid(o))) pr.holes.push_back(o);
             m.prisms.push_back(pr);
         }
@@ -378,6 +465,24 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
         prevTop = top;
     }
     m.heightTop = prevTop;
+    // lift shaxtalari: o'lcham va qavatlar bo'ylab bir joyda bo'lishi
+    for (std::size_t i = 0; i < base.shafts.size(); ++i) {
+        const Frame f = frameOf(base.shafts[i]);
+        if (std::min(f.L, f.W) < p.shaftMin - 1e-9)
+            issue(false, "bim.chk.shaft_small", {std::to_string(i + 1), std::format("{:.2f}×{:.2f}", f.L, f.W), std::format("{:.2f}", p.shaftMin)});
+    }
+    for (const auto& [k, pl] : fp.floors) {
+        if (k < 1 || k > p.floors) continue;
+        for (const auto& sh : base.shafts) {
+            const Vec3 c = centroid(sh);
+            bool found = false;
+            for (const auto& s2 : pl.shafts) found = found || (centroid(s2) - c).length2d() < 0.05;
+            if (!found) issue(true, "bim.chk.shaft_misaligned", {std::to_string(k), std::format("{:.2f}; {:.2f}", c.x, c.y)});
+        }
+    }
+    // evakuatsiya va lift (taxminiy qoidalar): ko'p qavatda zina bo'lmasa — xato; 5 qavatdan ko'p bo'lib lift bo'lmasa — ogohlantirish
+    if (p.floors >= 2 && base.stairs.empty()) issue(false, "bim.chk.no_stair", {std::to_string(p.floors)});
+    if (p.floors > 5 && base.shafts.empty()) issue(false, "bim.chk.no_lift", {std::to_string(p.floors)});
     const PlanInput& plan = base;
     const auto slabs = base.slabs.empty() ? outlines : base.slabs;
 
@@ -502,9 +607,10 @@ std::string paramsToJson(const BuildingParams& p, const std::map<std::string, El
     std::ostringstream os;
     os << std::format("{{\n  \"format\": \"asiacad-building\", \"version\": 1,\n  \"floors\": {}, \"H\": {}, \"slab\": {}, \"roof\": {}, "
                       "\"foundTop\": {}, \"foundT\": {}, \"foundOver\": {}, \"strip\": {}, \"stripW\": {}, \"lean\": {}, "
-                      "\"leanOver\": {}, \"wallT\": {}, \"zeroAbs\": {}, \"zeroAbsAuto\": {},\n  \"classes\": [\"{}\", \"{}\", \"{}\", \"{}\"],\n  \"layers\": {{",
+                      "\"leanOver\": {}, \"wallT\": {}, \"zeroAbs\": {}, \"zeroAbsAuto\": {}, \"tread\": {}, \"riserMax\": {}, \"stairW\": {}, \"stairT\": {}, \"shaftT\": {}, \"shaftMin\": {},\n  \"classes\": [\"{}\", \"{}\", \"{}\", \"{}\"],\n  \"layers\": {{",
                       p.floors, p.floorHeight, p.slabT, p.roofT, p.foundTop, p.foundT, p.foundOverhang, p.stripFoundation ? "true" : "false",
-                      p.stripWidth, p.leanT, p.leanOverhang, p.wallT, p.zeroAbs, p.zeroAbsAuto ? "true" : "false", esc(p.classLean), esc(p.classFound), esc(p.classFrame), esc(p.classSlab));
+                      p.stripWidth, p.leanT, p.leanOverhang, p.wallT, p.zeroAbs, p.zeroAbsAuto ? "true" : "false", p.stepTread, p.riserMax,
+                      p.stairWidthMin, p.stairT, p.shaftWallT, p.shaftMin, esc(p.classLean), esc(p.classFound), esc(p.classFrame), esc(p.classSlab));
     bool first = true;
     for (const auto& [l, k] : lm) {
         os << (first ? "" : ", ") << std::format("\"{}\": \"{}\"", esc(l), kindKey(k));
@@ -538,6 +644,12 @@ void paramsFromJson(const std::string& text, BuildingParams& p, std::map<std::st
     p.leanT = num("lean", p.leanT);
     p.leanOverhang = num("leanOver", p.leanOverhang);
     p.wallT = num("wallT", p.wallT);
+    p.stepTread = num("tread", p.stepTread);
+    p.riserMax = num("riserMax", p.riserMax);
+    p.stairWidthMin = num("stairW", p.stairWidthMin);
+    p.stairT = num("stairT", p.stairT);
+    p.shaftWallT = num("shaftT", p.shaftWallT);
+    p.shaftMin = num("shaftMin", p.shaftMin);
     p.zeroAbs = num("zeroAbs", p.zeroAbs);
     if (const json::Value* v = root.find("zeroAbsAuto"); v && v->isBool()) p.zeroAbsAuto = v->boolean();
     if (const json::Value* c = root.find("classes"); c && c->isArray() && c->arr().size() == 4) {

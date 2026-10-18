@@ -10,6 +10,8 @@
 #include <QWidget>
 
 class QCheckBox;
+class QComboBox;
+class QLabel;
 class QDoubleSpinBox;
 class QListWidget;
 class QSpinBox;
@@ -36,6 +38,28 @@ private:
     bool dark_;
     QListWidget* list_ = nullptr;
     QDoubleSpinBox *scale_ = nullptr, *rot_ = nullptr;
+};
+
+// Metall konstruksiyalar (КМ): oila va profil tanlash, kesim ko'rinishi, xossalar; element / kesim / vedomost
+class SteelPanel : public QWidget {
+    Q_OBJECT
+public:
+    SteelPanel(const i18n::Localizer& loc, bool dark, QWidget* parent = nullptr);
+    QString profile() const;
+    bool select(const QString& name);   // sinov uchun
+
+signals:
+    void drawMember(const QString& profile);     // o'q nuqtalari bilan (asbob)
+    void drawSection(const QString& profile);    // kesim (bitta nuqta)
+    void specRequested();                        // vedomost
+
+private:
+    void fillSizes();
+    void update_();
+    const i18n::Localizer& loc_;
+    bool dark_;
+    QComboBox *family_ = nullptr, *size_ = nullptr;
+    QLabel *preview_ = nullptr, *props_ = nullptr;
 };
 
 class ArrayDialog : public QDialog {

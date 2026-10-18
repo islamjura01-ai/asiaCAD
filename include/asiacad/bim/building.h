@@ -19,7 +19,9 @@
 
 namespace asiacad::bim {
 
-enum class ElemKind { Lean, FoundationSlab, StripFooting, Column, Wall, Slab, Roof, Opening, Outline, Ignore };
+// Stair — chizmada zinapoya katagi konturi (ZINA/ЛЕСТН/STAIR), modelda — marshlar va maydonchalar;
+// Shaft — lift shaxtasi ichki konturi (LIFT/ЛИФТ/SHAXTA), modelda — shaxta devorlari (plitada teshik)
+enum class ElemKind { Lean, FoundationSlab, StripFooting, Column, Wall, Slab, Roof, Opening, Outline, Stair, Shaft, Ignore };
 
 const char* kindKey(ElemKind k);  // "LEAN", "FOUND", ... (i18n: bim.kind.<key>)
 bool kindFromKey(const std::string& s, ElemKind& out);
@@ -44,6 +46,13 @@ struct BuildingParams {
     double zeroAbs = 0;
     bool zeroAbsAuto = true;
     std::string classLean = "B7.5", classFound = "B25", classFrame = "B25", classSlab = "B25";
+    // zinapoya va lift (KMK 2.08.01 / SP 54 — taxminiy chegaralar, tasdiqlanmagan)
+    double stepTread = 0.30;      // pog'ona eni b, m
+    double riserMax = 0.18;       // pog'ona balandligi h eng ko'pi, m
+    double stairWidthMin = 1.05;  // marsh eni eng kami, m
+    double stairT = 0.15;         // marsh plitasi (qiya) qalinligi, m
+    double shaftWallT = 0.20;     // lift shaxtasi devori, m
+    double shaftMin = 1.50;       // shaxta ichki o'lchami eng kami, m
 };
 
 struct Prism {
@@ -61,12 +70,16 @@ struct Prism {
 
 struct PlanInput {
     std::vector<std::vector<Vec3>> columns, walls, slabs, openings, outlines;
+    std::vector<std::vector<Vec3>> stairs, shafts;  // zinapoya kataklari, lift shaxtalari (ichki kontur)
     std::vector<std::vector<Vec3>> foundations, strips, leans;   // fundament plani (aniq konturlar)
     std::vector<std::pair<Vec3, Vec3>> wallLines;  // markaz chiziqlari (wallT bilan)
     double slabT = 0;                       // qolip chizmasidagi "h=200" / "δ=200" (0 — parametrdan)
     std::optional<double> levelTop;         // qolip chizmasidagi plita usti belgisi "+3.000"
     std::optional<double> zeroAbs;          // "±0,000 = 484,20 абс." — nisbiy nolning absolyut (Boltiq) belgisi
-    bool empty() const { return columns.empty() && walls.empty() && wallLines.empty() && slabs.empty() && foundations.empty() && strips.empty(); }
+    bool empty() const {
+        return columns.empty() && walls.empty() && wallLines.empty() && slabs.empty() && foundations.empty() && strips.empty() && stairs.empty() &&
+               shafts.empty();
+    }
 };
 
 // Qavatlar bo'yicha alohida planlar (qolip chizmalari): qavat -> plan; fundament plani alohida.
@@ -94,8 +107,16 @@ struct PtoRow {
     std::string concrete;
 };
 
+// Zinapoya hisobi (har qavat): ikki marshli
+struct StairInfo {
+    int level = 0, risers = 0;
+    double h = 0, b = 0, width = 0, flight = 0, landing = 0, cellL = 0;
+    std::vector<Vec3> cell;
+};
+
 struct BuildingModel {
     std::vector<Prism> prisms;
+    std::vector<StairInfo> stairs;
     std::vector<PtoRow> pto;                // tur × qavat
     std::map<std::string, double> byConcrete;  // sinf -> m³
     double totalVolume = 0, totalFormwork = 0;

@@ -29,7 +29,7 @@ using bim::ElemKind;
 
 namespace {
 const ElemKind kKinds[] = {ElemKind::Ignore, ElemKind::Outline, ElemKind::Column, ElemKind::Wall, ElemKind::Slab,
-                           ElemKind::Opening, ElemKind::FoundationSlab, ElemKind::Lean, ElemKind::StripFooting};
+                           ElemKind::Opening, ElemKind::Stair, ElemKind::Shaft, ElemKind::FoundationSlab, ElemKind::Lean, ElemKind::StripFooting};
 QColor kindColor(ElemKind k) {
     switch (k) {
         case ElemKind::Lean: return QColor(128, 126, 120);
@@ -39,6 +39,8 @@ QColor kindColor(ElemKind k) {
         case ElemKind::Wall: return QColor(200, 196, 186);
         case ElemKind::Slab: return QColor(176, 186, 198);
         case ElemKind::Roof: return QColor(120, 150, 185);
+        case ElemKind::Stair: return QColor(222, 196, 150);
+        case ElemKind::Shaft: return QColor(170, 180, 205);
         default: return QColor(180, 180, 180);
     }
 }

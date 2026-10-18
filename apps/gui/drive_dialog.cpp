@@ -20,6 +20,7 @@
 #include <QVBoxLayout>
 
 #include <cmath>
+#include <cstdio>
 
 namespace asiacad::gui {
 
@@ -287,11 +288,13 @@ void DriveDialog::rebuildPath() {
         const auto& src = src_[static_cast<std::size_t>(si)];
         if (src.constant)
             for (auto& q : pts) q.z = zconst_->value();
-        else if (src.z)
+        else if (src.z) {
+            if (src.reset) src.reset();
             for (auto& q : pts) {
                 const double z = src.z(q.x, q.y);
                 if (std::isfinite(z)) q.z = z;
             }
+        }
     }
     path_ = civil::makeDrivePath(pts, 1.0);
     s_ = std::clamp(s_, 0.0, path_.length());

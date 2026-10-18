@@ -45,6 +45,7 @@ class CorridorDialog;
 class CityDialog;
 class DriveDialog;
 class SymbolPalette;
+class SteelPanel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -58,6 +59,7 @@ public:
     bool runLine(const QString& line, bool echo = true);  // false — EXIT
     Viewport* viewport() const { return view_; }
     SymbolPalette* symbolPalette() const { return symPal_; }
+    SteelPanel* steelPanel() const { return steelPal_; }
     Document& document() { return doc_; }
     void activateTool(const QString& key);  // "line", "circle", ... (sinov va skriptlar uchun)
     SewerDialog* openSewer();               // "Kanalizatsiya" menyusi (bitta nusxa, modal emas)
@@ -128,6 +130,8 @@ private:
     QDockWidget* propsDock_ = nullptr;
     QDockWidget* symDock_ = nullptr;
     SymbolPalette* symPal_ = nullptr;
+    QDockWidget* steelDock_ = nullptr;
+    SteelPanel* steelPal_ = nullptr;
     QDockWidget* cmdDock_ = nullptr;
     QTreeWidget* layers_ = nullptr;
     QWidget* propsBox_ = nullptr;

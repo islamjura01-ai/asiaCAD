@@ -2,6 +2,7 @@
 #include "interpreter.h"
 
 #include <asiacad/bim/steel.h>
+#include <asiacad/bim/templates.h>
 #include <asiacad/civil/symbols.h>
 #include <asiacad/core/draft.h>
 #include <asiacad/core/entities.h>
@@ -11,6 +12,8 @@
 #include <asiacad/i18n/utf8.h>
 
 #include <format>
+#include <fstream>
+#include <sstream>
 #include <optional>
 #include <set>
 
@@ -520,6 +523,110 @@ bool Interpreter::dispatchDraft(const std::string& cmd, const Args& a) {
             row(r++, {loc_.tr("km.spec.total"), "", "", "", std::format("{:.3f}", sp.total + sp.reserve)});
             addLayered(cmd, std::move(es));
         }
+    }
+    // ---------------------------------------------------------------- konstruksiya shablonlari (haqiqiy koordinata va belgida)
+    else if (cmd == "STEELFRAME" || cmd == "STAIR" || cmd == "RAMP" || cmd == "RWALL") {
+        // file.json | kalit=qiymat ... [x,y[,z]]  (z — tayanch nuqtaning absolyut belgisi; ro'yxat: dx=6;6;6)
+        std::string js;
+        if (a.size() == 1 && a[0].size() > 5 && up(a[0].substr(a[0].size() - 5)) == ".JSON") {
+            std::ifstream f(a[0], std::ios::binary);
+            if (!f) throw Error("acad.err.open", {a[0]});
+            std::stringstream b;
+            b << f.rdbuf();
+            js = b.str();
+        } else {
+            js = "{";
+            bool first = true;
+            auto add = [&](const std::string& k, const std::string& v) {
+                js += (first ? "\"" : ",\"") + k + "\":" + v;
+                first = false;
+            };
+            for (const auto& t : a) {
+                const auto eq = t.find('=');
+                if (eq == std::string::npos) {
+                    if (!looksPoint(t)) throw usage();
+                    const Vec3 p = parsePoint(t);
+                    add("x", std::format("{}", p.x));
+                    add("y", std::format("{}", p.y));
+                    if (std::count(t.begin(), t.end(), ',') >= 2) add("z0", std::format("{}", p.z));
+                    continue;
+                }
+                const std::string k = t.substr(0, eq), v = t.substr(eq + 1);
+                if (k.empty() || v.empty()) throw usage();
+                if (v.find(';') != std::string::npos) {
+                    std::string arr = "[";
+                    std::stringstream ss(v);
+                    std::string part;
+                    for (bool f1 = true; std::getline(ss, part, ';'); f1 = false) arr += (f1 ? "" : ",") + std::format("{}", parseNumber(part));
+                    add(k, arr + "]");
+                } else if (up(v) == "TRUE" || up(v) == "FALSE") add(k, up(v) == "TRUE" ? "true" : "false");
+                else {
+                    bool isNum = true;
+                    try { (void)parseNumber(v); } catch (const Error&) { isNum = false; }
+                    if (isNum) add(k, std::format("{}", parseNumber(v)));
+                    else {
+                        std::string q;
+                        for (char c : v) { if (c == '"' || c == '\\') q += '\\'; q += c; }
+                        add(k, "\"" + q + "\"");
+                    }
+                }
+            }
+            js += "}";
+            // mantiqiy kalitlar 0/1 bilan ham
+            for (const char* bk : {"\"steel\":", "\"bracing\":"})
+                for (const char* d : {"0", "1"}) {
+                    const std::string from = std::string(bk) + d;
+                    if (const auto q = js.find(from); q != std::string::npos && (q + from.size() == js.size() - 1 || js[q + from.size()] == ','))
+                        js.replace(q, from.size(), std::string(bk) + (d[0] == '1' ? "true" : "false"));
+                }
+        }
+        bim::TplResult r;
+        if (cmd == "STEELFRAME") r = bim::makeSteelFrame(bim::steelFrameFromJson(js));
+        else if (cmd == "STAIR") r = bim::makeStair(bim::stairFromJson(js));
+        else if (cmd == "RAMP") r = bim::makeRamp(bim::rampFromJson(js));
+        else r = bim::makeRetainingWall(bim::retainFromJson(js));
+        const std::size_t n = r.entities.size();
+        addLayered(cmd, std::move(r.entities));
+        say("tpl.msg.done", {loc_.commandName(cmd), std::to_string(n)});
+        for (const auto& [k, v] : r.info) out_ << "  " << loc_.tr(k) << ": " << v << '\n';
+        for (const auto& is : r.issues)
+            out_ << "  " << loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(is.key, is.args) << '\n';
+    } else if (cmd == "GEOPLACE") {
+        // GEOPLACE sel p1 P1 [p2 P2] [GEO] [SCALE] [Z=H] — lokal nuqtalar geodezik koordinata/belgiga
+        need(a, 3, cmd);
+        const auto ids = parseSelection(a[0]);
+        if (ids.empty()) throw Error("err.empty_selection");
+        bool geo = false, scale = false;
+        std::optional<double> zAbs;
+        std::vector<std::string> pts;
+        for (std::size_t k = 1; k < a.size(); ++k) {
+            const std::string u = up(a[k]);
+            if (u == "GEO") geo = true;
+            else if (u == "SCALE") scale = true;
+            else if (u.rfind("Z=", 0) == 0) zAbs = parseNumber(a[k].substr(2));
+            else pts.push_back(a[k]);
+        }
+        if (pts.size() != 2 && pts.size() != 4) throw usage();
+        auto world = [&](const std::string& t, const Vec3& local) {
+            Vec3 P = parseRawPoint(t);
+            if (geo) std::swap(P.x, P.y);  // geodeziya: X — shimol, Y — sharq
+            if (std::count(t.begin(), t.end(), ',') < 2) P.z = local.z;  // belgi berilmagan — saqlanadi
+            return P;
+        };
+        const Vec3 p1 = parsePoint(pts[0]);
+        Vec3 P1 = world(pts[1], p1);
+        if (zAbs) P1.z = *zAbs;
+        std::optional<Vec3> p2, P2;
+        if (pts.size() == 4) {
+            p2 = parsePoint(pts[2]);
+            P2 = world(pts[3], *p2);
+        }
+        const auto g = bim::geoFit(p1, P1, p2 ? &*p2 : nullptr, P2 ? &*P2 : nullptr, scale);
+        stack_.execute(std::make_unique<TransformCommand>(ids, g.t, cmd));
+        last_ = ids;
+        say("tpl.msg.geo", {std::to_string(ids.size()), std::format("{:.3f}", geo ? P1.y : P1.x), std::format("{:.3f}", geo ? P1.x : P1.y), std::format("{:+.3f}", P1.z - p1.z),
+                            std::format("{:.4f}", g.rotDeg)});
+        if (p2) say("tpl.msg.geo2", {std::format("{:.6f}", g.scale), std::format("{:.3f}", g.residual), scale ? loc_.tr("tpl.geo.scaled") : loc_.tr("tpl.geo.rigid")});
     } else {
         return false;
     }

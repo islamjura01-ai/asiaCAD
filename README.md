@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.18: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.19: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,24 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Konstruksiya shablonlari va geo-joylash (v0.19) — `bim/templates`
+
+Lenta → **Konstruksiya**: Metall karkas · Zina · Rampa · Tirgak devor · Geo-joylash. Oynada parametrlar, jonli **3D** va plan,
+xulosa (o'lcham, belgilar, beton m³, metall t) va tekshiruvlar. Har shablon **haqiqiy koordinata va dengiz sathidan belgida** joylanadi:
+X (sharq), Y (shimol), burilish, ▽ absolyut belgi; "Chizmadan" — tayanch nuqta va yo'nalishni chizmada bosish.
+
+| Buyruq | Nima chiziladi |
+|---|---|
+| `STEELFRAME` | ko'p qavatli karkas (o'qlar `dx=6;6;6 dy=6;6`, qavatlar) yoki portal rama/angar (oraliq, qadam, karniz, tizma): ustun, rigel, rafter, progonlar, tik va tom bog'lamalari — `KM_<profil>` 3D o'qlari, profillar bo'yicha massa |
+| `STAIR` | ikki marshli (U) yoki to'g'ri; beton yoki metall (kosour `[16`); 3D pog'onalar (`ZINA_3D`), plan (`ZINA_PLAN`: qirralar, strelka, `20×165×300 (+412.500)`); 2h+b, marsh eni, pog'ona soni, maydoncha |
+| `RAMP` | yerto'laga: avtomobil (o'tish qismlari yarim nishablikda) yoki piyoda (har 0.8 m da maydoncha); yo'l yuzasi (`RAMPA_3D`), yon devorlar + parapet, plan: nishablik strelkalari `i=15%`, ▽ belgilar |
+| `RWALL` | tirgak devor L / T / gravitatsion: 3D (`TIRGAK_DEVOR_3D`), plan, kesim chizmasi (H, B, q, φ); Rankin bo'yicha Ea, ag'darilish va siljish zaxirasi, poydevor ostidagi bosim |
+| `GEOPLACE sel p1 P1 [p2 P2] [GEO] [SCALE] [Z=H]` | tanlovni 1–2 nuqta bo'yicha geodezik koordinata va belgiga o'tkazish; `GEO` — X shimol, Y sharq; burilish, masofa nisbati va 2-nuqtadagi farq ko'rsatiladi |
+
+Buyruq satrida: `STAIR H=3.3 width=1.2 steel=1 1000,2000,412.5` (oxirgi nuqta — tayanch X,Y,▽) yoki `STAIR "fayl.json"`.
+Haydash (Drive) sahnasi endi har qanday tekis 3D yuzani (rampa, devor, 3DFACE) uchburchaklaydi — rampa bo'ylab haydash mumkin.
+Me'yor chegaralari (rampa 15/18 %, piyoda 8 %, zaxira 1.5 va h.k.) eslab kiritilgan — tasdiqlanmagan; hisob loyiha hisobini almashtirmaydi.
 
 ## Asosiy lenta — AutoCAD "Home" kabi (v0.17) — `core/draft`, `civil/symbols`
 

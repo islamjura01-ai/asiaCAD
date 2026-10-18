@@ -4,6 +4,7 @@
 #include <asiacad/bim/rebar_import.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
+#include <asiacad/bim/templates.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/civil/road.h>
@@ -57,6 +58,7 @@ static std::vector<std::pair<const char*, std::function<void()>>>& registry() {
 struct Reg { Reg(const char* n, std::function<void()> f) { registry().emplace_back(n, std::move(f)); } };
 #define TEST(name) static void name(); static Reg reg_##name(#name, name); static void name()
 #define CHECK(c) do { ++g_checks; if (!(c)) { ++g_fail; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << "  " #c "\n"; } } while (0)
+#define CHECK_THROWS(e) do { bool thrown_ = false; try { (void)(e); } catch (...) { thrown_ = true; } CHECK(thrown_); } while (0)
 #define NEAR(a, b) CHECK(std::abs((a) - (b)) < 1e-6)
 #define VNEAR(p, q) CHECK((p).equals((q), 1e-6))
 
@@ -345,7 +347,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO");
     }
-    CHECK(loc.canonicalCommands().size() == 87);
+    CHECK(loc.canonicalCommands().size() == 92);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3077,4 +3079,140 @@ TEST(steel_catalog_and_spec) {
     // Haydash sahnasida — profil bilan
     const auto sc = civil::sceneFromDocument(d);
     CHECK(sc.tris.size() > 7 * 8);
+}
+
+// ---------- konstruksiya shablonlari ----------
+static bool hasIssue(const bim::TplResult& r, const std::string& k) {
+    for (const auto& i : r.issues)
+        if (i.key == k) return true;
+    return false;
+}
+TEST(tpl_steel_frame) {
+    bim::SteelFrameSpec s;  // portal: 6 qadam × 6 m, oraliq 18
+    s.at = {100, 200, 90, 412.5};
+    const auto r = bim::makeSteelFrame(s);
+    int cols = 0;
+    double massSum = 0;
+    for (const auto& e : r.entities) {
+        auto* l = dynamic_cast<const LineEntity*>(e.get());
+        CHECK(l && e->layer().rfind("KM_", 0) == 0);
+        massSum += l->startPoint().distanceTo(l->endPoint()) * bim::findSteel(e->layer().substr(3))->mass / 1000;
+        if (std::abs(l->startPoint().x - l->endPoint().x) < 1e-9 && std::abs(l->startPoint().y - l->endPoint().y) < 1e-9) ++cols;
+    }
+    CHECK(cols == 14);
+    CHECK(std::abs(massSum - r.steel) < 1e-9);
+    // birinchi ustun: lokal (0,0,0) -> (100, 200, 412.5); 90° burilish: lokal X -> dunyo Y
+    auto* c0 = dynamic_cast<const LineEntity*>(r.entities.front().get());
+    CHECK(c0->startPoint().equals({100, 200, 412.5}, 1e-9) && std::abs(c0->endPoint().z - 418.5) < 1e-9);
+    bool alongY = false;
+    for (const auto& e : r.entities)
+        if (auto* l = dynamic_cast<const LineEntity*>(e.get()); l && e->layer() == "KM_[16")
+            alongY = alongY || (std::abs(l->startPoint().x - l->endPoint().x) < 1e-9 && std::abs(std::abs(l->endPoint().y - l->startPoint().y) - 36) < 1e-9);
+    CHECK(alongY);
+    bim::SteelFrameSpec m;
+    m.type = 0;
+    m.bracing = false;
+    const auto r2 = bim::makeSteelFrame(m);  // 4×3 ustun, 2 qavat: X rigellari 3·3·2, Y rigellari 4·2·2
+    CHECK(r2.entities.size() == 12 + 18 + 16);
+    m.column = "I99";
+    CHECK_THROWS(bim::makeSteelFrame(m));
+    const auto j = bim::steelFrameFromJson(bim::steelFrameToJson(s));
+    CHECK(j.type == 1 && j.bays == 6 && j.purlin == "[16" && j.at.rotDeg == 90 && j.at.z0 == 412.5);
+}
+TEST(tpl_stair) {
+    bim::StairSpec s;
+    s.H = 3.3;
+    s.riserMax = 0.17;
+    s.at.z0 = 412.5;
+    const auto r = bim::makeStair(s);
+    CHECK(r.issues.empty());
+    double zmax = -1e9;
+    int steps = 0;
+    for (const auto& e : r.entities) {
+        if (e->layer() == "ZINA_3D") ++steps;
+        for (const auto& v : e->bbox().max.z > -1e8 ? std::vector<Vec3>{e->bbox().max} : std::vector<Vec3>{}) zmax = std::max(zmax, v.z);
+    }
+    CHECK(std::abs(zmax - (412.5 + 3.3)) < 1e-9);
+    CHECK(steps == 2 * (18 + 2));  // 18 pog'ona + 2 maydoncha, har biri 2 kontur
+    CHECK(r.concrete > 2 && r.steel == 0);
+    s.width = 0.8;
+    s.tread = 0.25;
+    const auto r2 = bim::makeStair(s);
+    CHECK(hasIssue(r2, "tpl.chk.stair_width") && hasIssue(r2, "tpl.chk.blondel"));
+    s = {};
+    s.steel = true;
+    s.type = 1;
+    s.H = 1.2;
+    const auto r3 = bim::makeStair(s);
+    int str = 0;
+    for (const auto& e : r3.entities) str += e->layer() == "KM_[16";
+    CHECK(str == 2 && r3.steel > 0);
+    CHECK(bim::stairFromJson(bim::stairToJson(s)).steel);
+}
+TEST(tpl_ramp) {
+    bim::RampSpec s;  // avtomobil: 3.3 m, 15%, o'tish 3.6
+    s.at.z0 = 412.5;
+    const auto r = bim::makeRamp(s);
+    CHECK(r.issues.empty());
+    double zmin = 1e9, umax = 0;
+    for (const auto& e : r.entities)
+        if (e->layer() == "RAMPA_3D") {
+            zmin = std::min(zmin, e->bbox().min.z);
+            umax = std::max(umax, e->bbox().max.x);
+        }
+    CHECK(std::abs(zmin - (412.5 - 3.3)) < 1e-9);
+    CHECK(std::abs(umax - (2 * 3.6 + (3.3 - 0.15 * 3.6) / 0.15 + 6)) < 1e-6);
+    s.slope = 20;
+    CHECK(hasIssue(bim::makeRamp(s), "tpl.chk.ramp_car"));
+    bim::RampSpec p;
+    p.kind = 1;
+    p.H = 1.2;
+    p.slope = 8;
+    p.width = 1.5;
+    const auto rp = bim::makeRamp(p);
+    CHECK(rp.issues.empty());
+    p.slope = 10;
+    CHECK(hasIssue(bim::makeRamp(p), "tpl.chk.ramp_ped"));
+    // haydash sahnasida — yo'l yuzasi uchburchaklar bilan
+    Document d;
+    for (auto& e : bim::makeRamp(s).entities) d.add(std::move(e));
+    const auto sc = civil::sceneFromDocument(d);
+    int dark = 0;
+    for (const auto& t : sc.tris) dark += t.rgb == 0x5a5d62;
+    CHECK(dark > 20);
+}
+TEST(tpl_retaining_wall) {
+    bim::RetainSpec s;  // T: H=3, B=2.1, toe 0.5, poydevor 0.4
+    const auto c = bim::retainCheck(s);
+    CHECK(std::abs(c.area - (2.1 * 0.4 + (0.25 + 0.4) / 2 * 3)) < 1e-9);
+    const double ka = std::pow(std::tan((45 - 15) * M_PI / 180), 2), Ht = 3.4;
+    CHECK(std::abs(c.Pa - (0.5 * ka * 18 * Ht * Ht + ka * 10 * Ht)) < 1e-9);
+    CHECK(c.FSo > 1.5 && c.qmax > c.qmin);
+    const auto r = bim::makeRetainingWall(s);
+    CHECK(std::abs(r.concrete - c.area * 20) < 1e-9);
+    s.B = 1.0;
+    s.toe = 0.2;
+    s.H = 5;
+    const auto r2 = bim::makeRetainingWall(s);
+    CHECK(hasIssue(r2, "tpl.chk.overturn") || hasIssue(r2, "tpl.chk.slide"));
+    Document d;
+    for (auto& e : bim::makeRetainingWall(bim::RetainSpec{}).entities) d.add(std::move(e));
+    CHECK(civil::sceneFromDocument(d).tris.size() >= 8 * 2 + 2 * 6);
+}
+TEST(tpl_geo_fit_and_cli) {
+    const Vec3 p1{0, 0, 0}, p2{10, 0, 0}, P1{512300.5, 4612345.12, 412.3}, P2{512300.5, 4612355.12, 0};
+    const auto g = bim::geoFit(p1, P1, &p2, &P2, false);
+    CHECK(std::abs(g.rotDeg - 90) < 1e-9 && g.residual < 1e-6 && std::abs(g.scale - 1) < 1e-12);
+    CHECK(g.t.apply({0, 0, 1}).equals({512300.5, 4612345.12, 413.3}, 1e-6));
+    const Vec3 P2b{512300.5, 4612355.13, 0};
+    CHECK(bim::geoFit(p1, P1, &p2, &P2b, false).residual > 0.009);
+    CHECK(std::abs(bim::geoFit(p1, P1, &p2, &P2b, true).t.apply(p2).y - 4612355.13) < 1e-6);
+    CHECK_THROWS(bim::geoFit(p1, P1, &p1, &P2, false));
+    const auto s = runScript("uz", {"STAIR H=3 width=1.2 10,20,412.5", "RAMP kind=1 H=1.2 slope=10 0,0", "LINE 0,0 10,0",
+                                    "GEOPLACE 3 0,0 4612345.12,512300.5,412.3 10,0 4612355.12,512300.5 GEO", "STEELFRAME type=0 dx=6;6 dy=6 floors=1"});
+    CHECK(s.find("ta obyekt chizildi") != std::string::npos);
+    CHECK(s.find("+412,500 … +415,500") != std::string::npos);
+    CHECK(s.find("Piyoda rampa nishabligi 10.0% > 8%") != std::string::npos);
+    CHECK(s.find("X=4612345.120, Y=512300.500; balandlik siljishi +412.300 m; burilish 90.0000") != std::string::npos);
+    CHECK(s.find("Metall:") != std::string::npos);
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 // AsiaCAD GUI — asosiy oyna. Uch interfeys rejimi bitta oynada:
 //   Klassik (Samarqand) — lenta (ribbon), qatlamlar va xossalar paneli
 //   Modul (Ipak yo'li)  — chapda modullar paneli, yuqorida kontekst asboblari
@@ -43,6 +44,8 @@ class RoadDialog;
 class WaterwayDialog;
 class CorridorDialog;
 class CityDialog;
+class TemplatesDialog;
+class GeoPlaceDialog;
 class DriveDialog;
 class SymbolPalette;
 class SteelPanel;
@@ -71,6 +74,8 @@ public:
     CorridorDialog* openCorridor();         // "Koridor": yig'malar + qismlar palitrasi (Civil 3D Corridor kabi)
     CityDialog* openCity();                 // "Shahar mavzesi" — 0 dan: ko'chalar, kvartallar, binolar
     DriveDialog* openDrive();               // "Haydash" (Drive): tanlangan chiziq bo'ylab 3D ichida yurish va ko'rinish tahlili
+    TemplatesDialog* openTemplates(int page);  // konstruksiya shablonlari: 0 metall karkas, 1 zina, 2 rampa, 3 tirgak devor
+    GeoPlaceDialog* openGeoPlace();          // tanlovni haqiqiy koordinata / belgiga o'tkazish
     QDialog* openScratch(const QString& module);  // "0 dan chizish": building | road | waterway | corridor | util
     void locate(double x, double y);        // tuzatish: chizmada joyni ko'rsatish
 
@@ -118,6 +123,9 @@ private:
     WaterwayDialog* waterway_ = nullptr;
     CorridorDialog* corridor_ = nullptr;
     CityDialog* city_ = nullptr;
+    TemplatesDialog* tpl_ = nullptr;
+    GeoPlaceDialog* geoDlg_ = nullptr;
+    std::function<void(const std::vector<Vec3>&)> pickCb_;   // oyna chizmadan nuqta kutmoqda
     DriveDialog* drive_ = nullptr;
     QToolButton* driveCtx_ = nullptr;  // chiziq tanlanganda viewport ustida "▶ Haydash"
 

@@ -197,6 +197,34 @@ void sweepSteel(DriveScene& sc, const bim::SteelMember& m) {
         }
 }
 
+// Tekis (har qanday yo'nalishdagi) ko'pburchak: Newell normali bo'yicha eng katta o'qni tashlab proyeksiya, uchburchaklash
+static bool addPlanarFace(DriveScene& sc, const std::vector<Vec3>& v, std::uint32_t rgb) {
+    Vec3 n{0, 0, 0}, c{0, 0, 0};
+    for (std::size_t i = 0; i < v.size(); ++i) {
+        const Vec3& a = v[i];
+        const Vec3& b = v[(i + 1) % v.size()];
+        n.x += (a.y - b.y) * (a.z + b.z);
+        n.y += (a.z - b.z) * (a.x + b.x);
+        n.z += (a.x - b.x) * (a.y + b.y);
+        c += a;
+    }
+    const double nl = n.length();
+    if (nl < 1e-9) return false;
+    n = n / nl;
+    c = c / static_cast<double>(v.size());
+    double size = 0;
+    for (const auto& q : v) size = std::max(size, q.distanceTo(c));
+    for (const auto& q : v)
+        if (std::abs((q - c).dot(n)) > std::max(1e-3, size * 1e-3)) return false;  // tekis emas
+    const int ax = std::abs(n.x) >= std::abs(n.y) && std::abs(n.x) >= std::abs(n.z) ? 0 : std::abs(n.y) >= std::abs(n.z) ? 1 : 2;
+    std::vector<Vec3> p2;
+    for (const auto& q : v) p2.push_back(ax == 0 ? Vec3{q.y, q.z, 0} : ax == 1 ? Vec3{q.z, q.x, 0} : Vec3{q.x, q.y, 0});
+    const auto tr = triangulate(p2);
+    if (tr.empty()) return false;
+    for (const auto& t : tr) sc.tris.push_back({{v[t[0]], v[t[1]], v[t[2]]}, rgb});
+    return true;
+}
+
 DriveScene sceneFromDocument(const Document& doc) {
     DriveScene sc;
     for (const auto& m : bim::readSteel(doc)) sweepSteel(sc, m);
@@ -211,6 +239,18 @@ DriveScene sceneFromDocument(const Document& doc) {
         if (e.layer().rfind("KM_", 0) == 0) return;   // metall elementlar — kesim bilan (yuqorida)
         if (auto* pl = dynamic_cast<const PolylineEntity*>(&e); pl && pl->isClosed() && !pl->hasBulges() && pl->vertices().size() >= 3) {
             const auto& v = pl->vertices();
+            // 3D yuza: shablon yuzalari (…_3D qatlamlari, prizmadan tashqari) yoki tekis, lekin gorizontal bo'lmagan kontur
+            const std::string& L = e.layer();
+            const bool faceLayer = L == "RAMPA_3D" || L == "TIRGAK_DEVOR_3D" || L == "3DFACE";
+            bool horiz = true;
+            for (const auto& q : v) horiz = horiz && std::abs(q.z - v[0].z) < 1e-6;
+            if (faceLayer || !horiz) {
+                const std::uint32_t col = L == "RAMPA_3D" ? 0x5a5d62 : L == "TIRGAK_DEVOR_3D" ? 0xb9b4a6 : 0xa9adb5;
+                if (addPlanarFace(sc, v, col)) {
+                    for (std::size_t i = 0; i < v.size(); ++i) sc.segs.push_back({v[i], v[(i + 1) % v.size()], 0x30343a});
+                    return;
+                }
+            }
             bool flat = true;
             for (const auto& q : v) flat = flat && std::abs(q.z - v[0].z) < 1e-6;
             if (flat) {

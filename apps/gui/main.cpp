@@ -13,6 +13,7 @@
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
 #include "drive_dialog.h"
+#include "templates_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -68,6 +69,8 @@ int main(int argc, char** argv) {
     bool city = false;
     int cityTpl = -1;
     QString scratch;
+    int tplPage = -1;
+    bool geoDlg = false;
     bool drive = false;
     int driveMode = -1, driveSrc = -1;
     double driveAt = -1;
@@ -109,6 +112,8 @@ int main(int argc, char** argv) {
         else if (a == "--drive-at") driveAt = next().toDouble();
         else if (a == "--city") city = true;                     // Shahar mavzesi oynasi
         else if (a == "--city-tpl") cityTpl = next().toInt();    // shablon raqami (0 dan)
+        else if (a == "--tpl") tplPage = next().toInt();          // konstruksiya shablonlari: 0 karkas, 1 zina, 2 rampa, 3 tirgak devor
+        else if (a == "--geo") geoDlg = true;                    // geo-joylash oynasi (tanlov bilan)
         else if (a == "--scratch") scratch = next();             // "0 dan" oynasi: building | road | waterway | util
         else if (a == "--asm") asmIndex = next().toInt();
         else if (a == "--station") station = next().toInt();
@@ -182,6 +187,8 @@ int main(int argc, char** argv) {
                 if (cityTpl >= 0) cd->sidebar()->activate(cityTpl);
             }
             if (!scratch.isEmpty()) w.openScratch(scratch);
+            if (tplPage >= 0) w.openTemplates(tplPage);
+            if (geoDlg) w.openGeoPlace();
             if (drive) {
                 auto* dd = w.openDrive();
                 if (driveSrc >= 0) dd->setSource(driveSrc);
@@ -243,7 +250,7 @@ int main(int argc, char** argv) {
                     (corridor && !drive && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")) ||
                     (city && tl->isVisible() && tl->inherits("asiacad::gui::CityDialog")) ||
                     (drive && tl->isVisible() && tl->inherits("asiacad::gui::DriveDialog")) ||
-                    (!scratch.isEmpty() && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
+                    ((!scratch.isEmpty() || tplPage >= 0 || geoDlg) && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
                     target = tl;
             target->grab().save(shot);
             QApplication::exit(0);

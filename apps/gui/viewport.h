@@ -26,7 +26,7 @@ enum class Tool { Select, Line, Pline, Circle, Arc, Point, Text, Move, Copy, Rot
                   DimLinear, DimAligned, DimRadius, DimDiameter, Grip,
                   Offset, Trim, Extend, Fillet,
                   Rect, Polygon, Ellipse, Spline, Stretch, Scale, Mirror, Chamfer, Break, Leader, DimAngular,
-                  Symbol, MatchProp, LayPick, SteelBeam, SteelSec };
+                  Symbol, MatchProp, LayPick, SteelBeam, SteelSec, Pick };
 
 class Viewport : public QOpenGLWidget {
     Q_OBJECT
@@ -57,7 +57,9 @@ public:
     int polygonSides() const { return polySides_; }
     void setSymbol(const QString& key, double scale, double rotDeg) { symKey_ = key; symScale_ = scale; symRot_ = rotDeg; }
     void setLayerPickCommand(const QString& canon) { layCmd_ = canon; }
-    void setSteelProfile(const QString& name) { steel_ = name; }  // LAYMCUR, LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO, LAYMATCH  // joriy masshtabda o'qiladigan "chiroyli" balandlik
+    void setSteelProfile(const QString& name) { steel_ = name; }
+    // nuqta(lar) olish (oynalar uchun): n ta nuqta — pointsPicked; Esc — pickCancelled. prompts — har nuqta uchun i18n kalit
+    void startPick(int n, const QStringList& prompts);  // LAYMCUR, LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO, LAYMATCH  // joriy masshtabda o'qiladigan "chiroyli" balandlik
     // Tutqichlar: tanlangan obyektning tutqichi ustida bo'lsa (id, indeks)
     std::optional<std::pair<EntityId, int>> gripAt(const QPointF& screen) const;
     void beginGrip(EntityId id, int index);  // sinov va skriptlar uchun
@@ -91,7 +93,9 @@ signals:
     void selectionChanged();
     void orthoPolarChanged(bool ortho, bool polar);
     void textRequested(const Vec3& at);  // matn asbobi: oyna dialog ochadi
-    void leaderRequested(const QString& points);  // vynoska: nuqtalar tayyor — matn so'raladi
+    void leaderRequested(const QString& points);
+    void pointsPicked(const std::vector<Vec3>& pts);
+    void pickCancelled();  // vynoska: nuqtalar tayyor — matn so'raladi
 
 protected:
     void paintGL() override;
@@ -120,6 +124,8 @@ private:
     void tip(QPainter& p, const QPointF& at, const QString& text, const QColor& bg);
     void clickPoint(const Vec3& p);
     void emitPrompt();
+    int pickN_ = 1;
+    QStringList pickPrompts_;
     QString selArg() const;
     double aperture() const { return 12.0 / scale_; }
 

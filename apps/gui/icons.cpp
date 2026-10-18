@@ -96,6 +96,22 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "drive") {  // rul
         C(12, 12, 9); C(12, 12, 2.5); L(3.5, 10.5, 9.6, 11.2); L(14.4, 11.2, 20.5, 10.5); L(12, 14.5, 12, 21);
     }
+    else if (n == "steelframe") {  // portal rama: ustunlar, rafter, bog'lama
+        P({{4, 21}, {4, 9}, {12, 4}, {20, 9}, {20, 21}}); L(4, 21, 20, 9); L(2, 21, 22, 21);
+    }
+    else if (n == "stair") {  // pog'onalar
+        P({{3, 21}, {3, 17}, {8, 17}, {8, 13}, {13, 13}, {13, 9}, {18, 9}, {18, 5}, {21, 5}, {21, 21}}, true);
+    }
+    else if (n == "ramp") {  // yerto'laga rampa: nishab, strelka
+        P({{2, 7}, {6, 7}, {18, 18}, {22, 18}}); L(2, 21, 22, 21); P({{9, 10}, {14, 14.5}}); P({{11, 15}, {14, 14.5}, {13.5, 11.5}});
+    }
+    else if (n == "rwall") {  // tirgak devor kesimi (T) + grunt
+        P({{3, 21}, {3, 18}, {8, 18}, {8, 4}, {11, 4}, {12, 18}, {21, 18}, {21, 21}}, true);
+        p.save(); QPen d = p.pen(); d.setStyle(Qt::DotLine); p.setPen(d); L(13, 8, 21, 8); L(14, 12, 21, 12); p.restore();
+    }
+    else if (n == "geoplace") {  // shimol strelkasi + nuqta + belgi
+        P({{12, 2}, {15, 9}, {12, 7.5}, {9, 9}}, true); C(12, 15, 4.5); L(12, 10.5, 12, 19.5); L(7.5, 15, 16.5, 15); L(5, 22, 19, 22);
+    }
     else if (n == "city") {  // kvartal binolari: har xil balandlik
         R(3, 11, 5, 10, 0.5); R(10, 4, 5, 17, 0.5); R(17, 8, 4, 13, 0.5); L(2, 21, 22, 21);
     }

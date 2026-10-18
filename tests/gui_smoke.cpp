@@ -10,6 +10,7 @@
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
+#include "templates_dialog.h"
 #include "drive_dialog.h"
 #include "draft_panels.h"
 
@@ -31,6 +32,8 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QLabel>
 
 #include <cstdio>
 #include <string>
@@ -857,6 +860,57 @@ int main(int argc, char** argv) {
         emit sp->specRequested();
         CHECK(doc.size() > n0 + 10);
         CHECK(doc.layer("KM-SPEC").has_value());
+    }
+
+    // 30. Konstruksiya shablonlari: zina / rampa / karkas / tirgak devor; tayanch chizmadan; geo-joylash
+    {
+        w.runLine("NEW !");
+        auto* td = w.openTemplates(TemplatesDialog::Stair);
+        CHECK(td->isVisible() && td->page() == TemplatesDialog::Stair && td->valid() && td->previewCount() > 40);
+        // tayanch va yo'nalish chizmadan: oyna yashirinadi, 2 nuqtadan keyin qaytadi
+        td->findChild<QPushButton*>("pick")->click();
+        CHECK(!td->isVisible() && w.viewport()->tool() == Tool::Pick);
+        w.viewport()->feedPoint({100, 50, 0});
+        w.viewport()->feedPoint({100, 60, 0});
+        CHECK(td->isVisible() && w.viewport()->tool() == Tool::Select);
+        CHECK(std::abs(td->stairSpec().at.rotDeg - 90) < 1e-9 && td->stairSpec().at.x == 100);
+        td->findChild<QDoubleSpinBox*>("z")->setValue(412.5);
+        const auto n0 = doc.size();
+        td->findChild<QPushButton*>("draw")->click();
+        CHECK(doc.size() > n0 + 40 && doc.layer("ZINA_3D").has_value());
+        double zmax = -1e9;
+        for (EntityId id : doc.ids()) zmax = std::max(zmax, doc.find(id)->bbox().max.z);
+        CHECK(std::abs(zmax - 415.8) < 1e-6);
+        for (int pg : {0, 2, 3}) {
+            td->setPage(pg);
+            CHECK(td->valid() && td->previewCount() > 10);
+            const auto n1 = doc.size();
+            td->findChild<QPushButton*>("draw")->click();
+            CHECK(doc.size() > n1);
+        }
+        CHECK(doc.layer("RAMPA_3D").has_value() && doc.layer("TIRGAK_DEVOR_3D").has_value() && doc.layer("KM_I40").has_value());
+        CHECK(td->findChild<QLabel*>("info")->text().contains(QString::fromStdString(loc.tr("tpl.i.fso"))));
+        // Esc — tanlash bekor, oyna qaytadi
+        td->findChild<QPushButton*>("pick")->click();
+        w.viewport()->cancelTool();
+        CHECK(td->isVisible());
+        td->close();
+        // geo-joylash: chiziq lokal 0,0 -> geodezik X/Y + belgi, 2-nuqta bo'yicha burilish
+        w.runLine("NEW !");
+        w.runLine("LINE 0,0 10,0");
+        w.viewport()->setSelection({doc.ids().back()});
+        auto* gd = w.openGeoPlace();
+        gd->findChild<QPushButton*>("pick1")->click();
+        w.viewport()->feedPoint({0, 0, 0});
+        CHECK(gd->isVisible());
+        gd->setWorld(1, 4612345.12, 512300.5, 412.3);
+        gd->setPicked(2, {10, 0, 0});
+        gd->setWorld(2, 4612355.12, 512300.5, 0);
+        CHECK(gd->valid() && gd->resultText().contains("90"));
+        CHECK(gd->command().endsWith(" GEO"));
+        gd->findChild<QPushButton*>("apply")->click();
+        auto* ln = dynamic_cast<const LineEntity*>(doc.find(doc.ids().back()));
+        CHECK(ln && ln->startPoint().equals({512300.5, 4612345.12, 412.3}, 1e-6) && ln->endPoint().equals({512300.5, 4612355.12, 412.3}, 1e-6));
     }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

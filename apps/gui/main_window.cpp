@@ -9,6 +9,7 @@
 #include "waterway_dialog.h"
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
+#include "templates_dialog.h"
 #include "drive_dialog.h"
 #include "draft_panels.h"
 #include "icons.h"
@@ -107,6 +108,10 @@ const ActDef kActs[] = {
     {"layulk", "layulk", "gui.act.layulk", false},   {"layiso", "layiso", "gui.act.layiso", false},
     {"layuniso", "layuniso", "gui.act.layuniso", false}, {"layon", "layon", "gui.act.layon", false},
     {"steel", "steel", "gui.act.steel", false},
+    // Konstruksiya shablonlari va geo-joylash
+    {"steelframe", "steelframe", "gui.act.steelframe", false}, {"stairtpl", "stair", "gui.act.stairtpl", false},
+    {"ramptpl", "ramp", "gui.act.ramptpl", false},             {"rwalltpl", "rwall", "gui.act.rwalltpl", false},
+    {"geoplace", "geoplace", "gui.act.geoplace", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -226,6 +231,12 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     buildStatusBar();
 
     connect(view_, &Viewport::runCommand, this, [this](const QString& l) { runLine(l); });
+    connect(view_, &Viewport::pointsPicked, this, [this](const std::vector<Vec3>& pts) {
+        if (auto cb = std::move(pickCb_)) { pickCb_ = {}; cb(pts); }
+    });
+    connect(view_, &Viewport::pickCancelled, this, [this] {
+        if (auto cb = std::move(pickCb_)) { pickCb_ = {}; cb({}); }
+    });
     connect(view_, &Viewport::promptChanged, this, [this](const QString& s) { prompt_->setText(s); });
     connect(view_, &Viewport::cursorMoved, this, [this](double x, double y) {
         coords_->setText(QStringLiteral("X %1   Y %2").arg(x, 0, 'f', 3).arg(y, 0, 'f', 3));
@@ -275,7 +286,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.18"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.19"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -299,6 +310,7 @@ QIcon MainWindow::icon(const QString& name) const {
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
             {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
             {"rect", "#1C8C6E"}, {"polygon", "#1C8C6E"}, {"ellipse", "#1C8C6E"}, {"spline", "#1C8C6E"}, {"hatch", "#1C8C6E"}, {"symbols", "#3E9B3A"}, {"steel", "#4F6D8A"},
+            {"steelframe", "#4F6D8A"}, {"stairtpl", "#D9466A"}, {"ramptpl", "#E7881B"}, {"rwalltpl", "#8A7B5C"}, {"geoplace", "#0E9F8E"},
             {"leader", "#C8324B"}, {"dimangular", "#C8324B"},
             {"layers", "#D99A1E"}, {"laymcur", "#2BA84A"}, {"laymatch", "#1C8C9E"}, {"layoff", "#6B7280"}, {"layfrz", "#2F7FD8"}, {"laylck", "#C2410C"}, {"layulk", "#E58A3A"}, {"layiso", "#7A3FC8"}, {"layuniso", "#A27BDB"}, {"layon", "#3E9B3A"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
@@ -363,6 +375,11 @@ void MainWindow::buildActions() {
     connect(act_["waterway"], &QAction::triggered, this, [this] { openWaterway(); });
     connect(act_["corridor"], &QAction::triggered, this, [this] { openCorridor(); });
     connect(act_["city"], &QAction::triggered, this, [this] { openCity(); });
+    connect(act_["steelframe"], &QAction::triggered, this, [this] { openTemplates(0); });
+    connect(act_["stairtpl"], &QAction::triggered, this, [this] { openTemplates(1); });
+    connect(act_["ramptpl"], &QAction::triggered, this, [this] { openTemplates(2); });
+    connect(act_["rwalltpl"], &QAction::triggered, this, [this] { openTemplates(3); });
+    connect(act_["geoplace"], &QAction::triggered, this, [this] { openGeoPlace(); });
     connect(act_["drive"], &QAction::triggered, this, [this] { openDrive(); });
     // ---- tanlov bilan bajariladigan amallar
     auto withSel = [this](const QString& canon) {
@@ -472,6 +489,8 @@ void MainWindow::buildRibbon() {
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}, {"leader", "text"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.tab.struct", {{"gui.grp.templates", {"steelframe", "stairtpl", "ramptpl", "rwalltpl"}}, {"gui.grp.km", {"steel"}},
+                            {"gui.grp.geo", {"geoplace"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
         {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
@@ -1194,6 +1213,57 @@ CityDialog* MainWindow::openCity() {
     return city_;
 }
 
+// Konstruksiya shablonlari: bitta nusxa (modal emas). "Chizmadan" — oyna yashirinadi, chizmada tayanch va yo'nalish olinadi.
+TemplatesDialog* MainWindow::openTemplates(int page) {
+    if (!tpl_) {
+        tpl_ = new TemplatesDialog(loc_, !theme_.lightCanvas, this);
+        tpl_->setStyleSheet(theme_.styleSheet);
+        connect(tpl_, &TemplatesDialog::commandReady, this, [this](const QString& line) {
+            if (runLine(line)) view_->zoomExtents();
+        });
+        connect(tpl_, &TemplatesDialog::pickRequested, this, [this](int n, const QStringList& prompts) {
+            tpl_->hide();
+            pickCb_ = [this](const std::vector<Vec3>& pts) {
+                tpl_->setPicked(pts);
+                tpl_->show();
+                tpl_->raise();
+            };
+            view_->startPick(n, prompts);
+        });
+    }
+    tpl_->setPage(page);
+    tpl_->show();
+    tpl_->raise();
+    tpl_->activateWindow();
+    return tpl_;
+}
+
+GeoPlaceDialog* MainWindow::openGeoPlace() {
+    QStringList ids;
+    for (EntityId id : view_->selection()) ids << QString::number(id);
+    if (geoDlg_) geoDlg_->deleteLater();
+    geoDlg_ = new GeoPlaceDialog(loc_, !theme_.lightCanvas, ids.join(','), static_cast<int>(ids.size()), this);
+    geoDlg_->setStyleSheet(theme_.styleSheet);
+    connect(geoDlg_, &GeoPlaceDialog::commandReady, this, [this](const QString& line) {
+        if (runLine(line)) {
+            view_->zoomExtents();
+            geoDlg_->accept();
+        }
+    });
+    connect(geoDlg_, &GeoPlaceDialog::pickRequested, this, [this](int which) {
+        geoDlg_->hide();
+        pickCb_ = [this, which](const std::vector<Vec3>& pts) {
+            if (!pts.empty()) geoDlg_->setPicked(which, pts.front());
+            geoDlg_->show();
+            geoDlg_->raise();
+        };
+        view_->startPick(1, {which == 1 ? "gui.prompt.geo1" : "gui.prompt.geo2"});
+    });
+    geoDlg_->show();
+    geoDlg_->raise();
+    return geoDlg_;
+}
+
 // "0 dan chizish": modulga mos kiritish oynasi; tasdiqlansa — generator buyrug'i (undo bilan), keyin modul chizmani qayta o'qiydi.
 // Shunday qilib 0 dan chizilgan va import qilingan chizma bitta yo'ldan o'tadi va bir xil tuzatiladi.
 QDialog* MainWindow::openScratch(const QString& module) {
@@ -1356,6 +1426,53 @@ DriveDialog* MainWindow::openDrive() {
             if (def < 0 && !lineZ) def = static_cast<int>(src.size()) - 1;
         }
     }
+    {   // shablon yuzalari (rampa yo'li, zina pog'onalari): oyoq/g'ildirak ostidagi yuqoriga qaragan uchburchak; bir qadamda ≤ 0.6 m ko'tarilish
+        Document tdoc;
+        doc_.forEach([&](const IEntity& e) {
+            const std::string& L = e.layer();
+            if (L == "RAMPA_3D" || L == "ZINA_3D" || L == "ZINA_3D_METALL") tdoc.add(e.clone());
+        });
+        auto tris = std::make_shared<std::vector<std::array<Vec3, 3>>>();
+        if (tdoc.size())
+            for (const auto& tr : civil::sceneFromDocument(tdoc).tris) {
+                const Vec3 a = tr.p[1] - tr.p[0], b = tr.p[2] - tr.p[0];
+                const double nz = a.x * b.y - a.y * b.x, nl = std::sqrt(std::pow(a.y * b.z - a.z * b.y, 2) + std::pow(a.z * b.x - a.x * b.z, 2) + nz * nz);
+                if (nl > 1e-12 && std::abs(nz) / nl > 0.5) tris->push_back(tr.p);
+            }
+        if (!tris->empty()) {
+            auto zAt = [](const std::array<Vec3, 3>& p, double x, double y, double& z) {
+                const double d = (p[1].y - p[2].y) * (p[0].x - p[2].x) + (p[2].x - p[1].x) * (p[0].y - p[2].y);
+                if (std::abs(d) < 1e-12) return false;
+                const double l1 = ((p[1].y - p[2].y) * (x - p[2].x) + (p[2].x - p[1].x) * (y - p[2].y)) / d;
+                const double l2 = ((p[2].y - p[0].y) * (x - p[2].x) + (p[0].x - p[2].x) * (y - p[2].y)) / d;
+                const double l3 = 1 - l1 - l2;
+                if (l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9) return false;
+                z = l1 * p[0].z + l2 * p[1].z + l3 * p[2].z;
+                return true;
+            };
+            auto state = std::make_shared<double>(std::nan(""));
+            DriveSource d{t("drive.z.tpl"), [tris, state, zAt](double x, double y) {
+                              double lo = 1e18, best = -1e18, z;
+                              for (const auto& p : *tris)
+                                  if (zAt(p, x, y, z)) {
+                                      lo = std::min(lo, z);
+                                      if ((std::isnan(*state) || z <= *state + 0.6) && z > best) best = z;
+                                  }
+                              if (lo > 1e17) return std::nan("");
+                              if (std::isnan(*state)) best = lo;
+                              if (best > -1e17) *state = best;
+                              return *state;
+                          }};
+            d.reset = [state] { *state = std::nan(""); };
+            src.push_back(d);
+            if (!lineZ && !pts.empty()) {
+                double z;
+                bool on = false;
+                for (const auto& p : *tris) on = on || zAt(p, pts.front().x, pts.front().y, z);
+                if (on) def = static_cast<int>(src.size()) - 1;
+            }
+        }
+    }
     src.push_back({t("drive.z.const"), {}, true});
     if (def < 0) def = static_cast<int>(src.size()) - 1;
     // sahna
@@ -1431,6 +1548,11 @@ void MainWindow::startCommand(const QString& canonical) {
     if (canonical == "GRID") { openScratch("building"); return; }
     if (canonical == "ALIGN") { openScratch("road"); return; }
     if (canonical == "UTILNET") { openScratch("util"); return; }
+    if (canonical == "STEELFRAME") { openTemplates(0); return; }
+    if (canonical == "STAIR") { openTemplates(1); return; }
+    if (canonical == "RAMP") { openTemplates(2); return; }
+    if (canonical == "RWALL") { openTemplates(3); return; }
+    if (canonical == "GEOPLACE") { openGeoPlace(); return; }
     if (canonical == "OPEN") { openFile(); return; }
     if (canonical == "SAVE") { saveFile(false); return; }
     if (canonical == "IMPORT") { importDxf(); return; }

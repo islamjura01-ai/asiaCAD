@@ -3,6 +3,7 @@
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/grips.h>
+#include <asiacad/core/draft.h>
 #include <asiacad/core/modify.h>
 
 #include <QFontMetricsF>
@@ -75,7 +76,7 @@ std::optional<Vec3> Viewport::lastPoint() const {
 // ---------------------------------------------------------------- asboblar
 
 void Viewport::setTool(Tool t) {
-    if ((t == Tool::Move || t == Tool::Copy || t == Tool::Rotate) && sel_.empty()) {
+    if ((t == Tool::Move || t == Tool::Copy || t == Tool::Rotate || t == Tool::Scale || t == Tool::Mirror) && sel_.empty()) {
         emit promptChanged(QString::fromStdString(loc_.tr("gui.prompt.selectfirst")));
         tool_ = Tool::Select;
         pts_.clear();
@@ -181,7 +182,7 @@ void Viewport::beginGrip(EntityId id, int index) {
 }
 
 void Viewport::cancelTool() {
-    if (tool_ == Tool::Pline && pts_.size() >= 2) { finishTool(); return; }
+    if ((tool_ == Tool::Pline || tool_ == Tool::Spline || tool_ == Tool::Leader) && pts_.size() >= 2) { finishTool(); return; }
     tool_ = Tool::Select;
     pts_.clear();
     snap_.reset();
@@ -198,6 +199,16 @@ void Viewport::finishTool() {
         QStringList parts{QStringLiteral("PLINE")};
         for (const auto& p : pts_) parts << fmtPoint(p);
         emit runCommand(parts.join(' '));
+    }
+    if (tool_ == Tool::Spline && pts_.size() >= 2) {
+        QStringList parts{QStringLiteral("SPLINE")};
+        for (const auto& p : pts_) parts << fmtPoint(p);
+        emit runCommand(parts.join(' '));
+    }
+    if (tool_ == Tool::Leader && pts_.size() >= 2) {
+        QStringList parts;
+        for (const auto& p : pts_) parts << fmtPoint(p);
+        emit leaderRequested(parts.join(' '));
     }
     tool_ = Tool::Select;
     pts_.clear();
@@ -236,10 +247,26 @@ void Viewport::emitPrompt() {
     case Tool::Trim: key = "gui.prompt.trim"; break;
     case Tool::Extend: key = "gui.prompt.extend"; break;
     case Tool::Fillet: key = modTarget_ == kInvalidId ? "gui.prompt.fillet1" : "gui.prompt.fillet2"; break;
+    case Tool::Rect: key = pts_.empty() ? "gui.prompt.first" : "gui.prompt.corner"; break;
+    case Tool::Polygon: key = pts_.empty() ? "gui.prompt.center" : "gui.prompt.polyvertex"; break;
+    case Tool::Ellipse: key = pts_.empty() ? "gui.prompt.center" : (pts_.size() == 1 ? "gui.prompt.axis1" : "gui.prompt.axis2"); break;
+    case Tool::Spline: key = pts_.empty() ? "gui.prompt.first" : "gui.prompt.splnext"; break;
+    case Tool::Stretch: key = pts_.size() < 2 ? "gui.prompt.window" : (pts_.size() == 2 ? "gui.prompt.base" : "gui.prompt.target"); break;
+    case Tool::Scale: key = pts_.empty() ? "gui.prompt.base" : "gui.prompt.factor"; break;
+    case Tool::Mirror: key = pts_.empty() ? "gui.prompt.mirror1" : "gui.prompt.mirror2"; break;
+    case Tool::Chamfer: key = modTarget_ == kInvalidId ? "gui.prompt.chamfer1" : "gui.prompt.chamfer2"; break;
+    case Tool::Break: key = modTarget_ == kInvalidId ? "gui.prompt.break1" : "gui.prompt.break2"; break;
+    case Tool::Leader: key = pts_.empty() ? "gui.prompt.leader1" : "gui.prompt.splnext"; break;
+    case Tool::DimAngular: key = pts_.empty() ? "gui.prompt.vertex" : (pts_.size() < 3 ? "gui.prompt.ray" : "gui.prompt.dimloc"); break;
+    case Tool::Symbol: key = "gui.prompt.symbol"; break;
+    case Tool::MatchProp: key = modTarget_ == kInvalidId ? "gui.prompt.matchsrc" : "gui.prompt.matchdst"; break;
+    case Tool::LayPick: key = "gui.prompt.laypick"; break;
     }
     std::vector<std::string> args;
     if (tool_ == Tool::Offset) args = {num(offsetDist_).toStdString()};
     if (tool_ == Tool::Fillet) args = {num(filletR_).toStdString()};
+    if (tool_ == Tool::Chamfer) args = {num(chamferD_).toStdString()};
+    if (tool_ == Tool::Polygon) args = {std::to_string(polySides_)};
     emit promptChanged(QString::fromStdString(loc_.tr(key, args)));
 }
 
@@ -350,6 +377,102 @@ void Viewport::clickPoint(const Vec3& p) {
         if (id == modTarget_) break;
         emit runCommand("FILLET " + fmtPoint(modPick_) + " " + fmtPoint(on) + " " + num(filletR_));
         modTarget_ = kInvalidId;
+        break;
+    }
+    case Tool::Rect:
+        if (pts_.empty()) { pts_.push_back(p); break; }
+        if (std::abs(p.x - pts_[0].x) > 1e-9 && std::abs(p.y - pts_[0].y) > 1e-9) emit runCommand("RECTANG " + fmtPoint(pts_[0]) + " " + fmtPoint(p));
+        pts_.clear();
+        break;
+    case Tool::Polygon:
+        if (pts_.empty()) { pts_.push_back(p); break; }
+        if (pts_[0].distanceTo(p) > 1e-9) emit runCommand("POLYGON " + QString::number(polySides_) + " " + fmtPoint(pts_[0]) + " " + fmtPoint(p));
+        pts_.clear();
+        break;
+    case Tool::Ellipse:
+        pts_.push_back(p);
+        if (pts_.size() == 3) {
+            const Vec3 c = pts_[0], a = pts_[1];
+            const Vec3 u = Vec3{a.x - c.x, a.y - c.y, 0} / std::max(1e-12, (a - c).length2d());
+            const double b = std::abs((p.x - c.x) * -u.y + (p.y - c.y) * u.x);
+            if (b > 1e-9 && (a - c).length2d() > 1e-9) emit runCommand("ELLIPSE " + fmtPoint(c) + " " + fmtPoint(a) + " " + num(b));
+            pts_.clear();
+        }
+        break;
+    case Tool::Spline:
+    case Tool::Leader:
+        if (pts_.empty() || pts_.back().distanceTo(p) > 1e-9) pts_.push_back(p);
+        break;
+    case Tool::Stretch:
+        pts_.push_back(p);
+        if (pts_.size() == 4) {
+            emit runCommand("STRETCH " + fmtPoint(pts_[0]) + " " + fmtPoint(pts_[1]) + " " + fmtPoint(pts_[2]) + " " + fmtPoint(pts_[3]));
+            pts_.clear();
+            tool_ = Tool::Select;
+        }
+        break;
+    case Tool::Scale: {
+        if (pts_.empty()) { pts_.push_back(p); break; }
+        const double k = pts_[0].distanceTo(p);
+        if (k > 1e-9) emit runCommand("SCALE " + selArg() + " " + fmtPoint(pts_[0]) + " " + num(k));
+        pts_.clear();
+        tool_ = Tool::Select;
+        break;
+    }
+    case Tool::Mirror:
+        if (pts_.empty()) { pts_.push_back(p); break; }
+        if (pts_[0].distanceTo(p) > 1e-9)
+            emit runCommand("MIRROR " + selArg() + " " + fmtPoint(pts_[0]) + " " + fmtPoint(p) + " " + QString::fromStdString(loc_.keywordName("COPY")));
+        pts_.clear();
+        tool_ = Tool::Select;
+        break;
+    case Tool::Chamfer: {
+        Vec3 on;
+        const EntityId id = pickAt(p, &on);
+        const IEntity* e = doc_.find(id);
+        if (!e || e->type() != EntityType::Line) break;
+        if (modTarget_ == kInvalidId) { modTarget_ = id; modPick_ = on; break; }
+        if (id == modTarget_) break;
+        emit runCommand("CHAMFER " + fmtPoint(modPick_) + " " + fmtPoint(on) + " " + num(chamferD_));
+        modTarget_ = kInvalidId;
+        break;
+    }
+    case Tool::Break: {
+        if (modTarget_ == kInvalidId) {
+            Vec3 on;
+            const EntityId id = pickAt(p, &on);
+            if (id == kInvalidId) break;
+            modTarget_ = id;
+            modPick_ = on;
+            break;
+        }
+        emit runCommand("BREAK " + QString::number(modTarget_) + " " + fmtPoint(modPick_) + " " + fmtPoint(p));
+        modTarget_ = kInvalidId;
+        break;
+    }
+    case Tool::DimAngular:
+        pts_.push_back(p);
+        if (pts_.size() == 4) {
+            emit runCommand("DIMANGULAR " + fmtPoint(pts_[0]) + " " + fmtPoint(pts_[1]) + " " + fmtPoint(pts_[2]) + " " + fmtPoint(pts_[3]) + " " +
+                            num(dimTextHeight()));
+            pts_.clear();
+        }
+        break;
+    case Tool::Symbol:
+        emit runCommand("SYMBOL " + symKey_ + " " + fmtPoint(p) + " " + num(symScale_) + " " + num(symRot_));
+        break;
+    case Tool::MatchProp: {
+        const EntityId id = pickAt(p, nullptr, false);
+        if (id == kInvalidId) break;
+        if (modTarget_ == kInvalidId) { modTarget_ = id; break; }
+        if (id != modTarget_) emit runCommand("MATCHPROP " + QString::number(modTarget_) + " " + QString::number(id));
+        break;
+    }
+    case Tool::LayPick: {
+        const EntityId id = pickAt(p, nullptr, false);
+        if (id == kInvalidId) break;
+        emit runCommand(layCmd_ + " " + QString::number(id));
+        tool_ = Tool::Select;
         break;
     }
     case Tool::Grip:
@@ -958,6 +1081,67 @@ void Viewport::drawOverlay(QPainter& p) {
                 p.setPen(rp);
                 if (tool_ == Tool::Grip) p.drawLine(a, c);
                 break;
+            case Tool::Rect: {
+                const QPointF q = toScreen(pts_[0]);
+                p.drawRect(QRectF(q, c).normalized());
+                break;
+            }
+            case Tool::Stretch:
+                if (pts_.size() == 1) {  // kesuvchi oyna — yashil, uzuq
+                    QPen wp(QColor(70, 200, 110), 1.2, Qt::DashLine);
+                    wp.setCosmetic(true);
+                    p.setPen(wp);
+                    p.setBrush(QColor(70, 200, 110, 30));
+                    p.drawRect(QRectF(toScreen(pts_[0]), c).normalized());
+                } else {
+                    p.drawRect(QRectF(toScreen(pts_[0]), toScreen(pts_[1])).normalized());
+                    if (pts_.size() == 3) p.drawLine(toScreen(pts_[2]), c);
+                }
+                break;
+            case Tool::Polygon:
+                try {
+                    auto pg = makePolygon(pts_[0], polySides_, std::max(1e-9, (cur - pts_[0]).length2d()), true,
+                                          std::atan2(cur.y - pts_[0].y, cur.x - pts_[0].x));
+                    QPolygonF poly;
+                    for (const auto& v : pg->vertices()) poly << toScreen(v);
+                    p.drawPolygon(poly);
+                } catch (...) {}
+                break;
+            case Tool::Ellipse:
+                if (pts_.size() == 1) p.drawLine(a, c);
+                else {
+                    const Vec3 cc = pts_[0], ax = pts_[1];
+                    const double ra = (ax - cc).length2d();
+                    const Vec3 u = Vec3{ax.x - cc.x, ax.y - cc.y, 0} / std::max(1e-12, ra);
+                    const double rb = std::abs((cur.x - cc.x) * -u.y + (cur.y - cc.y) * u.x);
+                    if (ra > 1e-9 && rb > 1e-9) {
+                        auto el = makeEllipse(cc, ra, rb, std::atan2(u.y, u.x), 64);
+                        QPolygonF poly;
+                        for (const auto& v : el->vertices()) poly << toScreen(v);
+                        p.drawPolygon(poly);
+                    }
+                }
+                break;
+            case Tool::Spline:
+                try {
+                    auto pts = pts_;
+                    pts.push_back(cur);
+                    auto sp = makeSpline(pts, false, 10);
+                    QPolygonF poly;
+                    for (const auto& v : sp->vertices()) poly << toScreen(v);
+                    p.drawPolyline(poly);
+                } catch (...) {}
+                break;
+            case Tool::Leader:
+            case Tool::Scale:
+            case Tool::Mirror:
+            case Tool::DimAngular: {
+                QPainterPath path(toScreen(pts_[0]));
+                for (std::size_t i = 1; i < pts_.size(); ++i) path.lineTo(toScreen(pts_[i]));
+                path.lineTo(c);
+                p.drawPath(path);
+                break;
+            }
             case Tool::Pline: {
                 QPainterPath path(toScreen(pts_[0]));
                 for (std::size_t i = 1; i < pts_.size(); ++i) path.lineTo(toScreen(pts_[i]));

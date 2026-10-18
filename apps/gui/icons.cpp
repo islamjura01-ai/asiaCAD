@@ -62,6 +62,36 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "corridor") {  // yig'ma: o'q, polosalar, qiyaliklar
         P({{2, 19}, {6, 13}, {10, 12}, {14, 12}, {18, 13}, {22, 19}}); L(12, 4, 12, 12); L(10, 6, 14, 6); dot(6, 13); dot(18, 13);
     }
+    else if (n == "rect") { R(3, 6, 18, 12, 0.5); dot(3, 6); dot(21, 18); }
+    else if (n == "polygon") { P({{12, 3}, {20, 8}, {20, 16}, {12, 21}, {4, 16}, {4, 8}}, true); }
+    else if (n == "ellipse") { p.drawEllipse(QPointF(12, 12), 9, 5.5); dot(12, 12, 1.2); }
+    else if (n == "spline") { QPainterPath a; a.moveTo(3, 17); a.cubicTo(7, 3, 12, 22, 21, 6); p.drawPath(a); dot(3, 17); dot(21, 6); }
+    else if (n == "hatch") { R(3, 3, 18, 18, 0.5); L(3, 11, 11, 3); L(3, 19, 19, 3); L(9, 21, 21, 9); L(17, 21, 21, 17); }
+    else if (n == "symbols") { C(8, 8, 4.5); L(8, 12.5, 8, 15); R(13, 13, 8, 5, 1.5); dot(14.5, 19.5, 1); dot(19.5, 19.5, 1); P({{4, 21}, {8, 16}, {12, 21}}, true); }
+    else if (n == "stretch") { R(3, 7, 9, 10, 0.5); p.save(); QPen d = p.pen(); d.setStyle(Qt::DashLine); p.setPen(d); R(9, 4, 12, 16, 0.5); p.restore(); L(13, 12, 20, 12); P({{17, 9}, {20, 12}, {17, 15}}); }
+    else if (n == "scale") { R(3, 11, 10, 10, 0.5); R(3, 3, 18, 18, 0.5); L(13, 11, 19, 5); P({{15, 5}, {19, 5}, {19, 9}}); }
+    else if (n == "mirror") { p.save(); QPen d = p.pen(); d.setStyle(Qt::DashLine); p.setPen(d); L(12, 2, 12, 22); p.restore(); P({{10, 6}, {3, 18}, {10, 18}}, true); P({{14, 6}, {21, 18}, {14, 18}}, true); }
+    else if (n == "chamfer") { P({{4, 4}, {4, 13}, {11, 20}, {20, 20}}); dot(4, 13); dot(11, 20); }
+    else if (n == "array") { for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) R(3 + i * 7, 3 + j * 7, 4.5, 4.5, 0.8); }
+    else if (n == "explode") { R(8, 8, 8, 8, 0.5); L(4, 4, 7, 7); L(20, 4, 17, 7); L(4, 20, 7, 17); L(20, 20, 17, 17); }
+    else if (n == "join") { L(3, 12, 10, 12); L(14, 12, 21, 12); P({{8, 8}, {12, 12}, {8, 16}}); P({{16, 8}, {12, 12}, {16, 16}}); }
+    else if (n == "break") { L(3, 12, 9, 12); L(15, 12, 21, 12); L(10, 8, 8, 16); L(16, 8, 14, 16); }
+    else if (n == "matchprop") { R(3, 14, 9, 7, 1); L(12, 17, 17, 12); P({{15, 4}, {21, 10}, {17, 14}, {11, 8}}, true); }
+    else if (n == "leader") { P({{4, 18}, {12, 8}, {21, 8}}); p.save(); p.setBrush(p.pen().color()); P({{4, 18}, {5, 13}, {8, 16}}, true); p.restore(); L(13, 5, 20, 5); }
+    else if (n == "dimangular") { L(4, 20, 21, 20); L(4, 20, 16, 5); QPainterPath a; a.moveTo(14, 20); a.arcTo(QRectF(-6, 10, 20, 20), 0, 52); p.drawPath(a); }
+    else if (n.startsWith("lay")) {  // qatlam belgisi + holat
+        P({{12, 4}, {21, 9}, {12, 14}, {3, 9}}, true);
+        P({{3, 13}, {12, 18}, {21, 13}});
+        if (n == "laymcur") { dot(18, 19, 2.6); }
+        else if (n == "laymatch") { L(15, 21, 21, 15); P({{17, 15}, {21, 15}, {21, 19}}); }
+        else if (n == "layoff") { L(15, 15, 22, 22); L(22, 15, 15, 22); }
+        else if (n == "layfrz") { L(18.5, 14, 18.5, 23); L(14.5, 16.5, 22.5, 20.5); L(14.5, 20.5, 22.5, 16.5); }
+        else if (n == "laylck") { R(15, 18, 7, 5, 1); QPainterPath a; a.moveTo(16.5, 18); a.arcTo(QRectF(16.5, 14, 4, 8), 180, -180); p.drawPath(a); }
+        else if (n == "layulk") { R(15, 18, 7, 5, 1); QPainterPath a; a.moveTo(16.5, 18); a.arcTo(QRectF(16.5, 14, 4, 8), 180, -120); p.drawPath(a); }
+        else if (n == "layiso") { C(18.5, 18.5, 3.5); dot(18.5, 18.5, 1.2); }
+        else if (n == "layuniso") { P({{22, 18}, {18, 22}, {15, 18}}); }
+        else if (n == "layon") { C(18.5, 18.5, 3.5); L(18.5, 13, 18.5, 14.5); L(13, 18.5, 14.5, 18.5); }
+    }
     else if (n == "drive") {  // rul
         C(12, 12, 9); C(12, 12, 2.5); L(3.5, 10.5, 9.6, 11.2); L(14.4, 11.2, 20.5, 10.5); L(12, 14.5, 12, 21);
     }

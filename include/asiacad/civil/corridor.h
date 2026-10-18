@@ -24,7 +24,8 @@ enum class SubKind {
     Lane, Shoulder, Curb, Sidewalk, Median, GenericLink,          // yo'l
     Daylight, DaylightDitch, DaylightBench,                         // qiyaliklar (yergacha)
     Ditch, ChannelHalf, FlumeHalf, PipeTrenchHalf,                  // kanal, lotok, transheya (markaziylar — o'qdan)
-    RetainingWall
+    RetainingWall,
+    TunnelHalf                                                       // tunnel / metro: aylana (TBM), taqasimon (NATM), to'rtburchak (ochiq usul)
 };
 const char* subKey(SubKind k);                   // "LANE", ... (i18n: cor.sub.<key>)
 bool subFromKey(const std::string& s, SubKind& out);

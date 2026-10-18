@@ -1,5 +1,6 @@
 #include <asiacad/civil/drive.h>
 
+#include <asiacad/civil/symbols.h>
 #include <asiacad/core/entities.h>
 
 #include <algorithm>
@@ -76,6 +77,53 @@ std::vector<Vec3> pointsOf(const IEntity& e) {
         for (int i = 0; i <= 24; ++i) v.push_back(c->pointAtDistance(c->length() * i / 24));
         return v;
     }
+    return {};
+}
+
+// ACI -> RGB (AutoCAD jadvaliga yaqin; GUI dagi aciColor bilan bir xil qoida)
+std::uint32_t aciRgb(int i) {
+    static const std::uint32_t basic[] = {0x000000, 0xff0000, 0xffff00, 0x00ff00, 0x00ffff, 0x0000ff, 0xff00ff, 0xf0f0f0, 0x808080, 0xc0c0c0};
+    if (i <= 0 || i > 255 || i == 7) return 0xf0f0f0;
+    if (i < 10) return basic[i];
+    if (i >= 250) {
+        const auto g = static_cast<std::uint32_t>(51 + (i - 250) * 40);
+        return (g << 16) | (g << 8) | g;
+    }
+    const int hueIdx = (i - 10) / 10, var = i % 10;
+    static const double val[] = {1.0, 1.0, 0.8, 0.8, 0.6, 0.6, 0.5, 0.5, 0.3, 0.3};
+    const double sat = (var % 2 == 0) ? 1.0 : 0.5, v = val[var], h = hueIdx * 15.0 / 60.0;
+    const double c = v * sat, x = c * (1 - std::abs(std::fmod(h, 2.0) - 1)), m = v - c;
+    double r = 0, g = 0, b = 0;
+    if (h < 1) { r = c; g = x; } else if (h < 2) { r = x; g = c; } else if (h < 3) { g = c; b = x; }
+    else if (h < 4) { g = x; b = c; } else if (h < 5) { r = x; b = c; } else { r = c; b = x; }
+    auto q = [&](double t) { return static_cast<std::uint32_t>(std::clamp((t + m) * 255.0, 0.0, 255.0)); };
+    return (q(r) << 16) | (q(g) << 8) | q(b);
+}
+
+// Belgining 3D o'rinbosari (mahalliy koordinatalarda prizmalar) — Haydash sahnasi uchun
+struct Proxy { std::vector<Vec3> o; double z0, z1; std::uint32_t rgb; };
+std::vector<Proxy> symbolProxy(const std::string& key) {
+    auto box = [](double x0, double y0, double x1, double y1) { return std::vector<Vec3>{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}; };
+    auto oct = [](double r) {
+        std::vector<Vec3> v;
+        for (int i = 0; i < 8; ++i) v.push_back({r * std::cos(kPi / 4 * i + kPi / 8), r * std::sin(kPi / 4 * i + kPi / 8)});
+        return v;
+    };
+    if (key == "TREE") return {{oct(0.2), 0, 2.4, 0x6b4a2b}, {oct(2.2), 2.2, 5.0, 0x4f8a3a}, {oct(1.5), 5.0, 6.4, 0x5c9a44}};
+    if (key == "CONIFER") return {{oct(0.15), 0, 1.2, 0x6b4a2b}, {oct(1.7), 1.0, 3.0, 0x2f6b3a}, {oct(1.2), 3.0, 4.8, 0x337540}, {oct(0.6), 4.8, 6.6, 0x3a7f47}};
+    if (key == "SHRUB") return {{oct(1.0), 0, 1.1, 0x5f9446}};
+    if (key == "CAR") return {{box(-2.25, -0.9, 2.25, 0.9), 0.25, 0.95, 0xc23b32}, {box(-1.2, -0.8, 0.9, 0.8), 0.95, 1.45, 0x9fb7cc}};
+    if (key == "TRUCK") return {{box(-4.0, -1.25, 2.2, 1.25), 0.6, 3.4, 0xb8b8b8}, {box(2.4, -1.2, 4.0, 1.2), 0.6, 2.9, 0x2d5fb0}};
+    if (key == "BUS") return {{box(-6.0, -1.25, 6.0, 1.25), 0.35, 3.1, 0xe2b93b}, {box(-5.8, -1.27, 5.0, 1.27), 1.4, 2.5, 0x9fb7cc}};
+    if (key == "PERSON" || key == "PERSON2") return {{box(-0.25, -0.15, 0.25, 0.15), 0, 1.45, key == "PERSON" ? 0x2f5fa8u : 0xa83f8au}, {oct(0.12), 1.45, 1.75, 0xd9a77a}};
+    if (key == "LAMP") return {{oct(0.12), 0, 8.0, 0x6d6f73}, {box(0, -0.05, 1.6, 0.05), 7.85, 8.0, 0x6d6f73}, {box(1.4, -0.2, 2.1, 0.2), 7.7, 7.9, 0xf4e27a}};
+    if (key == "TRAFFIC") return {{oct(0.1), 0, 2.4, 0x6d6f73}, {box(-0.18, -0.15, 0.18, 0.15), 2.4, 3.4, 0x222222}};
+    if (key == "BUSSTOP") return {{box(-3, -0.9, 3, 0.9), 2.4, 2.6, 0x8a8d92}, {box(-2.9, 0.7, -2.8, 0.85), 0, 2.4, 0x6d6f73},
+                                  {box(2.8, 0.7, 2.9, 0.85), 0, 2.4, 0x6d6f73}, {box(-2.6, 0.5, 2.6, 0.75), 0.4, 0.5, 0x8a5a33}};
+    if (key == "BENCH") return {{box(-0.9, -0.25, 0.9, 0.25), 0.4, 0.48, 0x8a5a33}, {box(-0.9, 0.25, 0.9, 0.33), 0.48, 0.9, 0x8a5a33}};
+    if (key == "BIN") return {{oct(0.3), 0, 0.9, 0x55606a}};
+    if (key == "HYDRANT") return {{oct(0.15), 0, 0.8, 0xc23b32}};
+    if (key == "FOUNTAIN") return {{oct(3.0), 0, 0.5, 0x9a9a9a}, {oct(0.5), 0.5, 1.6, 0x9a9a9a}};
     return {};
 }
 
@@ -238,6 +286,18 @@ DriveScene sceneFromCorridor(const Corridor& c) {
         const auto a = resample(A, n), b = resample(B, n);
         for (std::size_t k = 0; k + 1 < n; ++k) {
             const double om = (a[k].first + a[k + 1].first) / 2, zm = (a[k].second + a[k + 1].second) / 2;
+            if (A.pts.size() == n) {  // kod bo'yicha (tonnel ichki yuzasi, yo'l)
+                const std::string& c0 = A.pts[k].code;
+                const std::string& c1 = A.pts[k + 1].code;
+                std::uint32_t rgb = 0;
+                if (c0.rfind("TUN_", 0) == 0 || c1.rfind("TUN_", 0) == 0) rgb = 0xbdb8ae;
+                else if (c0.rfind("TRACK", 0) == 0 && c1.rfind("TRACK", 0) == 0) rgb = 0x6a655c;
+                if (rgb) {
+                    sc.addQuad(W(A, a[k].first, a[k].second), W(A, a[k + 1].first, a[k + 1].second), W(B, b[k + 1].first, b[k + 1].second),
+                               W(B, b[k].first, b[k].second), (i / 2) % 2 ? rgb : (rgb & 0xfefefe) - 0x080808);  // halqalar (tyubing) ko'rinsin
+                    continue;
+                }
+            }
             sc.addQuad(W(A, a[k].first, a[k].second), W(A, a[k + 1].first, a[k + 1].second), W(B, b[k + 1].first, b[k + 1].second),
                        W(B, b[k].first, b[k].second), color(A, om, zm));
         }
@@ -292,14 +352,18 @@ bool corridorSurfaceZ(const Corridor& c, double x, double y, double& z) {
     auto zAtSec = [&](const Section& s, double& out) {
         const double o = (x - s.x) * s.dy - (y - s.y) * s.dx;  // W(): x + dy*o, y - dx*o
         const auto& p = s.pts;
-        if (p.size() < 2 || o < p.front().o - 1e-6 || o > p.back().o + 1e-6) return false;
-        for (std::size_t k = 0; k + 1 < p.size(); ++k)
-            if (o >= p[k].o - 1e-9 && o <= p[k + 1].o + 1e-9) {
-                const double t = (o - p[k].o) / std::max(1e-9, p[k + 1].o - p[k].o);
-                out = p[k].z + t * (p[k + 1].z - p[k].z);
-                return true;
-            }
-        return false;
+        if (p.size() < 2) return false;
+        // ustki chiziq offset bo'yicha monoton bo'lmasligi mumkin (tonnel ichki yuzasi) — eng past sirt (pol/yo'l)
+        bool found = false;
+        for (std::size_t k = 0; k + 1 < p.size(); ++k) {
+            const double lo = std::min(p[k].o, p[k + 1].o), hi = std::max(p[k].o, p[k + 1].o);
+            if (o < lo - 1e-9 || o > hi + 1e-9) continue;
+            const double t = hi - lo > 1e-9 ? (o - p[k].o) / (p[k + 1].o - p[k].o) : 0;
+            const double z = p[k].z + t * (p[k + 1].z - p[k].z);
+            if (!found || z < out) out = z;
+            found = true;
+        }
+        return found;
     };
     const auto& S = c.sec[best];
     const double along = (x - S.x) * S.dx + (y - S.y) * S.dy;
@@ -368,7 +432,41 @@ DriveScene drapeLinework(const Document& doc, const std::vector<Vec3>& path, dou
     };
     std::function<void(const IEntity&)> visit = [&](const IEntity& e) {
         if (auto* ins = dynamic_cast<const InsertEntity*>(&e)) {
+            const Vec3 ip = ins->insertionPoint();
+            if (!near(ip)) return;
+            const std::string key = symbolKeyOf(ins->block()->name);
+            const auto proxy = key.empty() ? std::vector<Proxy>{} : symbolProxy(key);
+            if (!proxy.empty()) {  // 3D o'rinbosar: blok matritsasi bilan joylanadi, yer belgisiga ko'tariladi
+                const double z0 = zf(ip.x, ip.y);
+                double sx = 1, sy = 1, rot = 0;
+                ins->decompose(sx, sy, rot);
+                const double k = std::abs(sx);
+                for (const auto& pr : proxy) {
+                    std::vector<Vec3> o;
+                    for (const auto& q : pr.o) {
+                        const Vec3 w = ins->matrix().apply(q);
+                        o.push_back({w.x, w.y, 0});
+                    }
+                    sc.addPrism(o, z0 + pr.z0 * k, z0 + pr.z1 * k, pr.rgb);
+                }
+                // yassi qismlar (soya kabi) chizilmaydi — 3D yetarli
+                return;
+            }
             for (const auto& c : ins->explode()) visit(*c);
+            return;
+        }
+        if (auto* h = dynamic_cast<const HatchEntity*>(&e); h && h->isSolid()) {  // to'ldirilgan yuzalar — rangli
+            for (const auto& lp : h->loops()) {
+                auto v = lp.hasBulges() ? lp.tessellated(deg2rad(10)).vertices() : lp.vertices();
+                if (v.size() < 3 || !near(v[0])) continue;
+                if (std::abs(v[0].z) > 1e-9) continue;
+                const std::uint32_t rgb = aciRgb(e.color() == kColorByLayer || e.color() == kColorByBlock ? 8 : e.color());
+                for (const auto& t : triangulate(v)) {
+                    std::array<Vec3, 3> tri;
+                    for (int kk = 0; kk < 3; ++kk) tri[kk] = {v[t[kk]].x, v[t[kk]].y, zf(v[t[kk]].x, v[t[kk]].y) + 0.02};
+                    sc.tris.push_back({tri, rgb, false});
+                }
+            }
             return;
         }
         auto pts = pointsOf(e);

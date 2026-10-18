@@ -62,13 +62,14 @@ const char* subKey(SubKind k) {
         case SubKind::FlumeHalf: return "FLUME";
         case SubKind::PipeTrenchHalf: return "TRENCH";
         case SubKind::RetainingWall: return "WALL";
+        case SubKind::TunnelHalf: return "TUNNEL";
     }
     return "LINK";
 }
 std::vector<SubKind> subKinds() {
     return {SubKind::GenericLink, SubKind::Lane,          SubKind::Shoulder,      SubKind::Median,   SubKind::Curb,
             SubKind::Sidewalk,    SubKind::Daylight,      SubKind::DaylightDitch, SubKind::DaylightBench, SubKind::Ditch,
-            SubKind::ChannelHalf, SubKind::FlumeHalf,     SubKind::PipeTrenchHalf, SubKind::RetainingWall};
+            SubKind::ChannelHalf, SubKind::FlumeHalf,     SubKind::PipeTrenchHalf, SubKind::RetainingWall, SubKind::TunnelHalf};
 }
 bool subFromKey(const std::string& s, SubKind& out) {
     for (SubKind k : subKinds())
@@ -76,11 +77,12 @@ bool subFromKey(const std::string& s, SubKind& out) {
     return false;
 }
 bool subIsCenter(SubKind k) {
-    return k == SubKind::Median || k == SubKind::ChannelHalf || k == SubKind::FlumeHalf || k == SubKind::PipeTrenchHalf;
+    return k == SubKind::Median || k == SubKind::ChannelHalf || k == SubKind::FlumeHalf || k == SubKind::PipeTrenchHalf ||
+           k == SubKind::TunnelHalf;
 }
 bool subIsDaylight(SubKind k) {
     return k == SubKind::Daylight || k == SubKind::DaylightDitch || k == SubKind::DaylightBench || k == SubKind::PipeTrenchHalf ||
-           k == SubKind::RetainingWall;
+           k == SubKind::RetainingWall || k == SubKind::TunnelHalf;
 }
 const char* subCategory(SubKind k) {
     switch (k) {
@@ -98,6 +100,7 @@ const char* subCategory(SubKind k) {
         case SubKind::FlumeHalf: return "CHANNELS";
         case SubKind::PipeTrenchHalf: return "TRENCH";
         case SubKind::RetainingWall: return "WALLS";
+        case SubKind::TunnelHalf: return "TUNNEL";
     }
     return "BASIC";
 }
@@ -131,6 +134,10 @@ Subassembly defaultSub(SubKind k) {
         case SubKind::FlumeHalf: s.p = {{"B", 1.24}, {"h", 0.6}, {"t", 0.06}, {"pad", 0.10}, {"padw", 0.20}, {"c", 0.5}}; break;
         case SubKind::PipeTrenchHalf: s.p = {{"D", 0.53}, {"e", 0.30}, {"tb", 0.15}, {"m", 0.5}}; break;
         case SubKind::RetainingWall: s.p = {{"h", 0.8}, {"tw", 0.3}, {"wf", 1.4}, {"tf", 0.4}, {"de", 0.8}}; break;
+        // sh: 0 — aylana (TBM), 1 — taqasimon (NATM), 2 — to'rtburchak (ochiq usul). Loyiha belgisi — yo'l (relsli asos) usti.
+        case SubKind::TunnelHalf:
+            s.p = {{"sh", 0}, {"Ri", 2.75}, {"tl", 0.30}, {"hc", 1.85}, {"hw", 1.5}, {"Bi", 9.0}, {"Hi", 5.5}, {"tb", 0.6}, {"cov", 6.0}};
+            break;
     }
     return s;
 }
@@ -198,7 +205,19 @@ std::vector<Assembly> builtinAssemblies() {
         v.push_back(a);
     };
     trench("Quvur transheyasi Ø500 (1:0.5)", sub(SubKind::PipeTrenchHalf, {}));
+    auto tunnel = [&](const char* name, Subassembly s) {
+        Assembly a;
+        a.name = name;
+        a.group = "TUNNEL";
+        a.right = {std::move(s)};
+        v.push_back(a);
+    };
     trench("Quvur transheyasi Ø1000, vertikal devor (tirgakli)", sub(SubKind::PipeTrenchHalf, {{"D", 1.0}, {"e", 0.4}, {"tb", 0.2}, {"m", 0}}));
+    tunnel("Metro tonneli TBM Ø5.5 (bir yo'l, tyubing 0.30)", sub(SubKind::TunnelHalf, {}));
+    tunnel("Metro tonneli TBM Ø10.0 (ikki yo'l)", sub(SubKind::TunnelHalf, {{"Ri", 5.0}, {"tl", 0.45}, {"hc", 2.6}, {"cov", 10.0}}));
+    tunnel("Taqasimon tonnel NATM (avtomobil, 2 polosa)", sub(SubKind::TunnelHalf, {{"sh", 1}, {"Ri", 5.4}, {"tl", 0.5}, {"hw", 2.0}, {"tb", 0.8}, {"cov", 8.0}}));
+    tunnel("Ochiq usul: to'rtburchak tonnel 9.0×5.5 (metro, ikki yo'l)", sub(SubKind::TunnelHalf, {{"sh", 2}, {"tl", 0.8}, {"cov", 2.0}}));
+    tunnel("Kollektor/galereya 3.0×2.5", sub(SubKind::TunnelHalf, {{"sh", 2}, {"Bi", 3.0}, {"Hi", 2.5}, {"tl", 0.3}, {"tb", 0.2}, {"cov", 1.5}}));
     return v;
 }
 
@@ -445,6 +464,59 @@ void buildSide(const std::vector<Subassembly>& subs, double design, const std::f
                 shape("BACKFILL", bf);
                 shape("_MINUS_BACKFILL", pipe);  // quvur hajmi qayta ko'mishdan ayriladi
                 c = {ue, ze, ue, ze};
+                return;
+            }
+            case SubKind::TunnelHalf: {
+                // ichki kontur (yarim, o'qdan): pastdan yuqoriga; tashqi — qoplama qalinligi bilan; belgi — yo'l usti
+                const int sh = static_cast<int>(std::lround(s.get("sh")));
+                const double Ri = s.get("Ri"), tl = s.get("tl"), hc = s.get("hc"), hw = s.get("hw"), Bi = s.get("Bi"), Hi = s.get("Hi"), tb = s.get("tb");
+                const double d = c.z;
+                auto outline = [&](double off) {
+                    std::vector<std::pair<double, double>> o;
+                    if (sh == 0) {
+                        const double zc = d + hc, r = Ri + off;
+                        for (int i = 0; i <= 24; ++i) {
+                            const double a = -kPI / 2 + kPI * i / 24;
+                            o.push_back({r * std::cos(a), zc + r * std::sin(a)});
+                        }
+                    } else if (sh == 1) {
+                        const double zb = d - tb - off, zs = d - tb + hw, r = Ri + off;
+                        o = {{0, zb}, {r, zb}, {r, zs}};
+                        for (int i = 1; i <= 12; ++i) {
+                            const double a = kPI / 2 * i / 12;
+                            o.push_back({r * std::cos(a), zs + r * std::sin(a)});
+                        }
+                    } else {
+                        const double zb = d - tb - off, zt = d - tb + Hi + off, hb = Bi / 2 + off;
+                        o = {{0, zb}, {hb, zb}, {hb, zt}, {0, zt}};
+                    }
+                    return o;
+                };
+                const auto in = outline(0), outr = outline(tl);
+                // qoplama (tashqi + teskari ichki), qazish (tashqi kontur va o'q)
+                std::vector<std::pair<double, double>> lining = outr;
+                for (auto it = in.rbegin(); it != in.rend(); ++it) lining.push_back(*it);
+                shape("EXCAVATION", outr);  // avval — kesimda qoplama ustida chizilsin
+                shape("LINING", lining);
+                // yo'l asosi (ichki kontur pastki qismi, loyiha belgisigacha)
+                std::vector<std::pair<double, double>> bed;
+                double ud = 0;
+                for (std::size_t i = 0; i < in.size(); ++i) {
+                    if (in[i].second <= d) { bed.push_back(in[i]); continue; }
+                    const auto& a = in[i - 1];
+                    const auto& b = in[i];
+                    ud = a.first + (b.first - a.first) * (d - a.second) / std::max(1e-12, b.second - a.second);
+                    bed.push_back({ud, d});
+                    break;
+                }
+                bed.push_back({0, d});
+                if (bed.size() >= 3) shape("INVERT", bed);
+                // ustki chiziq — tonnel ichki yuzasi: yo'l, devor, gumbaz (Haydash ichkaridan ko'radi)
+                top(0, d, "TRACK_C");
+                top(ud, d, "TRACK_E");
+                for (std::size_t i = 0; i < in.size(); ++i)
+                    if (in[i].second > d + 1e-9) top(in[i].first, in[i].second, i + 1 == in.size() ? "TUN_CROWN" : "TUN_WALL");
+                out.daylight = true;
                 return;
             }
             case SubKind::RetainingWall: {
@@ -707,10 +779,41 @@ void recomputeCorridor(Corridor& c, const CorridorParams& p) {
             issue(true, "cor.chk.daylight", {pk(s.s), fc(p.maxDaylight, 0)}, s.s);
         }
     }
+    // tonnel: ustki qatlam (qoplama ustidan yergacha) va bo'ylama nishablik (metro: 3‰…40‰ — SP 120 bo'yicha, tasdiqlanmagan)
+    {
+        bool coverWarned = false, gradeWarned = false, flatWarned = false;
+        for (std::size_t i = 0; i < c.sec.size(); ++i) {
+            const Assembly& a = assemblyAt(p, c.sec[i].s);
+            const Subassembly* tun = nullptr;
+            for (const auto& sb : a.right)
+                if (sb.kind == SubKind::TunnelHalf) tun = &sb;
+            if (!tun) continue;
+            double topZ = -1e18;
+            for (const auto& sh : c.sec[i].shapes)
+                if (sh.material == "EXCAVATION")
+                    for (const auto& q : sh.poly) topZ = std::max(topZ, q.second);
+            const double cover = c.sec[i].ground - topZ;
+            if (!coverWarned && c.groundPoints > 0 && cover < tun->get("cov")) {
+                coverWarned = true;
+                issue(cover < 0, cover < 0 ? "cor.chk.tunnel_daylight" : "cor.chk.tunnel_cover", {pk(c.sec[i].s), fc(cover), fc(tun->get("cov"))}, c.sec[i].s);
+            }
+            if (i + 1 < c.sec.size()) {
+                const double g = std::abs(c.sec[i + 1].design - c.sec[i].design) / std::max(1e-9, c.sec[i + 1].s - c.sec[i].s);
+                if (!gradeWarned && g > 0.040 + 1e-9) {
+                    gradeWarned = true;
+                    issue(false, "cor.chk.tunnel_grade", {pk(c.sec[i].s), fc(g * 1000, 1)}, c.sec[i].s);
+                }
+                if (!flatWarned && g < 0.003 - 1e-9) {
+                    flatWarned = true;
+                    issue(false, "cor.chk.tunnel_flat", {pk(c.sec[i].s), fc(g * 1000, 1)}, c.sec[i].s);
+                }
+            }
+        }
+    }
     // suv yo'li: teskari nishablik
     for (std::size_t i = 0; i + 1 < c.sec.size(); ++i) {
         const Assembly& a = assemblyAt(p, c.sec[i].s);
-        if (a.group == "ROAD") continue;
+        if (a.group == "ROAD" || a.group == "TUNNEL") continue;
         if (c.sec[i].design - c.sec[i + 1].design <= 0) {
             issue(true, "cor.chk.reverse", {pk(c.sec[i].s), fc((c.sec[i].design - c.sec[i + 1].design) / std::max(1e-9, c.sec[i + 1].s - c.sec[i].s) * 1000)},
                   c.sec[i].s);
@@ -797,6 +900,7 @@ Corridor buildCorridor(const Document& doc, const CorridorParams& p) {
             for (const auto& sb : a.right) {
                 if (sb.kind == SubKind::ChannelHalf || sb.kind == SubKind::FlumeHalf) depth = -sb.get("h", 1.0);
                 if (sb.kind == SubKind::PipeTrenchHalf) depth = -(sb.get("D", 0.5) + 1.2);
+                if (sb.kind == SubKind::TunnelHalf) depth = -(sb.get("cov", 6) + 2 * (sb.get("sh") == 2 ? sb.get("Hi") : sb.get("Ri")) + 2 * sb.get("tl"));
             }
         for (auto& s : c.sec) {
             double sum = 0;

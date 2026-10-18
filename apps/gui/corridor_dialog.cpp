@@ -37,7 +37,7 @@ namespace {
 QString f2(double v) { return QString::number(v, 'f', 2); }
 QString f1(double v) { return QString::number(v, 'f', 1); }
 const QColor kGround(160, 115, 70), kCut(200, 120, 70), kFill(120, 170, 90);
-const char* kCats[] = {"BASIC", "LANES", "SHOULDERS", "MEDIANS", "CURBS", "DAYLIGHT", "CHANNELS", "TRENCH", "WALLS"};
+const char* kCats[] = {"BASIC", "LANES", "SHOULDERS", "MEDIANS", "CURBS", "DAYLIGHT", "CHANNELS", "TRENCH", "WALLS", "TUNNEL"};
 
 // profil: yer va loyiha
 class CorProfileView : public QWidget {
@@ -143,6 +143,9 @@ QColor materialColor(const std::string& m) {
     if (m == "PIPE") return QColor(70, 130, 210);
     if (m == "BACKFILL") return QColor(150, 110, 70, 110);
     if (m == "WATER") return QColor(60, 150, 230, 170);
+    if (m == "LINING") return QColor(160, 165, 172);
+    if (m == "EXCAVATION") return QColor(150, 110, 70, 90);
+    if (m == "INVERT") return QColor(110, 105, 96);
     return QColor(140, 140, 160);
 }
 

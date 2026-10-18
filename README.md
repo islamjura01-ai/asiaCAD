@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.16: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.17: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -311,6 +311,27 @@ import qilingan va AsiaCAD tayyorlagan chizma — bitta yo'ldan o'tadi va bir xi
   900 kvartal / 1800 bino < 2 s.
 * Burilish yoyi sig'masa radius kamaytiriladi va ogohlantiriladi; o'zi oqar quvurda teskari nishablik va sayoz quduq — ogohlantirish.
 * Binolar orasidagi oraliq balandlikdan kichik bo'lsa — ogohlantirish (insolyatsiya/yong'in me'yorlari bilan tekshirilmagan).
+
+## Asosiy lenta — AutoCAD "Home" kabi (v0.17) — `core/draft`, `civil/symbols`
+
+| Guruh | Asboblar (GUI + buyruq) |
+|---|---|
+| Chizish | Chiziq, Poliliniya, Aylana, Yoy, **To'rtburchak** (R=/C= burchak), **Ko'pburchak** (ichki/tashqi), **Ellips**, **Splayn**, Nuqta, **Shtrix**, Matn, **Belgilar** |
+| Tahrir | Ko'chirish, Nusxa, **Cho'zish** (kesuvchi oyna), Burish, **Ko'zgu**, **Masshtab**, Qirqish, Uzaytirish, Tutashtirish, **Faska**, **Massiv** (to'g'ri burchakli / qutbiy / yo'l bo'ylab), Parallel, O'chirish, **Portlatish**, **Birlashtirish**, **Uzish**, `LENGTHEN`, **Xossa nusxa** |
+| Qatlamlar | Joriy qatlam ro'yxati, Qatlam xossalari (ko'rinish, muzlatish, qulf, rang), **Joriy qilish**, **Qatlamga moslash**, **O'chirish/Muzlatish/Qulflash/Qulfni ochish** (obyektni bosib), **Ajratish / bekor qilish**, **Hammasi yoqilsin** |
+| O'lcham | chiziqli, parallel, **burchak** (° yoki ° ' "), radius, diametr, **vynoska** (strelka + matn) |
+
+**Genplan belgilari** (rangli, haqiqiy o'lchamda): daraxt, igna bargli, buta, gulzor, maysazor, yengil avtomobil, yuk mashinasi,
+avtobus, velosiped, odam, ko'cha chirog'i (yoritish doirasi), svetofor, bekat, skameyka, axlat qutisi, gidrant, quduq qopqog'i,
+favvora, avtoturargoh, piyoda o'tish joyi, yo'l strelkasi, shimol strelkasi. Palitradan bosib qo'yiladi; `SYMBOL TREE 0,0;12,0;24,0`;
+ko'cha bo'ylab — `ARRAY sel PATH yo'l_id S=12`. **Haydash** sahnasida 3D ko'rinadi (daraxt, mashina, chiroq, bekat, ...).
+
+## Tonnel, metro, galereya — koridor yig'malari
+
+`Tonnel` qismi (palitrada "Tonnel" yorlig'i): aylana (TBM, tyubing), taqasimon (NATM), to'rtburchak (ochiq usul, kollektor).
+Loyiha belgisi — yo'l usti; hajmlar: **qazish**, **qoplama**, **yo'l asosi** (o'rtacha va aniq). Tekshiruv: ustki qatlam
+(yer — syomkadan), metro nishabligi 3‰…40‰ (SP 120 — tasdiqlanmagan). Shablonlar: metro TBM Ø5.5 va Ø10, avtomobil NATM,
+metro ochiq usul 9.0×5.5, kollektor 3.0×2.5. **Haydash** tonnel ichidan yuradi (ichki yuza, ko'rinish masofasi).
 
 ## Haydash (Drive) tahlili — `civil/drive`, `DRIVE`
 

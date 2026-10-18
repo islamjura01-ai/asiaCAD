@@ -24,7 +24,9 @@ namespace asiacad::gui {
 
 enum class Tool { Select, Line, Pline, Circle, Arc, Point, Text, Move, Copy, Rotate,
                   DimLinear, DimAligned, DimRadius, DimDiameter, Grip,
-                  Offset, Trim, Extend, Fillet };
+                  Offset, Trim, Extend, Fillet,
+                  Rect, Polygon, Ellipse, Spline, Stretch, Scale, Mirror, Chamfer, Break, Leader, DimAngular,
+                  Symbol, MatchProp, LayPick };
 
 class Viewport : public QOpenGLWidget {
     Q_OBJECT
@@ -49,7 +51,12 @@ public:
     void setOffsetDistance(double d) { if (d > 0) offsetDist_ = d; emitPrompt(); update(); }
     double offsetDistance() const { return offsetDist_; }
     void setFilletRadius(double r) { if (r >= 0) filletR_ = r; emitPrompt(); update(); }
-    double filletRadius() const { return filletR_; }  // joriy masshtabda o'qiladigan "chiroyli" balandlik
+    double filletRadius() const { return filletR_; }
+    void setChamferDistance(double d) { if (d >= 0) chamferD_ = d; emitPrompt(); update(); }
+    void setPolygonSides(int n) { if (n >= 3) polySides_ = n; emitPrompt(); }
+    int polygonSides() const { return polySides_; }
+    void setSymbol(const QString& key, double scale, double rotDeg) { symKey_ = key; symScale_ = scale; symRot_ = rotDeg; }
+    void setLayerPickCommand(const QString& canon) { layCmd_ = canon; }  // LAYMCUR, LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO, LAYMATCH  // joriy masshtabda o'qiladigan "chiroyli" balandlik
     // Tutqichlar: tanlangan obyektning tutqichi ustida bo'lsa (id, indeks)
     std::optional<std::pair<EntityId, int>> gripAt(const QPointF& screen) const;
     void beginGrip(EntityId id, int index);  // sinov va skriptlar uchun
@@ -83,6 +90,7 @@ signals:
     void selectionChanged();
     void orthoPolarChanged(bool ortho, bool polar);
     void textRequested(const Vec3& at);  // matn asbobi: oyna dialog ochadi
+    void leaderRequested(const QString& points);  // vynoska: nuqtalar tayyor — matn so'raladi
 
 protected:
     void paintGL() override;
@@ -145,7 +153,14 @@ private:
     double offsetDist_ = 1.0, filletR_ = 0.0;
     EntityId modTarget_ = kInvalidId;  // OFFSET obyekti / FILLET birinchi chizig'i
     Vec3 modPick_;                     // FILLET birinchi tanlov nuqtasi (chiziq ustida)
-    bool isModifyTool() const { return tool_ == Tool::Offset || tool_ == Tool::Trim || tool_ == Tool::Extend || tool_ == Tool::Fillet; }
+    bool isModifyTool() const {
+        return tool_ == Tool::Offset || tool_ == Tool::Trim || tool_ == Tool::Extend || tool_ == Tool::Fillet || tool_ == Tool::Chamfer ||
+               (tool_ == Tool::Break && modTarget_ == kInvalidId) || tool_ == Tool::MatchProp || tool_ == Tool::LayPick;
+    }
+    double chamferD_ = 1.0;
+    int polySides_ = 6;
+    QString symKey_ = "TREE", layCmd_ = "LAYMCUR";
+    double symScale_ = 1.0, symRot_ = 0.0;
     // Ekran apertura bilan obyekt tanlash; nuqta obyekt ustiga tushiriladi (buyruq satri aperturasi kichik bo'lsa ham)
     EntityId pickAt(const Vec3& p, Vec3* onCurve, bool editableCurvesOnly = true) const;
     std::vector<geom::Prim> edgesAround(EntityId self, bool everything) const;

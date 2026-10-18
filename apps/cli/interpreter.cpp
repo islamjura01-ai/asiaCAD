@@ -124,6 +124,30 @@ const char* commandSyntax(const std::string& c) {
         {"UTILNET", "file.json"},
         {"CITY", "[nx ny] [floors min-max] [x,y] | file.json"},
         {"DRIVE", "sel [V=km/h] [EYE=m] [OBJ=m] [STEP=m]"},
+        {"RECTANG", "p1 p2 [R=r] [C=c]"},
+        {"POLYGON", "n p r|p [I|C] [°]"},
+        {"ELLIPSE", "p a|p b [°]"},
+        {"SPLINE", "p1 p2 ... [{CLOSE}]"},
+        {"STRETCH", "p1 p2 base target"},
+        {"ARRAY", "sel R rows cols dx dy | sel P p n [°] [NOROT] | sel PATH id n|S=d [NOALIGN]"},
+        {"CHAMFER", "p1 p2 d1 [d2]"},
+        {"JOIN", "sel"},
+        {"BREAK", "id p1 [p2]"},
+        {"LENGTHEN", "id p ±d"},
+        {"MATCHPROP", "src sel"},
+        {"LAYMCUR", "id"},
+        {"LAYMATCH", "sel id"},
+        {"LAYOFF", "sel"},
+        {"LAYFRZ", "sel"},
+        {"LAYLCK", "sel"},
+        {"LAYULK", "sel"},
+        {"LAYON", ""},
+        {"LAYISO", "sel"},
+        {"LAYUNISO", ""},
+        {"LEADER", "p1 p2 [p3 ...] \"...\" [h]"},
+        {"DIMANGULAR", "vertex p1 p2 p [h] [DMS]"},
+        {"ID", "p"},
+        {"SYMBOL", "[name p[;p...] [k] [°]]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -137,7 +161,7 @@ const char* commandSyntax(const std::string& c) {
 }
 
 // {CLOSE} kabi joylarni faol tildagi kalit so'z bilan almashtiradi
-static std::string localizeSyntax(const i18n::Localizer& loc, std::string s) {
+std::string localizeSyntax(const i18n::Localizer& loc, std::string s) {
     for (std::size_t p; (p = s.find('{')) != std::string::npos;) {
         const auto q = s.find('}', p);
         if (q == std::string::npos) break;
@@ -317,6 +341,7 @@ bool Interpreter::run(const std::string& rawLine) {
 }
 
 void Interpreter::dispatch(const std::string& cmd, const Args& a) {
+    if (dispatchDraft(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;

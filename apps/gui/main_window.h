@@ -44,6 +44,7 @@ class WaterwayDialog;
 class CorridorDialog;
 class CityDialog;
 class DriveDialog;
+class SymbolPalette;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -56,6 +57,7 @@ public:
     void setLanguage(const QString& code);
     bool runLine(const QString& line, bool echo = true);  // false — EXIT
     Viewport* viewport() const { return view_; }
+    SymbolPalette* symbolPalette() const { return symPal_; }
     Document& document() { return doc_; }
     void activateTool(const QString& key);  // "line", "circle", ... (sinov va skriptlar uchun)
     SewerDialog* openSewer();               // "Kanalizatsiya" menyusi (bitta nusxa, modal emas)
@@ -124,11 +126,14 @@ private:
     QToolBar* floating_ = nullptr;
     QDockWidget* layersDock_ = nullptr;
     QDockWidget* propsDock_ = nullptr;
+    QDockWidget* symDock_ = nullptr;
+    SymbolPalette* symPal_ = nullptr;
     QDockWidget* cmdDock_ = nullptr;
     QTreeWidget* layers_ = nullptr;
     QWidget* propsBox_ = nullptr;
     QLabel* propsCount_ = nullptr;
     QComboBox* propsLayer_ = nullptr;
+    QComboBox* ribbonLayer_ = nullptr;
     QComboBox* propsColor_ = nullptr;
     QPlainTextEdit* propsList_ = nullptr;
     QPlainTextEdit* history_ = nullptr;

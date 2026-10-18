@@ -11,6 +11,7 @@
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
 #include "drive_dialog.h"
+#include "draft_panels.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -20,6 +21,7 @@
 #include <QPushButton>
 #include <QListWidget>
 #include <QToolButton>
+#include <QTabWidget>
 #include <QTableWidget>
 
 #include <asiacad/core/dimension.h>
@@ -464,7 +466,7 @@ int main(int argc, char** argv) {
     w.runLine(QStringLiteral("OPEN \"%1/yol.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
     {
         CorridorDialog* cd = w.openCorridor();
-        CHECK(cd->palette()->count() == 10);
+        CHECK(cd->palette()->count() == 11);
         cd->applyAssembly(asiacad::civil::builtinAssemblies()[1]);
         CHECK(cd->model().sec.size() > 20);
         CHECK(cd->view()->faceCount() > 100);
@@ -724,6 +726,86 @@ int main(int argc, char** argv) {
         CHECK(dd->view()->drawnTriangles() > 50);
         dd->close();
         bd->close();
+    }
+
+    // 27. Asosiy lenta (AutoCAD Home kabi): Draw / Modify / Layers asboblari, belgilar palitrasi
+    {
+        w.runLine("NEW !");
+        auto* vp = w.viewport();
+        auto countType = [&](EntityType t) {
+            int n = 0;
+            for (EntityId id : doc.ids()) n += doc.find(id)->type() == t;
+            return n;
+        };
+        w.activateTool("rect");
+        vp->feedPoint({0, 0, 0});
+        vp->feedPoint({10, 5, 0});
+        CHECK(countType(EntityType::Polyline) == 1);
+        const EntityId rectId = doc.ids().back();
+        CHECK(std::abs(static_cast<const PolylineEntity*>(doc.find(rectId))->area() - 50) < 1e-6);
+        w.activateTool("polygon");
+        vp->setPolygonSides(5);
+        vp->feedPoint({30, 0, 0});
+        vp->feedPoint({34, 0, 0});
+        CHECK(static_cast<const PolylineEntity*>(doc.find(doc.ids().back()))->vertices().size() == 5);
+        w.activateTool("ellipse");
+        vp->feedPoint({50, 0, 0});
+        vp->feedPoint({56, 0, 0});
+        vp->feedPoint({50, 3, 0});
+        CHECK(std::abs(static_cast<const PolylineEntity*>(doc.find(doc.ids().back()))->area() - 3.14159265 * 18) < 0.1);
+        w.activateTool("spline");
+        vp->feedPoint({0, 20, 0});
+        vp->feedPoint({10, 25, 0});
+        vp->feedPoint({20, 18, 0});
+        vp->finishTool();
+        CHECK(static_cast<const PolylineEntity*>(doc.find(doc.ids().back()))->vertices().size() > 20);
+        // STRETCH: to'rtburchakning o'ng tomoni
+        w.activateTool("stretch");
+        vp->feedPoint({8, -1, 0});
+        vp->feedPoint({12, 6, 0});
+        vp->feedPoint({0, 0, 0});
+        vp->feedPoint({5, 0, 0});
+        CHECK(std::abs(static_cast<const PolylineEntity*>(doc.find(rectId))->area() - 75) < 1e-6);
+        // MIRROR (nusxa bilan)
+        const auto n0 = doc.size();
+        vp->setSelection({rectId});
+        w.activateTool("mirror");
+        vp->feedPoint({0, -2, 0});
+        vp->feedPoint({20, -2, 0});
+        CHECK(doc.size() == n0 + 1);
+        // SCALE: masofa = koeffitsient
+        vp->setSelection({rectId});
+        w.activateTool("scale");
+        vp->feedPoint({0, 0, 0});
+        vp->feedPoint({2, 0, 0});
+        CHECK(std::abs(static_cast<const PolylineEntity*>(doc.find(rectId))->area() - 300) < 1e-6);
+        // belgilar palitrasi: daraxtni ikki joyga
+        CHECK(w.symbolPalette()->list()->count() >= 20);
+        CHECK(w.symbolPalette()->choose("TREE"));
+        CHECK(vp->tool() == Tool::Symbol);
+        vp->feedPoint({100, 100, 0});
+        vp->feedPoint({110, 100, 0});
+        CHECK(countType(EntityType::Insert) == 2);
+        CHECK(doc.block("SYM_TREE") != nullptr);
+        vp->cancelTool();
+        // qatlam amallari: tanlov bo'yicha muzlatish, keyin hammasini yoqish
+        w.runLine("LAYER DAN 3");
+        w.runLine(QStringLiteral("CHPROP %1 LAYER=DAN").arg(rectId));
+        vp->setSelection({rectId});
+        w.activateTool("layfrz");
+        CHECK(doc.layer("DAN")->frozen);
+        w.activateTool("layon");
+        CHECK(!doc.layer("DAN")->frozen);
+        // qatlam tanlash asbobi (tanlovsiz): obyektni bosish — joriy qatlam
+        vp->setSelection({});
+        w.activateTool("laymcur");
+        CHECK(vp->tool() == Tool::LayPick);
+        vp->feedPoint({15, 0, 0});  // cho'zilgan to'rtburchakning pastki tomoni (x 0..30 masshtabdan keyin)
+        // massiv dialogi buyrug'i
+        ArrayDialog ad(loc, "5", {0, 0, 0}, kInvalidId);
+        CHECK(ad.command() == "ARRAY 5 R 3 4 6 6");
+        ad.tabs()->setCurrentIndex(1);
+        CHECK(ad.command().startsWith("ARRAY 5 P 0,0 8 360"));
     }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

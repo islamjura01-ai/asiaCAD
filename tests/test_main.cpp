@@ -12,6 +12,8 @@
 #include <asiacad/civil/corridor.h>
 #include <asiacad/civil/generators.h>
 #include <asiacad/civil/drive.h>
+#include <asiacad/civil/symbols.h>
+#include <asiacad/core/draft.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
@@ -340,9 +342,9 @@ TEST(i18n_dictionaries_complete) {
     // Interpretator ishlatadigan har bir buyruqning sintaksisi va tavsifi bor
     for (const auto& c : loc.canonicalCommands()) {
         CHECK(loc.hasMessage("desc." + c));
-        CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT");
+        CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO");
     }
-    CHECK(loc.canonicalCommands().size() == 59);
+    CHECK(loc.canonicalCommands().size() == 83);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2809,4 +2811,148 @@ TEST(drive_scene_from_city_and_corridor) {
     // yo'l ustidagi nuqta (o'ngga 3 m): ko'ndalang nishablik bilan pastroq
     CHECK(civil::corridorSurfaceZ(cor, s5.x + s5.dy * 3, s5.y - s5.dx * 3, z) && z < s5.design && z > s5.design - 0.2);
     CHECK(!civil::corridorSurfaceZ(cor, s5.x + s5.dy * 500, s5.y - s5.dx * 500, z));
+}
+
+// ---------------------------------------------------------------- chizmachilik asboblari (Draw/Modify/Annotate)
+TEST(draft_shapes) {
+    auto r = makeRectangle({0, 0}, {10, 5}, 1);
+    CHECK(std::abs(r->area() - (50 - (4 - 3.14159265358979) * 1)) < 1e-6);
+    auto c = makeRectangle({0, 0}, {10, 5}, 0, 1);
+    CHECK(std::abs(c->area() - (50 - 4 * 0.5)) < 1e-9);
+    bool thrown = false;
+    try { makeRectangle({0, 0}, {2, 2}, 1.5); } catch (const Error&) { thrown = true; }
+    CHECK(thrown);
+    auto h = makePolygon({0, 0}, 6, 5, false);
+    CHECK(std::abs(h->area() - 2 * std::sqrt(3.0) * 25) < 1e-6);
+    auto hi = makePolygon({0, 0}, 4, std::sqrt(2.0), true, 3.14159265358979 / 4);
+    CHECK(std::abs(hi->area() - 4) < 1e-9);
+    auto e = makeEllipse({0, 0}, 6, 3, 0.5);
+    CHECK(std::abs(e->area() - 3.14159265358979 * 18) / (3.14159265358979 * 18) < 1e-3);
+    auto sp = makeSpline({{0, 0}, {10, 5}, {20, 0}, {30, 5}});
+    // fit nuqtalardan o'tadi
+    for (Vec3 q : {Vec3{0, 0}, Vec3{10, 5}, Vec3{20, 0}, Vec3{30, 5}}) {
+        double best = 1e9;
+        for (const auto& v : sp->vertices()) best = std::min(best, v.distanceTo(q));
+        CHECK(best < 1e-9);
+    }
+}
+
+TEST(draft_modify) {
+    // STRETCH: o'ng tomon oynada — to'rtburchak kengayadi
+    PolylineEntity rect({{0, 0}, {10, 0}, {10, 5}, {0, 5}}, true);
+    auto s = stretchEntity(rect, {8, -1}, {12, 6}, {5, 0});
+    CHECK(s && std::abs(static_cast<PolylineEntity*>(s.get())->area() - 75) < 1e-9);
+    CHECK(!stretchEntity(rect, {20, 20}, {30, 30}, {5, 0}));
+    LineEntity ln({0, 0}, {10, 0});
+    auto sl = stretchEntity(ln, {9, -1}, {11, 1}, {0, 3});
+    CHECK(sl && static_cast<LineEntity*>(sl.get())->endPoint().distanceTo({10, 3}) < 1e-12);
+    // ARRAY
+    CHECK(arrayRect(3, 4, 5, 5).size() == 11);
+    const auto pol = arrayPolar({0, 0}, 4, 360, true);
+    CHECK(pol.size() == 3 && pol[0].apply({10, 0}).distanceTo({0, 10}) < 1e-9);
+    const auto pn = arrayPolar({0, 0}, 4, 360, false, {10, 0});
+    CHECK(pn[1].apply({11, 0}).distanceTo({-9, 0}) < 1e-9);   // burilmasdan siljiydi
+    LineEntity path({0, 0}, {100, 0});
+    const auto pa = arrayPath(path, {0, 0}, 0, 20, true);
+    CHECK(pa.size() == 5 && pa.back().apply({0, 0}).distanceTo({100, 0}) < 1e-9);
+    // CHAMFER
+    LineEntity a({0, 0}, {10, 0}), b({10, 0}, {10, 10});
+    auto ch = chamferLines(a, {2, 0}, b, {10, 8}, 2, 3);
+    CHECK(ch.bevel && static_cast<LineEntity*>(ch.bevel.get())->length() > 3.6 && static_cast<LineEntity*>(ch.bevel.get())->length() < 3.61);
+    // JOIN: uch chiziq (biri teskari) va yoy — bitta poliliniya
+    LineEntity j1({0, 0}, {10, 0}), j2({20, 0}, {10, 0});
+    ArcEntity j3({20, 5}, 5, -3.14159265358979 / 2, 3.14159265358979 / 2);
+    auto jp = joinCurves({&j1, &j2, &j3});
+    CHECK(jp && jp->vertices().size() == 4);
+    CHECK(jp && std::abs(jp->length() - (20 + 3.14159265358979 * 5)) < 1e-6);
+    LineEntity far({50, 50}, {60, 60});
+    CHECK(!joinCurves({&j1, &far}));
+    // BREAK
+    auto br = breakCurve(ln, {3, 0}, {7, 0});
+    CHECK(br.size() == 2 && std::abs(static_cast<LineEntity*>(br[0].get())->length() - 3) < 1e-9);
+    CircleEntity circ({0, 0}, 10);
+    auto bc = breakCurve(circ, {10, 0}, {0, 10});
+    CHECK(bc.size() == 1 && std::abs(dynamic_cast<ICurve*>(bc[0].get())->length() - 3.14159265358979 * 10 * 1.5) < 1e-6);
+    PolylineEntity pl({{0, 0}, {10, 0}, {10, 10}}, false);
+    auto bp = breakCurve(pl, {10, 5}, {10, 5});
+    CHECK(bp.size() == 2);
+    // LENGTHEN
+    auto le = lengthenCurve(ln, {9, 0}, 5);
+    CHECK(std::abs(static_cast<LineEntity*>(le.get())->length() - 15) < 1e-9);
+    auto la = lengthenCurve(j3, j3.endPoint(), -3.14159265358979 * 5 / 2);
+    CHECK(std::abs(static_cast<ArcEntity*>(la.get())->sweep() - 3.14159265358979 / 2) < 1e-9);
+}
+
+TEST(draft_annotate_and_symbols) {
+    auto d = makeAngularDim({0, 0}, {10, 0}, {0, 10}, {5, 5}, 1);
+    std::string txt;
+    for (const auto& e : d)
+        if (auto* t = dynamic_cast<TextEntity*>(e.get())) txt = t->text();
+    CHECK(txt == "90,0\xC2\xB0");
+    auto d2 = makeAngularDim({0, 0}, {10, 0}, {0, 10}, {-5, -5}, 1);  // teskari tomon — 270°
+    for (const auto& e : d2)
+        if (auto* t = dynamic_cast<TextEntity*>(e.get())) txt = t->text();
+    CHECK(txt == "270,0\xC2\xB0");
+    auto ld = makeLeader({{0, 0}, {5, 5}}, "B25", 1);
+    CHECK(ld.size() == 3);
+    // belgilar: hammasi yaratiladi, rangli (BYBLOCK emas)
+    for (const auto& s : civil::symbolCatalog()) {
+        auto b = civil::makeSymbol(s.key);
+        CHECK(b && !b->entities.empty());
+        if (b) for (const auto& e : b->entities) CHECK(e->color() != kColorByBlock && e->color() != kColorByLayer);
+    }
+    CHECK(!civil::makeSymbol("NOPE"));
+    CHECK(civil::symbolKeyOf("sym_tree") == "TREE");
+    // Haydash sahnasida 3D o'rinbosar
+    Document doc;
+    auto def = civil::makeSymbol("CAR");
+    doc.addBlock(def);
+    doc.add(std::make_unique<InsertEntity>(def, InsertEntity::placement(def->base, {5, 0, 0}, 1, 1, 1, 0)));
+    const auto sc = civil::drapeLinework(doc, {{0, 0, 100}, {50, 0, 100}}, 50, [](double, double) { return 100.0; });
+    CHECK(sc.tris.size() == 24);  // 2 prizma × 12
+    CHECK(sc.bounds().min.z > 100.2 && sc.bounds().max.z < 101.5);
+}
+
+TEST(corridor_tunnel_sections) {
+    const auto all = civil::builtinAssemblies();
+    const civil::Assembly* tbm = nullptr;
+    const civil::Assembly* box = nullptr;
+    for (const auto& a : all) {
+        if (a.group != "TUNNEL") continue;
+        if (!tbm) tbm = &a;
+        if (a.right.front().get("sh") == 2 && !box) box = &a;
+    }
+    CHECK(tbm && box);
+    if (!tbm || !box) return;
+    auto flat = [](double) { return 500.0; };
+    const auto s = civil::buildSection(*tbm, 480.0, flat, 100);
+    std::map<std::string, double> A;
+    for (const auto& sh : s.shapes) A[sh.material] += sh.area();
+    const double pi = 3.14159265358979;
+    CHECK(std::abs(A["EXCAVATION"] - pi * 3.05 * 3.05) / (pi * 3.05 * 3.05) < 0.005);
+    CHECK(std::abs(A["LINING"] - pi * (3.05 * 3.05 - 2.75 * 2.75)) / 5.48 < 0.01);
+    const double h = 2.75 - 1.85, seg = 2.75 * 2.75 * std::acos(1.85 / 2.75) - 1.85 * std::sqrt(2 * 2.75 * h - h * h);
+    CHECK(std::abs(A["INVERT"] - seg) / seg < 0.01);
+    CHECK(s.cut == 0 && s.fill == 0);  // yer osti — ochiq kesma yo'q
+    // ichki yuza: yo'l -> devor -> gumbaz -> devor -> yo'l (yopiq halqa)
+    double crown = -1e9;
+    for (const auto& q : s.pts) crown = std::max(crown, q.z);
+    CHECK(std::abs(crown - (480 + 1.85 + 2.75)) < 1e-9);
+    const auto b = civil::buildSection(*box, 480.0, flat, 100);
+    std::map<std::string, double> B;
+    for (const auto& sh : b.shapes) B[sh.material] += sh.area();
+    CHECK(std::abs(B["EXCAVATION"] - (9.0 + 1.6) * (5.5 + 1.6)) < 1e-6);
+    CHECK(std::abs(B["LINING"] - ((9.0 + 1.6) * (5.5 + 1.6) - 9.0 * 5.5)) < 1e-6);
+    // koridor: yer yuzasidagi yo'l o'qi bo'ylab tonnel — ustki qatlam tekshiruvi
+    const auto r = loadAcad(std::string(ASIACAD_EXAMPLES_DIR) + "/yol.acad");
+    auto p = civil::defaultCorridorParams();
+    p.assemblies = {*tbm};
+    auto c = civil::buildCorridor(r.doc, p);
+    bool coverIssue = false;
+    for (const auto& i : c.issues) coverIssue |= i.key == "cor.chk.tunnel_daylight" || i.key == "cor.chk.tunnel_cover";
+    CHECK(coverIssue);
+    CHECK(c.volumes.count("LINING") && std::abs(c.volumes["LINING"].second - A["LINING"] * 600) / (A["LINING"] * 600) < 0.01);
+    double z = 0;
+    const auto& s5 = c.sec[5];
+    CHECK(civil::corridorSurfaceZ(c, s5.x, s5.y, z) && std::abs(z - s5.design) < 1e-6);  // tonnel ichida — yo'l sathi
 }

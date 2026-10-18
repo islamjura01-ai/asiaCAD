@@ -10,6 +10,7 @@
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
 #include "drive_dialog.h"
+#include "draft_panels.h"
 #include "icons.h"
 
 #include <asiacad/civil/drive.h>
@@ -90,6 +91,21 @@ const ActDef kActs[] = {
     {"corridor", "corridor", "gui.act.corridor", false},
     {"city", "city", "gui.act.city", false},
     {"drive", "drive", "gui.act.drive", false},
+    // Draw / Modify / Layers / Annotation (AutoCAD "Home" lentasi kabi)
+    {"rect", "rect", "gui.act.rect", true},         {"polygon", "polygon", "gui.act.polygon", true},
+    {"ellipse", "ellipse", "gui.act.ellipse", true}, {"spline", "spline", "gui.act.spline", true},
+    {"hatch", "hatch", "gui.act.hatch", false},      {"symbols", "symbols", "gui.act.symbols", false},
+    {"stretch", "stretch", "gui.act.stretch", true}, {"scale", "scale", "gui.act.scale", true},
+    {"mirror", "mirror", "gui.act.mirror", true},    {"chamfer", "chamfer", "gui.act.chamfer", true},
+    {"array", "array", "gui.act.array", false},      {"explode", "explode", "gui.act.explode", false},
+    {"join", "join", "gui.act.join", false},         {"break", "break", "gui.act.break", true},
+    {"matchprop", "matchprop", "gui.act.matchprop", true},
+    {"leader", "leader", "gui.act.leader", true},    {"dimangular", "dimangular", "gui.act.dimangular", true},
+    {"layprops", "layers", "gui.act.layprops", false}, {"laymcur", "laymcur", "gui.act.laymcur", false},
+    {"laymatch", "laymatch", "gui.act.laymatch", false}, {"layoff", "layoff", "gui.act.layoff", false},
+    {"layfrz", "layfrz", "gui.act.layfrz", false},   {"laylck", "laylck", "gui.act.laylck", false},
+    {"layulk", "layulk", "gui.act.layulk", false},   {"layiso", "layiso", "gui.act.layiso", false},
+    {"layuniso", "layuniso", "gui.act.layuniso", false}, {"layon", "layon", "gui.act.layon", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -111,6 +127,18 @@ Tool toolOf(const QString& k) {
     if (k == "trim") return Tool::Trim;
     if (k == "extend") return Tool::Extend;
     if (k == "fillet") return Tool::Fillet;
+    if (k == "rect") return Tool::Rect;
+    if (k == "polygon") return Tool::Polygon;
+    if (k == "ellipse") return Tool::Ellipse;
+    if (k == "spline") return Tool::Spline;
+    if (k == "stretch") return Tool::Stretch;
+    if (k == "scale") return Tool::Scale;
+    if (k == "mirror") return Tool::Mirror;
+    if (k == "chamfer") return Tool::Chamfer;
+    if (k == "break") return Tool::Break;
+    if (k == "matchprop") return Tool::MatchProp;
+    if (k == "leader") return Tool::Leader;
+    if (k == "dimangular") return Tool::DimAngular;
     return Tool::Select;
 }
 
@@ -133,6 +161,20 @@ QString toolKey(Tool t) {
     case Tool::Trim: return "trim";
     case Tool::Extend: return "extend";
     case Tool::Fillet: return "fillet";
+    case Tool::Rect: return "rect";
+    case Tool::Polygon: return "polygon";
+    case Tool::Ellipse: return "ellipse";
+    case Tool::Spline: return "spline";
+    case Tool::Stretch: return "stretch";
+    case Tool::Scale: return "scale";
+    case Tool::Mirror: return "mirror";
+    case Tool::Chamfer: return "chamfer";
+    case Tool::Break: return "break";
+    case Tool::MatchProp: return "matchprop";
+    case Tool::Leader: return "leader";
+    case Tool::DimAngular: return "dimangular";
+    case Tool::Symbol:
+    case Tool::LayPick:
     case Tool::Grip:
     case Tool::Select: return "select";
     }
@@ -230,7 +272,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.16"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.17"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -252,7 +294,10 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
+            {"rect", "#1C8C6E"}, {"polygon", "#1C8C6E"}, {"ellipse", "#1C8C6E"}, {"spline", "#1C8C6E"}, {"hatch", "#1C8C6E"}, {"symbols", "#3E9B3A"},
+            {"leader", "#C8324B"}, {"dimangular", "#C8324B"},
+            {"layers", "#D99A1E"}, {"laymcur", "#2BA84A"}, {"laymatch", "#1C8C9E"}, {"layoff", "#6B7280"}, {"layfrz", "#2F7FD8"}, {"laylck", "#C2410C"}, {"layulk", "#E58A3A"}, {"layiso", "#7A3FC8"}, {"layuniso", "#A27BDB"}, {"layon", "#3E9B3A"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
             {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
             {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
@@ -316,6 +361,87 @@ void MainWindow::buildActions() {
     connect(act_["corridor"], &QAction::triggered, this, [this] { openCorridor(); });
     connect(act_["city"], &QAction::triggered, this, [this] { openCity(); });
     connect(act_["drive"], &QAction::triggered, this, [this] { openDrive(); });
+    // ---- tanlov bilan bajariladigan amallar
+    auto withSel = [this](const QString& canon) {
+        if (view_->selection().empty()) { prompt_->setText(t("gui.prompt.selectfirst")); return; }
+        QStringList ids;
+        for (EntityId id : view_->selection()) ids << QString::number(id);
+        runLine(canon + " " + ids.join(','));
+    };
+    connect(act_["explode"], &QAction::triggered, this, [withSel] { withSel("EXPLODE"); });
+    connect(act_["join"], &QAction::triggered, this, [withSel] { withSel("JOIN"); });
+    connect(act_["hatch"], &QAction::triggered, this, [this] {
+        if (view_->selection().empty()) { prompt_->setText(t("gui.prompt.hatchsel")); return; }
+        QStringList ids;
+        for (EntityId id : view_->selection()) ids << QString::number(id);
+        bool ok = false;
+        const QStringList pats{"SOLID", "ANSI31", "ANSI37", "AR-CONC", "EARTH", "GRAVEL"};
+        const QString pat = QInputDialog::getItem(this, t("gui.act.hatch"), t("gui.hatch.pattern"), pats, 1, false, &ok);
+        if (ok) runLine("HATCH " + ids.join(',') + " " + pat);
+    });
+    connect(act_["symbols"], &QAction::triggered, this, [this] {
+        symDock_->show();
+        symDock_->raise();
+    });
+    connect(act_["layprops"], &QAction::triggered, this, [this] {
+        layersDock_->setVisible(!layersDock_->isVisible() || layersDock_->visibleRegion().isEmpty());
+        layersDock_->raise();
+    });
+    connect(act_["layon"], &QAction::triggered, this, [this] { runLine("LAYON"); });
+    connect(act_["layuniso"], &QAction::triggered, this, [this] { runLine("LAYUNISO"); });
+    // qatlam amallari: tanlov bo'lsa — darhol, bo'lmasa — obyektni bosib tanlash
+    for (const auto& [key, canon] : std::vector<std::pair<QString, QString>>{{"laymcur", "LAYMCUR"}, {"layoff", "LAYOFF"}, {"layfrz", "LAYFRZ"},
+                                                                              {"laylck", "LAYLCK"}, {"layulk", "LAYULK"}, {"layiso", "LAYISO"}}) {
+        const QString c = canon;
+        connect(act_[key], &QAction::triggered, this, [this, c] {
+            if (!view_->selection().empty()) {
+                QStringList ids;
+                for (EntityId id : view_->selection()) ids << QString::number(id);
+                runLine(c + " " + (c == "LAYMCUR" ? ids.front() : ids.join(',')));
+                return;
+            }
+            view_->setLayerPickCommand(c);
+            view_->setTool(Tool::LayPick);
+            view_->setFocus();
+        });
+    }
+    connect(act_["laymatch"], &QAction::triggered, this, [this] {
+        if (view_->selection().empty()) { prompt_->setText(t("gui.prompt.selectfirst")); return; }
+        QStringList ids;
+        for (EntityId id : view_->selection()) ids << QString::number(id);
+        view_->setLayerPickCommand("LAYMATCH " + ids.join(','));
+        view_->setTool(Tool::LayPick);
+        view_->setFocus();
+    });
+    connect(act_["array"], &QAction::triggered, this, [this] {
+        const auto& sel = view_->selection();
+        if (sel.empty()) { prompt_->setText(t("gui.prompt.selectfirst")); return; }
+        // tanlovda eng uzun ochiq egri — yo'l (PATH) bo'lishi mumkin
+        EntityId path = kInvalidId;
+        double best = 0;
+        if (sel.size() >= 2)
+            for (EntityId id : sel)
+                if (auto* c = dynamic_cast<const ICurve*>(doc_.find(id)); c && !c->isClosed() && c->length() > best) { best = c->length(); path = id; }
+        QStringList ids;
+        BBox b;
+        for (EntityId id : sel)
+            if (id != path) {
+                ids << QString::number(id);
+                if (const IEntity* e = doc_.find(id)) b.expand(e->bbox());
+            }
+        if (ids.isEmpty()) { ids << QString::number(path); path = kInvalidId; }
+        ArrayDialog dlg(loc_, ids.join(','), b.valid() ? (b.min + b.max) * 0.5 : Vec3{}, path, this);
+        dlg.setStyleSheet(theme_.styleSheet);
+        if (dlg.exec() == QDialog::Accepted) runLine(dlg.command());
+    });
+    connect(view_, &Viewport::leaderRequested, this, [this](const QString& pts) {
+        bool ok = false;
+        const QString txt = QInputDialog::getText(this, t("gui.act.leader"), t("gui.text.value"), QLineEdit::Normal, QString(), &ok);
+        if (!ok) return;
+        QString esc = txt;
+        esc.replace('"', '\'');
+        runLine("LEADER " + pts + " \"" + esc + "\" " + Viewport::fmtPoint({view_->dimTextHeight(), 0, 0}).section(',', 0, 0));
+    });
     // Asbob tugagach (Esc, Enter, buyruq bajarildi) — "Tanlash" tugmasi yonsin
     connect(view_, &Viewport::promptChanged, this, [this] {
         if (act_.contains(toolKey(view_->tool()))) act_[toolKey(view_->tool())]->setChecked(true);
@@ -326,15 +452,17 @@ void MainWindow::buildRibbon() {
     ribbon_ = new QTabWidget(this);
     ribbon_->setObjectName("ribbon");
     ribbon_->setDocumentMode(true);
-    ribbon_->setFixedHeight(122);
+    ribbon_->setFixedHeight(134);
     // Har bir sahifa: guruhlar (tugmalar + pastda guruh nomi)
-    struct Group { const char* title; std::vector<const char*> keys; std::vector<const char*> small = {}; };
+    struct Group { const char* title; std::vector<const char*> keys; std::vector<const char*> small = {}; bool iconsOnly = false; int rows = 3; };
     struct Page { const char* title; std::vector<Group> groups; };
     const std::vector<Page> pages = {
-        {"gui.tab.home", {{"gui.grp.draw", {"line", "pline", "circle", "arc", "point", "text"}},
-                          {"gui.grp.modify", {"select", "move", "copy", "rotate", "erase"}, {"offset", "trim", "extend", "fillet"}},
+        {"gui.tab.home", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch", "text", "symbols"}, true},
+                          {"gui.grp.modify", {"select"}, {"move", "copy", "stretch", "rotate", "mirror", "scale", "trim", "extend", "fillet",
+                                                          "chamfer", "array", "offset", "erase", "explode", "join", "break", "matchprop"}},
+                          {"gui.grp.layers", {}, {"layprops", "laymcur", "laymatch", "layoff", "layfrz", "laylck", "layulk", "layiso", "layuniso", "layon"}, true, 2},
                           {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimradius", "dimdiameter"}},
+        {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}, {"leader", "text"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
@@ -363,6 +491,15 @@ void MainWindow::buildRibbon() {
             auto* v = new QVBoxLayout(box);
             v->setContentsMargins(2, 0, 2, 0);
             v->setSpacing(2);
+            if (std::string(g.title) == "gui.grp.layers") {  // joriy qatlam ro'yxati (AutoCAD Layers paneli kabi)
+                ribbonLayer_ = new QComboBox(box);
+                ribbonLayer_->setMinimumWidth(190);
+                ribbonLayer_->setObjectName("ribbonLayer");
+                v->addWidget(ribbonLayer_);
+                connect(ribbonLayer_, &QComboBox::activated, this, [this](int i) {
+                    if (!updatingUi_ && i >= 0) runLine(QStringLiteral("CLAYER \"%1\"").arg(ribbonLayer_->itemData(i).toString()));
+                });
+            }
             auto* btns = new QHBoxLayout;
             btns->setSpacing(2);
             for (const char* k : g.keys) {
@@ -380,10 +517,15 @@ void MainWindow::buildRibbon() {
                 for (std::size_t i = 0; i < g.small.size(); ++i) {
                     auto* b = new QToolButton(box);
                     b->setDefaultAction(act_[g.small[i]]);
-                    b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-                    b->setIconSize(QSize(18, 18));
-                    b->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-                    grid->addWidget(b, static_cast<int>(i % 2), static_cast<int>(i / 2));
+                    b->setToolButtonStyle(g.iconsOnly ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+                    b->setIconSize(g.iconsOnly ? QSize(22, 22) : QSize(18, 18));
+                    b->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+                    b->setProperty("ribbonSmall", true);
+                    if (!g.iconsOnly) {  // matn qisqartirilmasin (retranslate dan keyin ham)
+                        b->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+                        b->setMinimumWidth(118);
+                    }
+                    grid->addWidget(b, static_cast<int>(i) % g.rows, static_cast<int>(i) / g.rows);  // 3 qator — AutoCAD kabi
                 }
                 btns->addLayout(grid);
             }
@@ -473,13 +615,15 @@ void MainWindow::buildDocks() {
     auto* lv = new QVBoxLayout(lw);
     lv->setContentsMargins(8, 8, 8, 8);
     layers_ = new QTreeWidget(lw);
-    layers_->setColumnCount(3);
-    layers_->setHeaderHidden(true);
+    layers_->setColumnCount(5);  // nom · ko'rinish · muzlatish · qulf · rang (AutoCAD Layer Properties kabi)
+    layers_->setHeaderHidden(false);
     layers_->setRootIsDecorated(false);
     layers_->header()->setStretchLastSection(false);
     layers_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     layers_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     layers_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    layers_->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    layers_->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     lv->addWidget(layers_);
     auto* addLayer = new QPushButton(lw);
     addLayer->setObjectName("accent");
@@ -493,11 +637,20 @@ void MainWindow::buildDocks() {
         const QString name = it->data(0, Qt::UserRole).toString();
         QString kw;
         if (col == 1) kw = QString::fromStdString(loc_.keywordName(it->checkState(1) == Qt::Checked ? "ON" : "OFF"));
-        if (col == 2) kw = QString::fromStdString(loc_.keywordName(it->checkState(2) == Qt::Checked ? "LOCK" : "UNLOCK"));
+        if (col == 2) kw = QString::fromStdString(loc_.keywordName(it->checkState(2) == Qt::Checked ? "FREEZE" : "THAW"));
+        if (col == 3) kw = QString::fromStdString(loc_.keywordName(it->checkState(3) == Qt::Checked ? "LOCK" : "UNLOCK"));
         if (!kw.isEmpty()) runLine(QStringLiteral("LAYER \"%1\" %2").arg(name, kw));
     });
-    connect(layers_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* it, int) {
-        runLine(QStringLiteral("CLAYER \"%1\"").arg(it->data(0, Qt::UserRole).toString()));
+    connect(layers_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* it, int col) {
+        const QString name = it->data(0, Qt::UserRole).toString();
+        if (col == 4) {  // rang (ACI 1..255)
+            bool ok = false;
+            const auto L = doc_.layer(name.toStdString());
+            const int c = QInputDialog::getInt(this, t("gui.layers.color"), name, L ? L->color : 7, 1, 255, 1, &ok);
+            if (ok) runLine(QStringLiteral("LAYER \"%1\" %2").arg(name).arg(c));
+            return;
+        }
+        runLine(QStringLiteral("CLAYER \"%1\"").arg(name));
     });
     connect(addLayer, &QPushButton::clicked, this, [this] {
         bool ok = false;
@@ -531,6 +684,21 @@ void MainWindow::buildDocks() {
     propsDock_->setWidget(propsBox_);
     propsDock_->setMinimumWidth(270);
     addDockWidget(Qt::RightDockWidgetArea, propsDock_);
+
+    // Genplan belgilari palitrasi (rangli): bosilsa — joylash asbobi
+    symDock_ = new QDockWidget(this);
+    symDock_->setObjectName("symbolsDock");
+    symDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
+    symPal_ = new SymbolPalette(loc_, !theme_.lightCanvas, symDock_);
+    symDock_->setWidget(symPal_);
+    addDockWidget(Qt::RightDockWidgetArea, symDock_);
+    tabifyDockWidget(propsDock_, symDock_);
+    propsDock_->raise();
+    connect(symPal_, &SymbolPalette::symbolChosen, this, [this](const QString& key, double k, double rot) {
+        view_->setSymbol(key, k, rot);
+        view_->setTool(Tool::Symbol);
+        view_->setFocus();
+    });
     connect(propsLayer_, &QComboBox::activated, this, [this](int i) {
         if (updatingUi_ || view_->selection().empty()) return;
         QStringList ids;
@@ -677,6 +845,8 @@ void MainWindow::retranslate() {
     for (QLabel* l : propsBox_->findChildren<QLabel*>())
         if (l->property("i18n").isValid()) l->setText(t(l->property("i18n").toByteArray().constData()));
     layersDock_->setWindowTitle(t("gui.panel.layers"));
+    if (symDock_) symDock_->setWindowTitle(t("gui.panel.symbols"));
+    if (symPal_) symPal_->retranslate();
     propsDock_->setWindowTitle(t("gui.panel.props"));
     cmdDock_->setWindowTitle(t("gui.panel.command"));
     for (const auto& s : kSnaps) {
@@ -708,22 +878,39 @@ void MainWindow::retranslate() {
 void MainWindow::refreshLayers() {
     if (!layers_) return;
     updatingUi_ = true;
+    layers_->setHeaderLabels({t("gui.layers.h.name"), QString::fromUtf8("👁"), QString::fromUtf8("❄"), QString::fromUtf8("🔒"), t("gui.layers.h.color")});
     layers_->clear();
     const std::string cur = interp_->currentLayer();
     for (const auto& [name, l] : doc_.layers()) {
         auto* it = new QTreeWidgetItem(layers_);
         const QString qn = QString::fromStdString(name);
-        it->setText(0, name == cur ? qn + "   · " + t("gui.layers.current") : qn);
+        it->setText(0, name == cur ? QString::fromUtf8("● ") + qn : qn);
+        if (name == cur) it->setToolTip(0, t("gui.layers.current"));
         it->setData(0, Qt::UserRole, qn);
         it->setIcon(0, swatch(aciColor(l.color, theme_.lightCanvas)));
         QFont f = it->font(0);
         f.setBold(name == cur);
         it->setFont(0, f);
         it->setCheckState(1, l.visible ? Qt::Checked : Qt::Unchecked);
-        it->setCheckState(2, l.locked ? Qt::Checked : Qt::Unchecked);
+        it->setCheckState(2, l.frozen ? Qt::Checked : Qt::Unchecked);
+        it->setCheckState(3, l.locked ? Qt::Checked : Qt::Unchecked);
+        it->setIcon(4, swatch(aciColor(l.color, theme_.lightCanvas)));
+        it->setText(4, QString::number(l.color));
         it->setToolTip(1, QString::fromStdString(loc_.keywordName("ON")) + " / " + QString::fromStdString(loc_.keywordName("OFF")));
-        it->setToolTip(2, QString::fromStdString(loc_.keywordName("LOCK")));
+        it->setToolTip(2, QString::fromStdString(loc_.keywordName("FREEZE")));
+        it->setToolTip(3, QString::fromStdString(loc_.keywordName("LOCK")));
+        it->setToolTip(4, t("gui.layers.color"));
         if (name == cur) layers_->setCurrentItem(it);
+    }
+    if (ribbonLayer_) {
+        ribbonLayer_->clear();
+        for (const auto& [name, l] : doc_.layers()) {
+            ribbonLayer_->addItem(swatch(aciColor(l.color, theme_.lightCanvas)),
+                                  QString::fromStdString(name) + (l.visible ? "" : "  (" + QString::fromStdString(loc_.keywordName("OFF")) + ")") +
+                                      (l.frozen ? "  ❄" : "") + (l.locked ? "  🔒" : ""),
+                                  QString::fromStdString(name));
+            if (name == cur) ribbonLayer_->setCurrentIndex(ribbonLayer_->count() - 1);
+        }
     }
     updatingUi_ = false;
 }
@@ -1187,10 +1374,13 @@ void MainWindow::submitCommandLine() {
         // Bitta son — to'g'ridan-to'g'ri masofa (orto/qutb yo'nalishi yoki kursor tomoni)
         bool ok = false;
         const double d = text.toDouble(&ok);
-        if (ok && (view_->tool() == Tool::Offset || view_->tool() == Tool::Fillet)) {  // masofa / radius
+        if (ok && (view_->tool() == Tool::Offset || view_->tool() == Tool::Fillet || view_->tool() == Tool::Chamfer ||
+                   (view_->tool() == Tool::Polygon && !view_->lastPoint()))) {  // masofa / radius / faska / tomonlar soni
             appendHistory("› " + text, theme_.accent);
             if (view_->tool() == Tool::Offset) view_->setOffsetDistance(d);
-            else view_->setFilletRadius(d);
+            else if (view_->tool() == Tool::Fillet) view_->setFilletRadius(d);
+            else if (view_->tool() == Tool::Chamfer) view_->setChamferDistance(d);
+            else view_->setPolygonSides(static_cast<int>(d));
             return;
         }
         if (ok && d > 0 && view_->feedDistance(d)) {

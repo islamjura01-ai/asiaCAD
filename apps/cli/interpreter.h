@@ -24,6 +24,7 @@ public:
 private:
     using Args = std::vector<std::string>;
     void dispatch(const std::string& canon, const Args& a);
+    bool dispatchDraft(const std::string& canon, const Args& a);  // interpreter_draft.cpp: Draw/Modify/Layers/Annotation, belgilar
 
     Vec3 parsePoint(const std::string& tok) const;
     Vec3 parseRawPoint(const std::string& tok) const;  // x,y[,z] yoki @dx,dy — bog'lanishsiz
@@ -49,10 +50,12 @@ private:
     std::string currentFile_;     // OPEN/SAVE qilingan .acad fayl
     double filletR_ = 0.0;        // FILLET radiusi (AutoCAD FILLETRAD kabi eslab qolinadi)
     double dimHeight_ = 2.5;      // o'lcham matni balandligi (DIM* buyruqlarida [h] berilmasa)
-    double aperture_ = 1.0;       // OSNAP va PICK radiusi (chizma birligida)
+    double aperture_ = 1.0;
+    std::vector<Layer> isoSaved_;   // LAYISO dan oldingi holat (LAYUNISO uchun)       // OSNAP va PICK radiusi (chizma birligida)
 };
 
 // Buyruq sintaksisi (tilga bog'liq emas): p = nuqta, sel = tanlov, r = radius, h = balandlik
 const char* commandSyntax(const std::string& canonical);
+std::string localizeSyntax(const i18n::Localizer& loc, std::string s);
 
 } // namespace asiacad::cli

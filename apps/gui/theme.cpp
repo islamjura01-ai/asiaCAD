@@ -29,6 +29,7 @@ QPushButton#accent { background: %7; color: %8; border: 0; }
 QToolButton { color: %4; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 4px; }
 QToolButton:hover { background: %3; border-color: %6; }
 QToolButton:checked { background: %7; color: %8; border-color: %7; }
+QToolButton[ribbonSmall="true"] { padding: 1px 4px; border-radius: 5px; }
 QTabWidget#ribbon::pane { background: %9; border: 0; border-bottom: 1px solid %6; }
 QWidget#ribbonPage { background: %9; }
 QTabWidget#ribbon > QTabBar::tab { background: transparent; color: %10; padding: 8px 16px; font-weight: 600; border: 0; }

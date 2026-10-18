@@ -11,6 +11,7 @@
 #include "corridor_dialog.h"
 #include "generator_dialogs.h"
 #include "templates_dialog.h"
+#include "survey_dialog.h"
 #include "drive_dialog.h"
 #include "draft_panels.h"
 
@@ -31,6 +32,7 @@
 #include <QMouseEvent>
 
 #include <QApplication>
+#include <QFile>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QLabel>
@@ -911,6 +913,52 @@ int main(int argc, char** argv) {
         gd->findChild<QPushButton*>("apply")->click();
         auto* ln = dynamic_cast<const LineEntity*>(doc.find(doc.ids().back()));
         CHECK(ln && ln->startPoint().equals({512300.5, 4612345.12, 412.3}, 1e-6) && ln->endPoint().equals({512300.5, 4612355.12, 412.3}, 1e-6));
+    }
+
+    // 31. Geodezik tahlil: import, reja/fasad, vertikallik, Excel, chizmaga, tozalash
+    {
+        w.runLine("NEW !");
+        const QString dir = QDir::tempPath();
+        {
+            QFile f(dir + "/asiacad_gui_pts.txt");
+            f.open(QIODevice::WriteOnly);
+            f.write("1 -0.012 3.000 10.0\n2 0.004 3.000 13.0\n3 2.000 10.008 10.0\n4 2.006 10.004 13.0\n");
+        }
+        w.runLine("PLINE 0,0 10,0 10,5 0,5 C");
+        auto* sd = w.openSurvey(0);
+        CHECK(sd->isVisible() && sd->kind() == asiacad::civil::DevKind::Plan);
+        w.runLine(sd->importCommand(dir + "/asiacad_gui_pts.txt"));
+        sd->refreshLayers();
+        sd->setPointsLayer("SYOMKA");
+        sd->setRefLayer("0");
+        CHECK(sd->run());
+        CHECK(sd->result().rows.size() == 4 && sd->result().nOk == 3 && sd->table()->rowCount() == 4);
+        CHECK(sd->summary()->text().contains("75.0%"));
+        CHECK(sd->drawCommand().startsWith("DEVIATION PLAN "));
+        CHECK(sd->exportExcel(dir + "/asiacad_gui_dev.xlsx") && QFile::exists(dir + "/asiacad_gui_dev.xlsx"));
+        const auto n0 = doc.size();
+        sd->findChild<QPushButton*>("draw")->click();
+        CHECK(doc.size() > n0 + 8 && doc.layer("DEV_STRELKA").has_value() && doc.layer("DEV_BP").has_value());
+        bool atZ = true;
+        for (EntityId id : doc.idsOnLayer("DEV_QIYMAT")) {
+            const double z = doc.find(id)->bbox().min.z;
+            atZ = atZ && (std::abs(z - 10) < 1e-9 || std::abs(z - 13) < 1e-9);
+        }
+        CHECK(atZ);
+        // vertikallik: 2 juft nuqta — 2 qator
+        sd->setKind(asiacad::civil::DevKind::Vertical);
+        CHECK(sd->run() && sd->result().rows.size() == 4);   // loyiha yuzi bilan: har nuqta devor yuziga nisbatan
+        sd->setRefLayer("");
+        CHECK(sd->run() && sd->result().rows.size() == 2);   // loyihasiz: pastki nuqtaga nisbatan
+        // tanlovdan: faqat 2 nuqta
+        auto sy = doc.idsOnLayer("SYOMKA");
+        w.viewport()->setSelection({sy[0], sy[1]});
+        sd->takePointsSelection();
+        CHECK(sd->run() && sd->result().rows.size() == 1);
+        // tozalash
+        w.runLine("DEVCLEAR");
+        CHECK(doc.idsOnLayer("DEV_STRELKA").empty());
+        sd->close();
     }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

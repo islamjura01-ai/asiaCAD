@@ -96,6 +96,27 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "drive") {  // rul
         C(12, 12, 9); C(12, 12, 2.5); L(3.5, 10.5, 9.6, 11.2); L(14.4, 11.2, 20.5, 10.5); L(12, 14.5, 12, 21);
     }
+    else if (n == "devplan") {  // loyiha chizig'i + nuqta + tashqariga strelka
+        L(3, 16, 21, 16); dot(14, 9, 1.6); L(14, 16, 14, 10.5); P({{12, 12.5}, {14, 10}, {16, 12.5}}); L(3, 20, 9, 20);
+    }
+    else if (n == "devvert") {  // tik devor, og'gan chiziq, strelka
+        L(8, 21, 8, 3); p.save(); QPen d = p.pen(); d.setStyle(Qt::DashLine); p.setPen(d); L(8, 21, 14, 3); p.restore(); dot(14, 3, 1.6); P({{17, 5}, {20, 5}}); P({{18.5, 3.5}, {20, 5}, {18.5, 6.5}});
+    }
+    else if (n == "devheight") {  // belgi ▽ va yuqori/past
+        P({{4, 8}, {10, 8}, {7, 12}}, true); L(3, 14, 21, 14); P({{16, 11}, {16, 4}}); P({{14, 6}, {16, 4}, {18, 6}}); P({{16, 17}, {16, 21}}); P({{14, 19}, {16, 21}, {18, 19}});
+    }
+    else if (n == "devaxis") {  // qiya anker: plita + qiya o'q + og'ish
+        R(2, 3, 6, 4, 0.5); L(6, 7, 20, 20); p.save(); QPen d = p.pen(); d.setStyle(Qt::DashLine); p.setPen(d); L(6, 7, 17, 22); p.restore(); dot(20, 20, 1.5);
+    }
+    else if (n == "devpoint") {  // qoziq: loyiha aylanasi + haqiqiy markaz
+        C(10, 12, 6); L(4, 12, 16, 12); L(10, 6, 10, 18); dot(15, 8, 1.8); L(10, 12, 15, 8);
+    }
+    else if (n == "ptimport" || n == "ptexport") {  // fayl + strelka
+        P({{5, 3}, {14, 3}, {18, 7}, {18, 21}, {5, 21}}, true); L(8, 10, 15, 10); L(8, 14, 15, 14);
+        if (n == "ptimport") { P({{21, 17}, {12, 17}}); P({{15, 14}, {12, 17}, {15, 20}}); } else { P({{12, 17}, {22, 17}}); P({{19, 14}, {22, 17}, {19, 20}}); }
+    }
+    else if (n == "excel") { R(4, 3, 16, 18, 1.5); L(8, 8, 15, 16); L(15, 8, 8, 16); }
+    else if (n == "devclear") { L(3, 16, 21, 16); P({{12, 14}, {12, 6}}); L(15, 4, 21, 10); L(21, 4, 15, 10); }
     else if (n == "steelframe") {  // portal rama: ustunlar, rafter, bog'lama
         P({{4, 21}, {4, 9}, {12, 4}, {20, 9}, {20, 21}}); L(4, 21, 20, 9); L(2, 21, 22, 21);
     }

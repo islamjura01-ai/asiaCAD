@@ -5,6 +5,7 @@
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
 #include <asiacad/bim/templates.h>
+#include <asiacad/civil/survey.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/civil/road.h>
@@ -345,9 +346,9 @@ TEST(i18n_dictionaries_complete) {
     // Interpretator ishlatadigan har bir buyruqning sintaksisi va tavsifi bor
     for (const auto& c : loc.canonicalCommands()) {
         CHECK(loc.hasMessage("desc." + c));
-        CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO");
+        CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 92);
+    CHECK(loc.canonicalCommands().size() == 96);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3198,6 +3199,127 @@ TEST(tpl_retaining_wall) {
     Document d;
     for (auto& e : bim::makeRetainingWall(bim::RetainSpec{}).entities) d.add(std::move(e));
     CHECK(civil::sceneFromDocument(d).tris.size() >= 8 * 2 + 2 * 6);
+}
+// ---------- geodezik tahlil (og'ishlar) ----------
+TEST(survey_points_io) {
+    civil::PointFileFormat f;   // geodezik: X — shimol
+    std::vector<std::string> sk;
+    const auto p = civil::readPoints("\xEF\xBB\xBFN X Y Z\n1 100.500 200.250 410.1 devor\n2;101,5;201,25;410,2\nA7,102.5,202.25,410.3,ustun A\n\n# izoh\n300.0 400.0 5.0\n",
+                                     f, &sk);
+    CHECK(p.size() == 4 && sk.size() == 1);
+    CHECK(p[0].name == "1" && p[0].p.equals({200.25, 100.5, 410.1}, 1e-9) && p[0].code == "devor");
+    CHECK(p[1].p.equals({201.25, 101.5, 410.2}, 1e-9));
+    CHECK(p[2].name == "A7" && p[2].code == "ustun A");
+    CHECK(p[3].p.equals({400, 300, 5}, 1e-9));   // nomsiz X Y Z
+    f.delim = ',';
+    const auto back = civil::readPoints(civil::writePoints(p, f), f);
+    CHECK(back.size() == 4 && back[2].p.equals(p[2].p, 1e-9) && back[2].name == "A7");
+    civil::PointFileFormat xy;
+    xy.geodetic = false;
+    CHECK(civil::readPoints("1 10 20 3", xy).front().p.equals({10, 20, 3}, 1e-9));
+    // chizmaga va qaytib (nomlar bir vertikaldagi nuqtalarda adashmaydi)
+    Document d;
+    std::vector<civil::SurveyPoint> v{{"P1", {5, 5, 100}, ""}, {"P2", {5, 5, 103}, "x"}};
+    for (auto& e : civil::pointEntities(v, 0.25)) d.add(std::move(e));
+    for (EntityId id : d.ids())
+        CHECK(std::abs(d.find(id)->bbox().min.z - 100) < 1e-9 || std::abs(d.find(id)->bbox().min.z - 103) < 1e-9);
+    const auto got = civil::collectPoints(d, d.idsOnLayer("SYOMKA"));
+    CHECK(got.size() == 2 && got[0].name == "P1" && got[1].name == "P2" && got[1].code == "x" && got[0].code.empty());
+}
+TEST(survey_deviation_plan_height_vert) {
+    civil::DesignRef box{"B", {{0, 0, 0}, {10, 0, 0}, {10, 5, 0}, {0, 5, 0}}, true};
+    std::vector<civil::SurveyPoint> pts{{"1", {3, -0.012, 10}, ""}, {"2", {3, 0.004, 13}, ""}, {"3", {10.008, 2, 10}, ""}, {"4", {50, 50, 0}, ""}};
+    civil::DevParams p;
+    p.tol = 0.010;
+    auto R = civil::analyze(pts, {box}, p);
+    CHECK(R.rows.size() == 3 && R.unmatched.size() == 1 && R.unmatched[0] == "4");
+    CHECK(std::abs(R.rows[0].d - 0.012) < 1e-9 && !R.rows[0].ok);    // tashqarida +
+    CHECK(std::abs(R.rows[1].d + 0.004) < 1e-9 && R.rows[1].ok);     // ichkarida −
+    CHECK(R.rows[0].cls == 'P' && R.rows[1].cls == 'B' && R.rows[2].cls == 0);
+    CHECK(R.nOk == 2 && std::abs(R.maxAbs - 0.012) < 1e-9);
+    // belgilar nuqta balandligida, rangi ruxsat bo'yicha
+    const auto es = civil::annotate(R, p);
+    int red = 0, bp = 0;
+    for (const auto& e : es) {
+        const double z = e->bbox().min.z;
+        CHECK(std::abs(z - 10) < 1e-9 || std::abs(z - 13) < 1e-9);
+        red += e->layer() == "DEV_QIYMAT" && e->color() == 1;
+        bp += e->layer() == "DEV_BP";
+    }
+    CHECK(red == 1 && bp == 2);
+    // balandlik: 3D loyiha chizig'idan interpolyatsiya va doimiy belgi
+    civil::DevParams h;
+    h.kind = civil::DevKind::Height;
+    h.maxDist = 2;
+    civil::DesignRef slope{"S", {{0, 0, 100}, {10, 0, 101}}, false};
+    R = civil::analyze({{"a", {5, 0.5, 100.512}, ""}}, {slope}, h);
+    CHECK(R.rows.size() == 1 && std::abs(R.rows[0].dz - 0.012) < 1e-9 && !R.rows[0].ok);
+    h.useDesignZ = true;
+    h.designZ = 100.5;
+    CHECK(std::abs(civil::analyze({{"a", {5, 0.5, 100.495}, ""}}, {}, h).rows[0].dz + 0.005) < 1e-9);
+    // vertikallik: ustun (pastki nuqtaga nisbatan), ruxsat 5 mm + H/1000
+    civil::DevParams v;
+    v.kind = civil::DevKind::Vertical;
+    v.cluster = 0.5;
+    v.tol = 0.005;
+    v.tolRatio = 1000;
+    R = civil::analyze({{"b", {1, 1, 0}, ""}, {"m", {1.003, 1.004, 3}, ""}, {"t", {1.006, 1.008, 6}, ""}, {"x", {9, 9, 0}, ""}}, {}, v);
+    CHECK(R.rows.size() == 2 && R.unmatched.size() == 1);
+    CHECK(std::abs(R.rows[1].d - 0.010) < 1e-9 && std::abs(R.rows[1].h - 6) < 1e-9 && std::abs(R.rows[1].allow - 0.011) < 1e-9 && R.rows[1].ok);
+    CHECK(R.elements.size() == 1 && R.elements[0].n == 2);
+}
+TEST(survey_deviation_axis_point_excel) {
+    // anker: 30° pastga, sharqqa
+    const double c = std::cos(M_PI / 6), s = std::sin(M_PI / 6);
+    civil::DesignRef anc{"A1", {{0, 0, 0}, {10 * c, 0, -10 * s}}, false};
+    civil::DevParams p;
+    p.kind = civil::DevKind::Axis;
+    p.tol = 0.05;
+    // o'q bo'yicha 5 m, yon tomonga +0.02 (shimol), tik normal bo'yicha 0.03
+    const Vec3 nv{s, 0, c};   // o'qqa perpendikulyar, yuqoriga
+    const Vec3 q = Vec3{5 * c, 0, -5 * s} + Vec3{0, 0.02, 0} + nv * 0.03;
+    auto R = civil::analyze({{"1", {0, 0, 0}, ""}, {"2", q, ""}}, {anc}, p);
+    CHECK(R.rows.size() == 2);
+    CHECK(std::abs(std::abs(R.rows[1].lat) - 0.02) < 1e-9 && std::abs(std::abs(R.rows[1].vert) - 0.03) < 1e-9);
+    CHECK(std::abs(R.rows[1].h - 5) < 1e-9 && std::abs(R.rows[1].d - std::hypot(0.02, 0.03)) < 1e-9);
+    CHECK(R.elements.size() == 1 && std::abs(R.elements[0].designIncl - 30) < 1e-9 && std::abs(R.elements[0].designAz - 90) < 1e-9);
+    CHECK(std::abs(R.elements[0].measIncl - 30) < 0.5);
+    // qoziq boshlari: loyiha nuqtalari bilan juftlash
+    civil::DevParams pp;
+    pp.kind = civil::DevKind::Point;
+    pp.maxDist = 0.5;
+    pp.tol = 0.05;
+    R = civil::analyze({{"k1", {0.03, -0.04, 1}, ""}, {"k2", {3.2, 0, 1}, ""}}, {{"P1", {{0, 0, 1.02}}, false}, {"P2", {{3, 0, 0}}, false}, {"P3", {{6, 0, 0}}, false}}, pp);
+    CHECK(R.rows.size() == 2 && std::abs(R.rows[0].d - 0.05) < 1e-9 && R.rows[0].ok && std::abs(R.rows[0].dz + 0.02) < 1e-9);
+    CHECK(!R.rows[1].ok && R.unmatched.size() == 1 && R.unmatched[0] == "(P3)");
+    // Excel va CSV
+    auto tr = [](const std::string& k) { return k; };
+    const auto wb = civil::toWorkbook(R, pp, tr, true);
+    CHECK(wb.sheets.size() == 2 && wb.sheets[0].rows.size() == 3);
+    CHECK(wb.sheets[0].column("dev.col.dxn") > 0 && wb.sheets[0].column("dev.col.dev") > 0);
+    const auto rb = xlsx::fromBytes(xlsx::toBytes(wb));
+    CHECK(rb.sheets[0].num(1, static_cast<std::size_t>(wb.sheets[0].column("dev.col.dev"))).value_or(0) == 50);
+    const std::string csv = civil::toCsv(R, tr, true);
+    CHECK(csv.find("k1;-0,040;0,030;1,000") != std::string::npos);   // geodezik: X (shimol) = chizma y
+}
+TEST(survey_cli) {
+    const std::string dir = std::filesystem::temp_directory_path().string();
+    const std::string in = dir + "/asiacad_pts.txt", out = dir + "/asiacad_pts_out.csv", xl = dir + "/asiacad_dev.xlsx";
+    {
+        std::ofstream f(in);
+        f << "1 -0.012 3.000 10.0\n2 0.004 3.000 13.0\n3 2.000 10.008 10.0\n";
+    }
+    const auto s = runScript("uz", {"PLINE 0,0 10,0 10,5 0,5 C", "PTIMPORT \"" + in + "\"", "DEVIATION PLAN LAYER:SYOMKA 1 TOL=10 XLSX=\"" + xl + "\"",
+                                    "PTEXPORT LAYER:SYOMKA \"" + out + "\"", "DEVCLEAR", "DEVIATION FOO 1 1"});
+    CHECK(s.find("3 ta nuqta import qilindi (Z: 10.000 … 13.000") != std::string::npos);
+    CHECK(s.find("Reja / fasad: 3 ta nuqta — ruxsatda 2, oshgan 1; max 12.0 mm") != std::string::npos);
+    CHECK(s.find("1: +12.0 mm (ruxsat 10.0 mm)") != std::string::npos);
+    CHECK(s.find("og'ish belgisi o'chirildi") != std::string::npos && s.find("Noma'lum tahlil turi: FOO") != std::string::npos);
+    CHECK(std::filesystem::exists(xl) && xlsx::load(xl).sheets.size() == 2);
+    std::ifstream f(out);
+    std::stringstream b;
+    b << f.rdbuf();
+    CHECK(b.str().find("2,0.004,3.000,13.000") != std::string::npos);
 }
 TEST(tpl_geo_fit_and_cli) {
     const Vec3 p1{0, 0, 0}, p2{10, 0, 0}, P1{512300.5, 4612345.12, 412.3}, P2{512300.5, 4612355.12, 0};

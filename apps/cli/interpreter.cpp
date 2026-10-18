@@ -157,6 +157,10 @@ const char* commandSyntax(const std::string& c) {
         {"RAMP", "file.json | key=value ... [x,y[,z]]"},
         {"RWALL", "file.json | key=value ... [x,y[,z]]"},
         {"GEOPLACE", "sel p1 P1 [p2 P2] [GEO] [SCALE] [Z=H]"},
+        {"PTIMPORT", "file.txt|csv|xlsx [XY] [H=h]"},
+        {"PTEXPORT", "sel file.txt|csv|xlsx [XY]"},
+        {"DEVIATION", "PLAN|HEIGHT|VERT|AXIS|POINT pts ref|- [TOL=mm] [MAX=m] [R=m] [Z=m] [K=n] [H=h] [A=m] [XY] [NODRAW] [XLSX=f] [CSV=f]"},
+        {"DEVCLEAR", ""},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -351,6 +355,7 @@ bool Interpreter::run(const std::string& rawLine) {
 
 void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchDraft(cmd, a)) return;
+    if (dispatchSurvey(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;

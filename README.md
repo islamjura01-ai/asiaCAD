@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.19: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.20: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,27 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Geodezik tahlil — og'ishlar (v0.20) — `civil/survey`
+
+Lenta → **Geodeziya** (chap panelda "Syomka"): GeoUzPro / Geo_Deviation uslubidagi ijroiy tahlil.
+
+| Tur | Nima o'lchanadi |
+|---|---|
+| **Reja / fasad** (`DEVIATION PLAN`) | nuqtadan loyiha chizig'igacha (devor yuzi, o'q, fasad izi, kontur); yopiq kontur — tashqari "+", ochiq — chap "+"; **B/P** — mahalliy guruhda (≈1.5 m) Z medianasidan yuqori/past |
+| **Vertikallik** (`VERT`) | bir vertikaldagi nuqtalar (ustun, devor qirrasi, qoziq, fasad): pastki nuqtaga yoki loyiha o'qiga nisbatan dX, dY, og'ish, H; ruxsat — mm + H/k |
+| **Balandlik** (`HEIGHT`) | Z − loyiha belgisi (doimiy yoki loyiha 3D chizig'i / nuqtasidan interpolyatsiya) |
+| **Qiya o'q** (`AXIS`) | anker, qiya qoziq, tirgak, to'sin: 3D o'qqa perpendikulyar — yon (rejada) va tik tashkil etuvchilar, o'q bo'yicha masofa; element uchun qiyalik va azimut (loyiha / o'lchangan) |
+| **Loyiha nuqtasi** (`POINT`) | qoziq / anker boshi, ustun markazi (aylana, nuqta, blok): eng yaqin o'lchangan nuqta bilan juftlash — dX, dY, dZ; o'lchanmagan qoziqlar ro'yxati |
+
+* Chizmaga: strelka **doim loyihadan tashqariga** (nuqta tomonga), qiymat mm — **doim gorizontal**, yashil — ruxsatda,
+  qizil — oshgan; B — yashil, P — ko'k. Barcha belgilar **nuqta qaysi balandlikda bo'lsa, o'sha balandlikda** (`DEV_STRELKA`, `DEV_QIYMAT`, `DEV_BP`);
+  ustma-ust (yuqori/past) nuqtalarning yozuvlari qatorlanadi. `DEVCLEAR` — tozalash.
+* **Excel** (`XLSX=`): og'ishlar varag'i (geodezik X — shimol), xulosa (soni, ruxsatda %, max, o'rtacha, RMS, tegishli emaslar), elementlar (qiya o'q).
+  **CSV** (`CSV=`, `;` va o'nlik vergul — Excel uchun).
+* Nuqtalar: `PTIMPORT fayl.txt|csv|xlsx [XY]` — N X Y Z [kod], ajratuvchi avtomatik (bo'sh joy, tab, `,`, `;`, o'nlik vergul), sarlavha qatorlari o'tkaziladi;
+  nuqta — `SYOMKA`, nom/belgi/kod yozuvlari nuqtaning o'z Z sida. `PTEXPORT sel fayl.txt|csv|xlsx [XY]`.
+* Oynada: tur tugmalari, nuqtalar/loyiha — qatlamdan yoki tanlovdan, parametrlar, jadval (ikki marta bosish — chizmada ko'rsatish), Excel/CSV.
 
 ## Konstruksiya shablonlari va geo-joylash (v0.19) — `bim/templates`
 

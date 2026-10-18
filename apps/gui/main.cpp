@@ -14,6 +14,7 @@
 #include "generator_dialogs.h"
 #include "drive_dialog.h"
 #include "templates_dialog.h"
+#include "survey_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -70,6 +71,8 @@ int main(int argc, char** argv) {
     int cityTpl = -1;
     QString scratch;
     int tplPage = -1;
+    int surveyKind = -1;
+    QString surveyRef;
     bool geoDlg = false;
     bool drive = false;
     int driveMode = -1, driveSrc = -1;
@@ -113,7 +116,9 @@ int main(int argc, char** argv) {
         else if (a == "--city") city = true;                     // Shahar mavzesi oynasi
         else if (a == "--city-tpl") cityTpl = next().toInt();    // shablon raqami (0 dan)
         else if (a == "--tpl") tplPage = next().toInt();          // konstruksiya shablonlari: 0 karkas, 1 zina, 2 rampa, 3 tirgak devor
-        else if (a == "--geo") geoDlg = true;                    // geo-joylash oynasi (tanlov bilan)
+        else if (a == "--geo") geoDlg = true;
+        else if (a == "--survey") surveyKind = next().toInt();     // geodezik tahlil oynasi (0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 nuqta)
+        else if (a == "--survey-ref") surveyRef = next();          // loyiha qatlami                    // geo-joylash oynasi (tanlov bilan)
         else if (a == "--scratch") scratch = next();             // "0 dan" oynasi: building | road | waterway | util
         else if (a == "--asm") asmIndex = next().toInt();
         else if (a == "--station") station = next().toInt();
@@ -189,6 +194,11 @@ int main(int argc, char** argv) {
             if (!scratch.isEmpty()) w.openScratch(scratch);
             if (tplPage >= 0) w.openTemplates(tplPage);
             if (geoDlg) w.openGeoPlace();
+            if (surveyKind >= 0) {
+                auto* sd = w.openSurvey(surveyKind);
+                if (!surveyRef.isEmpty()) sd->setRefLayer(surveyRef);
+                sd->run();
+            }
             if (drive) {
                 auto* dd = w.openDrive();
                 if (driveSrc >= 0) dd->setSource(driveSrc);
@@ -249,6 +259,7 @@ int main(int argc, char** argv) {
                     (waterway && tl->isVisible() && tl->inherits("asiacad::gui::WaterwayDialog")) ||
                     (corridor && !drive && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")) ||
                     (city && tl->isVisible() && tl->inherits("asiacad::gui::CityDialog")) ||
+                    (surveyKind >= 0 && tl->isVisible() && tl->inherits("asiacad::gui::SurveyDialog")) ||
                     (drive && tl->isVisible() && tl->inherits("asiacad::gui::DriveDialog")) ||
                     ((!scratch.isEmpty() || tplPage >= 0 || geoDlg) && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
                     target = tl;

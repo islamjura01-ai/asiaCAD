@@ -67,12 +67,13 @@ add_library(asiacad_civil
   src/civil/generators.cpp
   src/civil/drive.cpp
   src/civil/symbols.cpp
+  src/civil/survey.cpp
 )
 target_include_directories(asiacad_civil PUBLIC include)
 target_link_libraries(asiacad_civil PUBLIC asiacad_core asiacad_io)
 
 # Buyruq interpretatori: CLI va GUI uchun umumiy
-add_library(asiacad_cmd apps/cli/interpreter.cpp apps/cli/interpreter_draft.cpp)
+add_library(asiacad_cmd apps/cli/interpreter.cpp apps/cli/interpreter_draft.cpp apps/cli/interpreter_survey.cpp)
 target_include_directories(asiacad_cmd PUBLIC apps/cli)
 target_link_libraries(asiacad_cmd PUBLIC asiacad_io asiacad_i18n asiacad_civil)
 
@@ -102,7 +103,7 @@ if(ASIACAD_BUILD_GUI)
       apps/gui/viewport.cpp
       apps/gui/theme.cpp
       apps/gui/icons.cpp
-      apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp
+      apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp
     )
     target_link_libraries(asiacad-gui PRIVATE asiacad_cmd Qt6::Widgets Qt6::OpenGLWidgets)
     target_compile_definitions(asiacad-gui PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}")
@@ -115,7 +116,7 @@ if(ASIACAD_BUILD_GUI)
 
     # GUI tutun testi (ekransiz)
     add_executable(asiacad_gui_tests tests/gui_smoke.cpp
-      apps/gui/main_window.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp)
+      apps/gui/main_window.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/building_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp)
     target_include_directories(asiacad_gui_tests PRIVATE apps/gui)
     target_link_libraries(asiacad_gui_tests PRIVATE asiacad_cmd Qt6::Widgets Qt6::OpenGLWidgets)
     target_compile_definitions(asiacad_gui_tests PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}" ASIACAD_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples")

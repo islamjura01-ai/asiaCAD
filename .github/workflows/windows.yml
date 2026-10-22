@@ -1,0 +1,59 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Qt 6 o'rnatish
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.3"
+          arch: win64_msvc2019_64
+          cache: true
+
+      - name: MSVC muhiti
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Konfiguratsiya
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Yig'ish
+        run: cmake --build build --parallel
+
+      - name: Testlar (yadro)
+        continue-on-error: true
+        run: build\asiacad_tests.exe
+
+      - name: Tarqatma papkasi
+        shell: pwsh
+        run: |
+          $d = "AsiaCAD"
+          New-Item -ItemType Directory -Force $d | Out-Null
+          Copy-Item build\asiacad-gui.exe $d\AsiaCAD.exe
+          Copy-Item build\asiacad.exe $d\asiacad-cli.exe
+          Copy-Item -Recurse i18n $d\i18n
+          if (Test-Path examples) { Copy-Item -Recurse examples $d\examples }
+          windeployqt --release --no-translations --compiler-runtime $d\AsiaCAD.exe
+          Compress-Archive -Path $d -DestinationPath AsiaCAD-Windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AsiaCAD-Windows
+          path: AsiaCAD-Windows.zip
+
+      - name: Release (teg bo'lsa)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AsiaCAD-Windows.zip

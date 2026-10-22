@@ -26,6 +26,7 @@ private:
     void dispatch(const std::string& canon, const Args& a);
     bool dispatchDraft(const std::string& canon, const Args& a);  // interpreter_draft.cpp: Draw/Modify/Layers/Annotation, belgilar
     bool dispatchSurvey(const std::string& canon, const Args& a); // interpreter_survey.cpp: geodezik tahlil, nuqtalar TXT/CSV
+    bool dispatchTerrain(const std::string& canon, const Args& a); // interpreter_terrain.cpp: TIN, gorizontal, profil, kesim, kartogramma, hajm
 
     Vec3 parsePoint(const std::string& tok) const;
     Vec3 parseRawPoint(const std::string& tok) const;  // x,y[,z] yoki @dx,dy — bog'lanishsiz

@@ -96,6 +96,19 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "drive") {  // rul
         C(12, 12, 9); C(12, 12, 2.5); L(3.5, 10.5, 9.6, 11.2); L(14.4, 11.2, 20.5, 10.5); L(12, 14.5, 12, 21);
     }
+    else if (n == "profile") {  // bo'ylama profil: yer chizig'i, loyiha, jadval
+        QPainterPath g; g.moveTo(2, 12); g.cubicTo(7, 6, 11, 14, 15, 9); g.cubicTo(18, 6, 20, 10, 22, 8); p.drawPath(g); L(2, 10, 22, 7); L(2, 16, 22, 16); L(2, 19, 22, 19); L(2, 22, 22, 22); L(8, 16, 8, 22); L(15, 16, 15, 22);
+    }
+    else if (n == "sections") {  // ko'ndalang kesim: yer, loyiha trapetsiya, shtrix
+        QPainterPath g; g.moveTo(2, 9); g.cubicTo(8, 6, 15, 12, 22, 8); p.drawPath(g); P({{3, 17}, {7, 12}, {17, 12}, {21, 17}}); L(12, 4, 12, 21); L(2, 21, 22, 21);
+    }
+    else if (n == "cartogram") {  // to'r + nol chizig'i
+        for (int i = 0; i < 4; ++i) { L(3 + i * 6, 3, 3 + i * 6, 21); L(3, 3 + i * 6, 21, 3 + i * 6); }
+        p.save(); QPen d = p.pen(); d.setWidthF(d.widthF() * 1.6); p.setPen(d); QPainterPath z; z.moveTo(3, 18); z.cubicTo(9, 14, 12, 10, 21, 5); p.drawPath(z); p.restore();
+    }
+    else if (n == "volume") {  // prizma / hajm
+        P({{4, 9}, {12, 5}, {20, 9}, {12, 13}}, true); L(4, 9, 4, 17); L(20, 9, 20, 17); L(12, 13, 12, 21); P({{4, 17}, {12, 21}, {20, 17}});
+    }
     else if (n == "devplan") {  // loyiha chizig'i + nuqta + tashqariga strelka
         L(3, 16, 21, 16); dot(14, 9, 1.6); L(14, 16, 14, 10.5); P({{12, 12.5}, {14, 10}, {16, 12.5}}); L(3, 20, 9, 20);
     }

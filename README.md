@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.20: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.21: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,22 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Yer ishlari: yuza, profil, kesimlar, kartogramma, hajm (v0.21) — `civil/terrain`
+
+Lenta → **Geodeziya → Yer ishlari** (chap panelda "Relyef"). Yer — syomka nuqtalari (`SYOMKA`), belgi yozuvlari ("412,35"),
+3D gorizontallar qatlami; loyiha — boshqa yuza (qatlam), gorizontal yoki qiya tekislik (Z, ix‰, iy‰) yoki **balans tekisligi**.
+
+| Buyruq | Natija |
+|---|---|
+| `TIN sel [MAXEDGE=m] [BOUND=id]` | Delaunay uchburchaklar yuzasi (`YUZA_TIN`, 3D) |
+| `CONTOUR sel STEP=0.5 MAJOR=2.5` | gorizontallar 3D, asosiylari yozuvli |
+| `PROFILE o'q EG=… [FG=…\|Z=… IX IY] STEP=20 H=1000 V=100 [PK0] [AT] [XLSX=]` | bo'ylama profil: yer (jigarrang), loyiha (qizil), shartli gorizont, jadval — loyiha / yer / ishchi belgi / masofa / PK |
+| `XSECTIONS o'q EG=… FG=…\|Z=… STEP=20 L=20 R=20 SCALE=200 COLS=4 [XLSX=]` | har N m da ko'ndalang kesimlar (to'kma — qizil, kesma — ko'k shtrix, maydonlar), rejada kesim izlari, **hajmlar vedomosti** (o'rtacha maydonlar usuli); Excelda formulalar bilan |
+| `CARTOGRAM EG=… Z=…\|FG=…\|BALANCE CELL=20 [BOUND=id] [XLSX=]` | kartogramma: kvadratlar to'ri, tugunda ishchi (±), loyiha va yer belgisi; kvadrat hajmi (to'rt uchburchakli prizma — nol chizig'i kvadrat ichida ham aniq), **nol chizig'i**, ustunlar yig'indisi, jami va balans; balans tekisligi belgisi H0 |
+| `VOLUME EG=… FG=…\|Z=…\|BALANCE [BOUND=id] [CELL=m]` | yuzalar orasidagi kesma / to'kma (mayda to'r) |
+
+Excel: profil (piketlar), kesimlar (vedomost + kesim nuqtalari), kartogramma (tugunlar, kvadratlar, ustunlar, xulosa).
 
 ## Geodezik tahlil — og'ishlar (v0.20) — `civil/survey`
 

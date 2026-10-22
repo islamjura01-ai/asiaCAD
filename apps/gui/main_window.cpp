@@ -11,6 +11,7 @@
 #include "generator_dialogs.h"
 #include "templates_dialog.h"
 #include "survey_dialog.h"
+#include "earthwork_dialog.h"
 #include "drive_dialog.h"
 #include "draft_panels.h"
 #include "icons.h"
@@ -118,6 +119,10 @@ const ActDef kActs[] = {
     {"devplan", "devplan", "gui.act.devplan", false},    {"devvert", "devvert", "gui.act.devvert", false},
     {"devheight", "devheight", "gui.act.devheight", false}, {"devaxis", "devaxis", "gui.act.devaxis", false},
     {"devpoint", "devpoint", "gui.act.devpoint", false}, {"devclear", "devclear", "gui.act.devclear", false},
+    // Yer ishlari
+    {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
+    {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
+    {"ewvolume", "volume", "gui.act.ewvolume", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -292,7 +297,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.20"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.21"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -319,6 +324,7 @@ QIcon MainWindow::icon(const QString& name) const {
             {"steelframe", "#4F6D8A"}, {"stairtpl", "#D9466A"}, {"ramptpl", "#E7881B"}, {"rwalltpl", "#8A7B5C"}, {"geoplace", "#0E9F8E"},
             {"ptimport", "#0E9F8E"}, {"ptexport", "#0E9F8E"}, {"devplan", "#0E9F8E"}, {"devvert", "#0E9F8E"}, {"devheight", "#0E9F8E"},
             {"devaxis", "#0E9F8E"}, {"devpoint", "#0E9F8E"}, {"devclear", "#E0A526"},
+            {"ewtin", "#3E9B3A"}, {"ewprofile", "#3E9B3A"}, {"ewsections", "#3E9B3A"}, {"ewcarto", "#3E9B3A"}, {"ewvolume", "#3E9B3A"},
             {"leader", "#C8324B"}, {"dimangular", "#C8324B"},
             {"layers", "#D99A1E"}, {"laymcur", "#2BA84A"}, {"laymatch", "#1C8C9E"}, {"layoff", "#6B7280"}, {"layfrz", "#2F7FD8"}, {"laylck", "#C2410C"}, {"layulk", "#E58A3A"}, {"layiso", "#7A3FC8"}, {"layuniso", "#A27BDB"}, {"layon", "#3E9B3A"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
@@ -401,6 +407,11 @@ void MainWindow::buildActions() {
     connect(act_["devaxis"], &QAction::triggered, this, [this] { openSurvey(3); });
     connect(act_["devpoint"], &QAction::triggered, this, [this] { openSurvey(4); });
     connect(act_["devclear"], &QAction::triggered, this, [this] { runLine("DEVCLEAR"); });
+    connect(act_["ewtin"], &QAction::triggered, this, [this] { openEarthwork(0); });
+    connect(act_["ewprofile"], &QAction::triggered, this, [this] { openEarthwork(1); });
+    connect(act_["ewsections"], &QAction::triggered, this, [this] { openEarthwork(2); });
+    connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
+    connect(act_["ewvolume"], &QAction::triggered, this, [this] { openEarthwork(4); });
     connect(act_["drive"], &QAction::triggered, this, [this] { openDrive(); });
     // ---- tanlov bilan bajariladigan amallar
     auto withSel = [this](const QString& canon) {
@@ -510,7 +521,8 @@ void MainWindow::buildRibbon() {
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}, {"leader", "text"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}}, {"gui.grp.deviation", {"devplan", "devvert", "devheight", "devaxis", "devpoint"}},
+        {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}}, {"gui.grp.earth", {"ewtin", "ewprofile", "ewsections", "ewcarto", "ewvolume"}},
+                            {"gui.grp.deviation", {"devplan", "devvert", "devheight", "devaxis", "devpoint"}},
                             {"gui.grp.clean", {"devclear"}}, {"gui.grp.geo", {"geoplace"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.tab.struct", {{"gui.grp.templates", {"steelframe", "stairtpl", "ramptpl", "rwalltpl"}}, {"gui.grp.km", {"steel"}},
                             {"gui.grp.geo", {"geoplace"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
@@ -621,6 +633,9 @@ void MainWindow::buildModuleBars() {
                 rail_->actions().first()->setChecked(true);
             } else if (key == "gui.module.road") {
                 openCorridor();
+                rail_->actions().first()->setChecked(true);
+            } else if (key == "gui.module.terrain") {
+                openEarthwork(0);
                 rail_->actions().first()->setChecked(true);
             } else if (key == "gui.module.survey") {
                 openSurvey();
@@ -1264,6 +1279,32 @@ TemplatesDialog* MainWindow::openTemplates(int page) {
     return tpl_;
 }
 
+EarthworkDialog* MainWindow::openEarthwork(int tab) {
+    if (!earth_) {
+        earth_ = new EarthworkDialog(loc_, doc_, [this] { return view_->selection(); }, this);
+        earth_->setStyleSheet(theme_.styleSheet);
+        connect(earth_, &EarthworkDialog::commandReady, this, [this](const QString& line) {
+            runLine(line);
+            view_->zoomExtents();
+            earth_->refreshLayers();
+        });
+        connect(earth_, &EarthworkDialog::pickRequested, this, [this] {
+            earth_->hide();
+            pickCb_ = [this](const std::vector<Vec3>& pts) {
+                if (!pts.empty()) earth_->setAt(pts.front());
+                earth_->show();
+                earth_->raise();
+            };
+            view_->startPick(1, {"gui.prompt.ewat"});
+        });
+    } else earth_->refreshLayers();
+    if (tab >= 0) earth_->setTab(tab);
+    earth_->show();
+    earth_->raise();
+    earth_->activateWindow();
+    return earth_;
+}
+
 SurveyDialog* MainWindow::openSurvey(int kind) {
     if (!survey_) {
         survey_ = new SurveyDialog(loc_, doc_, [this] { return view_->selection(); }, this);
@@ -1600,6 +1641,11 @@ void MainWindow::startCommand(const QString& canonical) {
     if (canonical == "DEVIATION" || canonical == "PTEXPORT") { openSurvey(); return; }
     if (canonical == "PTIMPORT") { act_["ptimport"]->trigger(); return; }
     if (canonical == "DEVCLEAR") { runLine("DEVCLEAR"); return; }
+    if (canonical == "TIN" || canonical == "CONTOUR") { openEarthwork(0); return; }
+    if (canonical == "PROFILE") { openEarthwork(1); return; }
+    if (canonical == "XSECTIONS") { openEarthwork(2); return; }
+    if (canonical == "CARTOGRAM") { openEarthwork(3); return; }
+    if (canonical == "VOLUME") { openEarthwork(4); return; }
     if (canonical == "OPEN") { openFile(); return; }
     if (canonical == "SAVE") { saveFile(false); return; }
     if (canonical == "IMPORT") { importDxf(); return; }

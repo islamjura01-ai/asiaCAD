@@ -46,6 +46,7 @@ class CorridorDialog;
 class CityDialog;
 class TemplatesDialog;
 class SurveyDialog;
+class EarthworkDialog;
 class GeoPlaceDialog;
 class DriveDialog;
 class SymbolPalette;
@@ -77,7 +78,8 @@ public:
     DriveDialog* openDrive();               // "Haydash" (Drive): tanlangan chiziq bo'ylab 3D ichida yurish va ko'rinish tahlili
     TemplatesDialog* openTemplates(int page);  // konstruksiya shablonlari: 0 metall karkas, 1 zina, 2 rampa, 3 tirgak devor
     GeoPlaceDialog* openGeoPlace();
-    SurveyDialog* openSurvey(int kind = -1);  // geodezik tahlil: 0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 loyiha nuqtasi (civil::DevKind)          // tanlovni haqiqiy koordinata / belgiga o'tkazish
+    SurveyDialog* openSurvey(int kind = -1);
+    EarthworkDialog* openEarthwork(int tab = -1);  // yer ishlari: 0 yuza, 1 profil, 2 kesimlar, 3 kartogramma, 4 hajm  // geodezik tahlil: 0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 loyiha nuqtasi (civil::DevKind)          // tanlovni haqiqiy koordinata / belgiga o'tkazish
     QDialog* openScratch(const QString& module);  // "0 dan chizish": building | road | waterway | corridor | util
     void locate(double x, double y);        // tuzatish: chizmada joyni ko'rsatish
 
@@ -127,6 +129,7 @@ private:
     CityDialog* city_ = nullptr;
     TemplatesDialog* tpl_ = nullptr;
     SurveyDialog* survey_ = nullptr;
+    EarthworkDialog* earth_ = nullptr;
     GeoPlaceDialog* geoDlg_ = nullptr;
     std::function<void(const std::vector<Vec3>&)> pickCb_;   // oyna chizmadan nuqta kutmoqda
     DriveDialog* drive_ = nullptr;

@@ -161,6 +161,12 @@ const char* commandSyntax(const std::string& c) {
         {"PTEXPORT", "sel file.txt|csv|xlsx [XY]"},
         {"DEVIATION", "PLAN|HEIGHT|VERT|AXIS|POINT pts ref|- [TOL=mm] [MAX=m] [R=m] [Z=m] [K=n] [H=h] [A=m] [XY] [NODRAW] [XLSX=f] [CSV=f]"},
         {"DEVCLEAR", ""},
+        {"TIN", "sel [MAXEDGE=m] [BOUND=id]"},
+        {"CONTOUR", "sel [STEP=0.5] [MAJOR=2.5] [TH=h] [MAXEDGE=m] [BOUND=id]"},
+        {"PROFILE", "path EG=sel [FG=sel | Z=z [IX=‰] [IY=‰] [BASE=x,y]] [STEP=20] [H=1000] [V=100] [PK0=m] [DATUM=z] [AT=x,y] [XLSX=f]"},
+        {"XSECTIONS", "path EG=sel FG=sel|Z=z [STEP=20] [L=20] [R=20] [SAMPLE=0.5] [SCALE=200] [COLS=4] [PK0=m] [AT=x,y] [NOMARKS] [XLSX=f]"},
+        {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
+        {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -356,6 +362,7 @@ bool Interpreter::run(const std::string& rawLine) {
 void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchDraft(cmd, a)) return;
     if (dispatchSurvey(cmd, a)) return;
+    if (dispatchTerrain(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;

@@ -15,6 +15,7 @@
 #include "drive_dialog.h"
 #include "templates_dialog.h"
 #include "survey_dialog.h"
+#include "earthwork_dialog.h"
 
 #include <QApplication>
 #include <QDir>
@@ -72,6 +73,7 @@ int main(int argc, char** argv) {
     QString scratch;
     int tplPage = -1;
     int surveyKind = -1;
+    int earthTab = -1;
     QString surveyRef;
     bool geoDlg = false;
     bool drive = false;
@@ -118,7 +120,8 @@ int main(int argc, char** argv) {
         else if (a == "--tpl") tplPage = next().toInt();          // konstruksiya shablonlari: 0 karkas, 1 zina, 2 rampa, 3 tirgak devor
         else if (a == "--geo") geoDlg = true;
         else if (a == "--survey") surveyKind = next().toInt();     // geodezik tahlil oynasi (0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 nuqta)
-        else if (a == "--survey-ref") surveyRef = next();          // loyiha qatlami                    // geo-joylash oynasi (tanlov bilan)
+        else if (a == "--survey-ref") surveyRef = next();
+        else if (a == "--earth") earthTab = next().toInt();         // yer ishlari oynasi (0 yuza, 1 profil, 2 kesim, 3 kartogramma, 4 hajm)          // loyiha qatlami                    // geo-joylash oynasi (tanlov bilan)
         else if (a == "--scratch") scratch = next();             // "0 dan" oynasi: building | road | waterway | util
         else if (a == "--asm") asmIndex = next().toInt();
         else if (a == "--station") station = next().toInt();
@@ -194,6 +197,11 @@ int main(int argc, char** argv) {
             if (!scratch.isEmpty()) w.openScratch(scratch);
             if (tplPage >= 0) w.openTemplates(tplPage);
             if (geoDlg) w.openGeoPlace();
+            if (earthTab >= 0) {
+                auto* ed = w.openEarthwork(earthTab);
+                if (!surveyRef.isEmpty()) { ed->setDesignMode(3); }
+                ed->compute();
+            }
             if (surveyKind >= 0) {
                 auto* sd = w.openSurvey(surveyKind);
                 if (!surveyRef.isEmpty()) sd->setRefLayer(surveyRef);
@@ -260,6 +268,7 @@ int main(int argc, char** argv) {
                     (corridor && !drive && tl->isVisible() && tl->inherits("asiacad::gui::CorridorDialog")) ||
                     (city && tl->isVisible() && tl->inherits("asiacad::gui::CityDialog")) ||
                     (surveyKind >= 0 && tl->isVisible() && tl->inherits("asiacad::gui::SurveyDialog")) ||
+                    (earthTab >= 0 && tl->isVisible() && tl->inherits("asiacad::gui::EarthworkDialog")) ||
                     (drive && tl->isVisible() && tl->inherits("asiacad::gui::DriveDialog")) ||
                     ((!scratch.isEmpty() || tplPage >= 0 || geoDlg) && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
                     target = tl;

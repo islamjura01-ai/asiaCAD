@@ -6,6 +6,7 @@
 #include <asiacad/bim/steel.h>
 #include <asiacad/bim/templates.h>
 #include <asiacad/civil/survey.h>
+#include <asiacad/civil/terrain.h>
 #include <asiacad/civil/excel.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/civil/road.h>
@@ -348,7 +349,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 96);
+    CHECK(loc.canonicalCommands().size() == 102);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3320,6 +3321,134 @@ TEST(survey_cli) {
     std::stringstream b;
     b << f.rdbuf();
     CHECK(b.str().find("2,0.004,3.000,13.000") != std::string::npos);
+}
+// ---------- yer ishlari: TIN, profil, kesimlar, kartogramma, hajm ----------
+static civil::Tin planeTin(double x1, double y1, double step) {   // z = 100 + 0.01·x
+    std::vector<Vec3> p;
+    for (double x = 0; x <= x1 + 1e-9; x += step)
+        for (double y = 0; y <= y1 + 1e-9; y += step) p.push_back({x + (static_cast<int>(y / step) % 2 ? 0.37 : 0), y, 0});
+    for (auto& q : p) {
+        q.x = std::min(q.x, x1);
+        q.z = 100 + 0.01 * q.x;
+    }
+    return civil::Tin::build(p);
+}
+TEST(terrain_tin_and_contours) {
+    const auto t = planeTin(100, 60, 5);
+    CHECK(!t.empty() && std::abs(t.area() - 6000) < 1e-6);
+    double z;
+    CHECK(t.z(37.3, 21.1, z) && std::abs(z - 100.373) < 1e-9);
+    CHECK(!t.z(-1, 5, z));
+    const auto c = t.contours(100.5);
+    CHECK(c.size() == 1 && c[0].size() >= 2);
+    for (const auto& q : c[0]) CHECK(std::abs(q.x - 50) < 1e-6 && std::abs(q.z - 100.5) < 1e-12);
+    // chegara va uzun qirra bilan kesish
+    const std::vector<Vec3> b{{0, 0, 0}, {50, 0, 0}, {50, 60, 0}, {0, 60, 0}};
+    CHECK(std::abs(civil::Tin::build(t.points(), &b).area() - 3000) < 80);
+    // nuqtalar: POINT, belgi yozuvi, 3D gorizontal; o'z yozuvlarimiz va 2D chiziqlar — yo'q
+    Document d;
+    d.add(std::make_unique<PointEntity>(Vec3{0, 0, 10}));
+    d.add(std::make_unique<TextEntity>(Vec3{5, 0, 0}, 1, "412,35"));
+    auto syn = std::make_unique<TextEntity>(Vec3{6, 0, 0}, 1, "77");
+    syn->setLayer("SYOMKA_NOMI");
+    d.add(std::move(syn));
+    d.add(std::make_unique<LineEntity>(Vec3{0, 0, 0}, Vec3{10, 0, 0}));
+    d.add(std::make_unique<PolylineEntity>(std::vector<Vec3>{{0, 0, 5}, {25, 0, 5}}, false));
+    const auto pts = civil::terrainPoints(d, d.ids());
+    CHECK(pts.size() == 1 + 1 + 2 + 2);   // 25 m segmentda 2 ta oraliq nuqta
+}
+TEST(terrain_profile_sections) {
+    const auto t = planeTin(100, 60, 5);
+    civil::Design fg;
+    fg.plane = true;
+    fg.z0 = 101;
+    const std::vector<Vec3> path{{0, 30, 0}, {100, 30, 0}};
+    civil::ProfileSpec p;
+    const auto pr = civil::sampleProfile(path, t, fg, p);
+    int st = 0;
+    for (const auto& q : pr) {
+        st += q.station;
+        CHECK(q.hasG && q.hasD && std::abs(q.zg - (100 + 0.01 * q.s)) < 1e-9);
+    }
+    CHECK(st == 6);
+    auto tr = [](const std::string& k) { return k; };
+    const auto es = civil::drawProfile(pr, p, tr);
+    int red = 0;
+    for (const auto& e : es) red += e->layer() == "PROFIL_LOYIHA";
+    CHECK(es.size() > 40 && red == 1);
+    CHECK(civil::profileWorkbook(pr, p, tr).sheets[0].rows.size() == 7);
+    // kesimlar: yer bir xil kesim bo'ylab — to'kma = (101 − zg)·40; hajm (o'rtacha maydon) = 2000 m³
+    civil::SectionSpec s;
+    s.left = s.right = 20;
+    const auto xs = civil::sampleSections(path, t, fg, s);
+    CHECK(xs.size() == 6 && std::abs(xs[2].fill - (101 - 100.4) * 40) < 1e-6 && xs[2].cut < 1e-9);
+    const auto v = civil::sectionVolumes(xs);
+    CHECK(std::abs(v.fill - 2000) < 1e-6 && v.cut < 1e-9);
+    // loyiha 100.5: o'rtacha maydonlar usuli (nol 40…60 oralig'ida) — 520 m³ (aniq qiymat 500)
+    fg.z0 = 100.5;
+    const auto v2 = civil::sectionVolumes(civil::sampleSections(path, t, fg, s));
+    CHECK(std::abs(v2.fill - 520) < 1e-6 && std::abs(v2.cut - 520) < 1e-6);
+    const auto se = civil::drawSections(civil::sampleSections(path, t, fg, s), v2, s, tr);
+    int hatch = 0;
+    for (const auto& e : se) hatch += e->type() == EntityType::Hatch;
+    CHECK(hatch >= 6);
+    const auto wb = civil::sectionsWorkbook(xs, v, s, tr);
+    CHECK(wb.sheets[0].rows.back()[4].kind == xlsx::Cell::Formula && std::abs(wb.sheets[0].rows.back()[4].num - 2000) < 1e-6);
+}
+TEST(terrain_cartogram_volume) {
+    const auto t = planeTin(100, 60, 5);
+    civil::Design fg;
+    fg.plane = true;
+    fg.z0 = 100.5;
+    civil::CartoSpec s;
+    s.cell = 20;
+    s.boundary = {{0, 0, 0}, {100, 0, 0}, {100, 60, 0}, {0, 60, 0}};
+    auto r = civil::cartogram(t, fg, s);
+    CHECK(r.nx == 5 && r.ny == 3 && std::abs(r.area - 6000) < 1e-6);
+    // to'kma = ∫∫ max(0, 0.5 − 0.01x) = 60·12.5 = 750, kesma — shuncha (nol chizig'i x = 50 — kvadrat ichida, uchburchaklar aniq)
+    CHECK(std::abs(r.fill - 750) < 1e-6 && std::abs(r.cut + 750) < 1e-6);
+    CHECK(std::abs(r.colFill[0] - 60 * (0.5 * 20 - 0.01 * 200)) < 1e-6);
+    CHECK(!r.zero.empty());
+    for (const auto& z : r.zero)
+        for (const auto& q : z) CHECK(std::abs(q.x - 50) < 1e-6);
+    CHECK(std::abs(r.node(2, 1).h - (100.5 - 100.4)) < 1e-9);
+    // balans tekisligi: o'rtacha — 100.5
+    s.balance = true;
+    r = civil::cartogram(t, civil::Design{}, s);
+    CHECK(std::abs(r.balanceZ - 100.5) < 1e-9 && std::abs(r.fill + r.cut) < 1e-6);
+    // qisman chegara: uchburchak maydon
+    s.balance = false;
+    s.boundary = {{0, 0, 0}, {100, 0, 0}, {0, 60, 0}};
+    r = civil::cartogram(t, fg, s);
+    CHECK(std::abs(r.area - 3000) < 3000 * 0.05);
+    const auto wb = civil::cartogramWorkbook(r, [](const std::string& k) { return k; });
+    CHECK(wb.sheets.size() == 4);
+    // hajm (mayda to'r) — aniq
+    const auto v = civil::volumeBetween(t, fg, {{0, 0, 0}, {100, 0, 0}, {100, 60, 0}, {0, 60, 0}}, 2);
+    CHECK(std::abs(v.fill - 750) < 1e-3 && std::abs(v.cut + 750) < 1e-3 && std::abs(v.area - 6000) < 1e-6);
+    const auto es = civil::drawCartogram(civil::cartogram(t, fg, civil::CartoSpec{}), civil::CartoSpec{}, [](const std::string& k) { return k; });
+    CHECK(es.size() > 50);
+}
+TEST(terrain_cli) {
+    std::vector<std::string> lines;
+    for (int x = 0; x <= 100; x += 10)
+        for (int y = 0; y <= 60; y += 10) lines.push_back(std::format("POINT {},{},{}", x, y, 100 + 0.01 * x));
+    lines.push_back("PLINE 0,30 100,30");              // o'q
+    lines.push_back("PLINE 0,0 100,0 100,60 0,60 C");  // chegara
+    const std::string ax = std::to_string(lines.size() - 1), bd = std::to_string(lines.size());
+    lines.push_back("CARTOGRAM EG=ALL Z=100.5 CELL=20 BOUND=" + bd);
+    lines.push_back("VOLUME EG=ALL BALANCE BOUND=" + bd);
+    lines.push_back("PROFILE " + ax + " EG=ALL Z=101 STEP=20");
+    lines.push_back("XSECTIONS " + ax + " EG=ALL Z=101 STEP=20 L=20 R=20");
+    lines.push_back("CONTOUR ALL STEP=0.25 MAJOR=0.5");
+    lines.push_back("XSECTIONS " + ax + " EG=ALL");
+    const auto s = runScript("uz", lines);
+    CHECK(s.find("Kartogramma: 15 ta kvadrat (20 m), maydon 6000.0 m²; to'kma +750.0 m³, kesma −750.0 m³") != std::string::npos);
+    CHECK(s.find("Balans tekisligi belgisi H0 = 100.500") != std::string::npos);
+    CHECK(s.find("Bo'ylama profil: L = 100.00 m, 6 ta piket") != std::string::npos);
+    CHECK(s.find("6 ta kesim (har 20 m): to'kma 2000.0 m³, kesma 0.0 m³") != std::string::npos);
+    CHECK(s.find("ta gorizontal (qadam 0.25 m") != std::string::npos);
+    CHECK(s.find("Loyiha yuzasi berilmagan") != std::string::npos);
 }
 TEST(tpl_geo_fit_and_cli) {
     const Vec3 p1{0, 0, 0}, p2{10, 0, 0}, P1{512300.5, 4612345.12, 412.3}, P2{512300.5, 4612355.12, 0};

@@ -12,6 +12,7 @@
 #include "generator_dialogs.h"
 #include "templates_dialog.h"
 #include "survey_dialog.h"
+#include "earthwork_dialog.h"
 #include "drive_dialog.h"
 #include "draft_panels.h"
 
@@ -959,6 +960,53 @@ int main(int argc, char** argv) {
         w.runLine("DEVCLEAR");
         CHECK(doc.idsOnLayer("DEV_STRELKA").empty());
         sd->close();
+    }
+
+    // 32. Yer ishlari: yuza, gorizontal, profil, kesimlar, kartogramma, hajm
+    {
+        w.runLine("NEW !");
+        for (int x = 0; x <= 100; x += 10)
+            for (int y = 0; y <= 60; y += 10) w.runLine(QStringLiteral("POINT %1,%2,%3").arg(x).arg(y).arg(100 + 0.01 * x));
+        w.runLine("PLINE 0,30 100,30");
+        const EntityId axis = doc.ids().back();
+        w.runLine("PLINE 0,0 100,0 100,60 0,60 C");
+        const EntityId bnd = doc.ids().back();
+        auto* ed = w.openEarthwork(3);
+        CHECK(ed->isVisible() && ed->tab() == EarthworkDialog::Cartogram);
+        ed->setGroundLayer("0");
+        ed->setDesignMode(1);
+        ed->setDesignZ(100.5);
+        ed->setPath(axis);
+        ed->setBoundary(bnd);
+        CHECK(ed->compute() && ed->result()->text().contains("+750.0"));
+        ed->setDesignMode(3);
+        CHECK(ed->compute() && ed->result()->text().contains("100.500"));
+        ed->setDesignMode(1);
+        auto n0 = doc.size();
+        ed->findChild<QPushButton*>("draw3")->click();
+        CHECK(doc.size() > n0 + 50 && doc.layer("KARTOGRAMMA_HAJM").has_value());
+        ed->setTab(EarthworkDialog::Profile);
+        n0 = doc.size();
+        ed->findChild<QPushButton*>("draw1")->click();
+        CHECK(doc.size() > n0 + 30 && doc.layer("PROFIL_YER").has_value());
+        ed->setTab(EarthworkDialog::Sections);
+        ed->setDesignZ(101);
+        CHECK(ed->compute() && ed->result()->text().contains("2000.0"));
+        n0 = doc.size();
+        ed->findChild<QPushButton*>("draw2")->click();
+        CHECK(doc.size() > n0 + 30 && doc.layer("RAZREZ_IZ").has_value());
+        ed->setTab(EarthworkDialog::Surface);
+        n0 = doc.size();
+        ed->findChild<QPushButton*>("drawContour")->click();
+        CHECK(doc.layer("GORIZONTAL").has_value() || doc.layer("GORIZONTAL_ASOSIY").has_value());
+        ed->findChild<QPushButton*>("drawTin")->click();
+        CHECK(doc.idsOnLayer("YUZA_TIN").size() >= 100);
+        // chizma joyi — chizmadan
+        ed->findChild<QPushButton*>("pickAt")->click();
+        CHECK(!ed->isVisible() && w.viewport()->tool() == Tool::Pick);
+        w.viewport()->feedPoint({0, -200, 0});
+        CHECK(ed->isVisible() && ed->command(EarthworkDialog::Profile).contains("AT=0,-200"));
+        ed->close();
     }
 
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);

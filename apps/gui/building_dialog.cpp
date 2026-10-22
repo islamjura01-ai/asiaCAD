@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QStyle>
 #include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
@@ -29,7 +30,8 @@ using bim::ElemKind;
 
 namespace {
 const ElemKind kKinds[] = {ElemKind::Ignore, ElemKind::Outline, ElemKind::Column, ElemKind::Wall, ElemKind::Slab,
-                           ElemKind::Opening, ElemKind::Stair, ElemKind::Shaft, ElemKind::FoundationSlab, ElemKind::Lean, ElemKind::StripFooting};
+                           ElemKind::Opening, ElemKind::Stair, ElemKind::Shaft, ElemKind::FoundationSlab, ElemKind::Lean, ElemKind::StripFooting,
+                           ElemKind::Infill};
 QColor kindColor(ElemKind k) {
     switch (k) {
         case ElemKind::Lean: return QColor(128, 126, 120);
@@ -41,6 +43,7 @@ QColor kindColor(ElemKind k) {
         case ElemKind::Roof: return QColor(120, 150, 185);
         case ElemKind::Stair: return QColor(222, 196, 150);
         case ElemKind::Shaft: return QColor(170, 180, 205);
+        case ElemKind::Infill: return QColor(228, 214, 190);
         default: return QColor(180, 180, 180);
     }
 }
@@ -178,7 +181,7 @@ void BuildingDialog::buildUi() {
     auto* mid = new QWidget(split);
     auto* mv = new QVBoxLayout(mid);
     mv->setContentsMargins(6, 0, 6, 0);
-    view_ = new Pipe3DView(mid);
+    view_ = new Model3DView(mid);
     mv->addWidget(view_, 1);
     auto* sh = new QHBoxLayout;
     showLbl_ = new QLabel(mid);
@@ -210,6 +213,17 @@ void BuildingDialog::buildUi() {
     scratch->setToolTip(t("gui.gen.scratch.tip"));
     bottom->addWidget(scratch);
     connect(scratch, &QPushButton::clicked, this, [this] { emit scratchRequested(); });
+    auto* sample = new QPushButton(t("gui.bim.sample"), this);
+    sample->setObjectName("sample");
+    sample->setToolTip(t("gui.bim.sample.tip"));
+    sample->setProperty("accent", true);   // bo'sh chizmada — birinchi qadam
+    sample_ = sample;
+    bottom->addWidget(sample);
+    connect(sample, &QPushButton::clicked, this, &BuildingDialog::sampleRequested);
+    auto* open3d = new QPushButton(t("gui.bim.open3d"), this);
+    open3d->setObjectName("open3d");
+    bottom->addWidget(open3d);
+    connect(open3d, &QPushButton::clicked, this, &BuildingDialog::open3DRequested);
     summary_ = new QLabel(this);
     summary_->setObjectName("title");
     auto* toRebar = new QPushButton(t("gui.bim.rebar"), this);
@@ -358,6 +372,7 @@ void BuildingDialog::applyTypology(const QString& id) {
         showUpTo_->setRange(0, x.floors);
         showUpTo_->setValue(x.floors);
         recompute();
+        if (model_.prisms.empty()) emit sampleRequested();   // chizma bo'sh — tip bo'yicha namuna bino
         return;
     }
 }
@@ -440,7 +455,10 @@ void BuildingDialog::recompute() {
         updating_ = was;
     }
     summary_->setText(t("gui.bim.summary", {QString::number(p.floors), QString::number(model_.prisms.size()), f2(model_.totalVolume),
-                                            f2(model_.totalFormwork), QString::number(model_.heightTop, 'f', 3)}));
+                                            f2(model_.totalFormwork), QString::number(model_.heightTop, 'f', 3)}) +
+                      (model_.windows + model_.doors > 0
+                           ? " · " + t("gui.bim.facade", {QString::number(model_.windows), QString::number(model_.doors), f2(model_.masonry), f2(model_.glazing)})
+                           : QString()));
     render();
 }
 
@@ -461,7 +479,32 @@ void BuildingDialog::render() {
             hs.push_back(hh);
         }
         const bool slab = pr.kind == ElemKind::Slab || pr.kind == ElemKind::Roof;
+        const QString kind = QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(pr.kind)));
+        const QString lvl = pr.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(pr.level)});
+        view_->beginObject(kind + " · " + lvl, kind,
+                           {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)}), t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
+                            t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})});
         view_->addPrism(o, hs, pr.z0, pr.z1, kindColor(pr.kind), slab && pr.level == upTo && upTo < floors_->value() ? 140 : 255);
+        view_->endObject();
+    }
+    // derazalar va eshiklar (shisha)
+    for (const auto& g : model_.glass) {
+        if (g.level > upTo) continue;
+        std::vector<P3> q;
+        for (const auto& v : g.quad) q.push_back({v.x, v.y, v.z});
+        const QString nm = t(g.door ? "gui.v3d.door" : "gui.v3d.window");
+        view_->beginObject(nm + " · " + t("gui.bim.level", {QString::number(g.level)}), nm, {});
+        view_->addFace(q, g.door ? QColor(70, 110, 150) : QColor(120, 170, 215), g.door ? 170 : 120, true);
+        view_->endObject();
+    }
+    view_->setEmptyText(t("gui.bim.empty"));
+    if (sample_) {   // bino bor — tugma oddiy ko'rinishda
+        const bool empty = model_.prisms.empty();
+        if (sample_->property("accent").toBool() != empty) {
+            sample_->setProperty("accent", empty);
+            sample_->style()->unpolish(sample_);
+            sample_->style()->polish(sample_);
+        }
     }
     view_->endScene(true);
 }

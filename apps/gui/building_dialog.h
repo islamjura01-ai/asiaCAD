@@ -2,7 +2,7 @@
 // AsiaCAD GUI — "Monolit bino" menyusi: chizma qatlamlarini element turlariga bog'lash, qavat/fundament/padbetonka
 // parametrlari, beton sinflari, jonli 3D model (qavatlar bo'yicha ko'rsatish), PTO jadvali va tekshiruv.
 // "PTO jadvalini chizmaga" — parametrlar JSON'ga yoziladi va BUILDING buyrug'i Interpreter orqali bajariladi.
-#include "pipe3d_view.h"
+#include "model3d_view.h"
 #include "template_sidebar.h"
 #include "drawing_set_widget.h"
 #include "excel_link.h"
@@ -12,6 +12,7 @@
 
 #include <QDialog>
 
+class QPushButton;
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
@@ -33,7 +34,7 @@ public:
     const bim::BuildingModel& model() const { return model_; }
     void reread();  // chizmadan qayta o'qish (qatlamlar ro'yxati yangilanadi)
     void setFloors(int n);
-    Pipe3DView* view() const { return view_; }
+    Model3DView* view() const { return view_; }
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
     DrawingSetWidget* drawings() const { return set_; }
@@ -47,8 +48,11 @@ signals:
     void locateRequested(double x, double y);   // tuzatish: tekshiruvdagi joyni chizmada ko'rsatish
     void tableRequested(const QString& jsonPath);
     void rebarRequested();
+    void sampleRequested();                     // namuna bino (o'qlar to'ri) — MainWindow GRID bajaradi
+    void open3DRequested();                     // asosiy oynadagi 3D ko'rinish
 
 private:
+    QPushButton* sample_ = nullptr;
     QString t(const char* key, const QStringList& args = {}) const;
     void buildUi();
     void fillLayers();
@@ -73,7 +77,7 @@ private:
     QComboBox *clsLean_ = nullptr, *clsFound_ = nullptr, *clsFrame_ = nullptr, *clsSlab_ = nullptr;
     QSlider* showUpTo_ = nullptr;
     QLabel* showLbl_ = nullptr;
-    Pipe3DView* view_ = nullptr;
+    Model3DView* view_ = nullptr;
     QTableWidget* pto_ = nullptr;
     QListWidget* checks_ = nullptr;
     QLabel* summary_ = nullptr;

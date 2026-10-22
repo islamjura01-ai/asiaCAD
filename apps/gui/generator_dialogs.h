@@ -5,7 +5,7 @@
 //  * AlignInputDialog — yo'l/kanal/koridor o'qi: burilish nuqtalari (X, Y, R) va loyiha profili (PK, belgi); jonli plan
 //  * NetInputDialog   — yer osti tarmog'i: quduqlar va quvurlar jadvali; jonli plan
 //  * CityDialog       — shahar mavzesi: shablonlar, parametrlar, plan va 3D massiv, ko'rsatkichlar
-#include "pipe3d_view.h"
+#include "model3d_view.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/generators.h>
@@ -121,7 +121,7 @@ public:
     void setSpec(const civil::CitySpec& c);
     const civil::CityResult& result() const { return r_; }
     TemplateSidebar* sidebar() const { return side_; }
-    Pipe3DView* view() const { return view_; }
+    Model3DView* view() const { return view_; }
     PlanPreview* preview() const { return prev_; }
     void recompute();
 
@@ -138,7 +138,7 @@ private:
                    *bldD_ = nullptr, *gap_ = nullptr, *floorH_ = nullptr, *x0_ = nullptr, *y0_ = nullptr, *ground_ = nullptr;
     QLabel* stats_ = nullptr;
     PlanPreview* prev_ = nullptr;
-    Pipe3DView* view_ = nullptr;
+    Model3DView* view_ = nullptr;
 };
 
 } // namespace asiacad::gui

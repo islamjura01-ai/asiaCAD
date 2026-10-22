@@ -12,6 +12,10 @@
 #include "templates_dialog.h"
 #include "survey_dialog.h"
 #include "earthwork_dialog.h"
+#include "model3d_view.h"
+#include <QStackedWidget>
+#include <QTabBar>
+#include <asiacad/civil/terrain.h>
 #include "drive_dialog.h"
 #include "draft_panels.h"
 #include "icons.h"
@@ -123,6 +127,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
+    {"view3d", "volume", "gui.act.view3d", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -194,6 +199,7 @@ QString toolKey(Tool t) {
     case Tool::LayPick:
     case Tool::SteelBeam:
     case Tool::SteelSec:
+    case Tool::Pick:
     case Tool::Grip:
     case Tool::Select: return "select";
     }
@@ -234,7 +240,26 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     col->setSpacing(0);
     buildRibbon();
     setMenuWidget(ribbon_);  // lenta butun kenglikda (panellar ustida) — AutoCAD kabi
-    col->addWidget(view_, 1);
+    // 2D chizma / 3D model (Revit kabi ko'rinish yorliqlari)
+    viewTabs_ = new QTabBar(central);
+    viewTabs_->setObjectName("viewTabs");
+    viewTabs_->setExpanding(false);
+    viewTabs_->setDrawBase(false);
+    viewTabs_->addTab(QString());
+    viewTabs_->addTab(QString());
+    col->addWidget(viewTabs_);
+    viewStack_ = new QStackedWidget(central);
+    view3d_ = new Model3DView(viewStack_);
+    view3d_->setObjectName("view3d");
+    Model3DView::setGlobalTr([this](const char* k) {
+        const std::string key = std::string("gui.") + k;
+        const std::string v = loc_.tr(key);
+        return v == key ? QString() : QString::fromStdString(v);
+    });
+    viewStack_->addWidget(view_);
+    viewStack_->addWidget(view3d_);
+    col->addWidget(viewStack_, 1);
+    connect(viewTabs_, &QTabBar::currentChanged, this, [this](int i) { show3D(i == 1); });
     setCentralWidget(central);
 
     buildModuleBars();
@@ -297,7 +322,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.21"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.22"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -324,7 +349,7 @@ QIcon MainWindow::icon(const QString& name) const {
             {"steelframe", "#4F6D8A"}, {"stairtpl", "#D9466A"}, {"ramptpl", "#E7881B"}, {"rwalltpl", "#8A7B5C"}, {"geoplace", "#0E9F8E"},
             {"ptimport", "#0E9F8E"}, {"ptexport", "#0E9F8E"}, {"devplan", "#0E9F8E"}, {"devvert", "#0E9F8E"}, {"devheight", "#0E9F8E"},
             {"devaxis", "#0E9F8E"}, {"devpoint", "#0E9F8E"}, {"devclear", "#E0A526"},
-            {"ewtin", "#3E9B3A"}, {"ewprofile", "#3E9B3A"}, {"ewsections", "#3E9B3A"}, {"ewcarto", "#3E9B3A"}, {"ewvolume", "#3E9B3A"},
+            {"ewtin", "#3E9B3A"}, {"ewprofile", "#3E9B3A"}, {"ewsections", "#3E9B3A"}, {"ewcarto", "#3E9B3A"}, {"ewvolume", "#3E9B3A"}, {"view3d", "#7A3FC8"},
             {"leader", "#C8324B"}, {"dimangular", "#C8324B"},
             {"layers", "#D99A1E"}, {"laymcur", "#2BA84A"}, {"laymatch", "#1C8C9E"}, {"layoff", "#6B7280"}, {"layfrz", "#2F7FD8"}, {"laylck", "#C2410C"}, {"layulk", "#E58A3A"}, {"layiso", "#7A3FC8"}, {"layuniso", "#A27BDB"}, {"layon", "#3E9B3A"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
@@ -408,6 +433,8 @@ void MainWindow::buildActions() {
     connect(act_["devpoint"], &QAction::triggered, this, [this] { openSurvey(4); });
     connect(act_["devclear"], &QAction::triggered, this, [this] { runLine("DEVCLEAR"); });
     connect(act_["ewtin"], &QAction::triggered, this, [this] { openEarthwork(0); });
+    act_["view3d"]->setShortcut(QKeySequence(Qt::Key_F4));
+    connect(act_["view3d"], &QAction::triggered, this, [this] { show3D(!is3D()); });
     connect(act_["ewprofile"], &QAction::triggered, this, [this] { openEarthwork(1); });
     connect(act_["ewsections"], &QAction::triggered, this, [this] { openEarthwork(2); });
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
@@ -525,9 +552,9 @@ void MainWindow::buildRibbon() {
                             {"gui.grp.deviation", {"devplan", "devvert", "devheight", "devaxis", "devpoint"}},
                             {"gui.grp.clean", {"devclear"}}, {"gui.grp.geo", {"geoplace"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.tab.struct", {{"gui.grp.templates", {"steelframe", "stairtpl", "ramptpl", "rwalltpl"}}, {"gui.grp.km", {"steel"}},
-                            {"gui.grp.geo", {"geoplace"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
+                            {"gui.grp.geo", {"geoplace"}}, {"gui.grp.analyze", {"view3d", "drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
-        {"gui.tab.view", {{"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
+        {"gui.tab.view", {{"gui.grp.model", {"view3d"}}, {"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
     };
     for (const auto& pg : pages) {
@@ -917,6 +944,10 @@ void MainWindow::setLanguage(const QString& code) {
 }
 
 void MainWindow::retranslate() {
+    if (viewTabs_) {
+        viewTabs_->setTabText(0, t("gui.view.2d"));
+        viewTabs_->setTabText(1, t("gui.view.3d"));
+    }
     updatingUi_ = true;
     for (const auto& d : kActs) {
         act_[d.key]->setText(t(d.label));
@@ -1083,6 +1114,7 @@ bool MainWindow::runLine(const QString& line, bool echo) {
     refreshLayers();
     refreshProperties();
     refreshTitle();
+    if (is3D()) rebuild3D(true);
     if (!cont) close();
     return cont;
 }
@@ -1119,6 +1151,11 @@ BuildingDialog* MainWindow::openBuilding() {
         connect(building_, &BuildingDialog::scratchRequested, this, [this] { openScratch("building"); });
         connect(building_, &BuildingDialog::locateRequested, this, &MainWindow::locate);
         connect(building_, &BuildingDialog::rebarRequested, this, [this] { openRebar(); });
+        connect(building_, &BuildingDialog::sampleRequested, this, [this] { makeSampleBuilding(); });
+        connect(building_, &BuildingDialog::open3DRequested, this, [this] {
+            building_->hide();
+            show3D(true);
+        });
         connect(building_, &BuildingDialog::tableRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.max.x + 3 : 0, y = b.valid() ? b.max.y : 0;
@@ -1139,6 +1176,7 @@ RebarDialog* MainWindow::openRebar() {
     if (!rebar_) {
         rebar_ = new RebarDialog(loc_, doc_, !theme_.lightCanvas, this);
         rebar_->setStyleSheet(theme_.styleSheet);
+        connect(rebar_, &RebarDialog::sampleRequested, this, [this] { makeSampleBuilding(); });
         connect(rebar_, &RebarDialog::scheduleRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.max.x + 3 : 0, y = b.valid() ? b.max.y : 0;
@@ -1277,6 +1315,182 @@ TemplatesDialog* MainWindow::openTemplates(int page) {
     tpl_->raise();
     tpl_->activateWindow();
     return tpl_;
+}
+
+// ---------------------------------------------------------------- 3D model (asosiy oyna)
+bool MainWindow::is3D() const { return viewStack_ && viewStack_->currentWidget() == view3d_; }
+
+void MainWindow::show3D(bool on) {
+    if (!viewStack_) return;
+    if (viewTabs_->currentIndex() != (on ? 1 : 0)) {
+        const QSignalBlocker b(viewTabs_);
+        viewTabs_->setCurrentIndex(on ? 1 : 0);
+    }
+    if (on) {
+        viewStack_->setCurrentWidget(view3d_);
+        rebuild3D(view3d_->objectCount() > 0);
+        view3d_->setFocus();
+    } else {
+        viewStack_->setCurrentWidget(view_);
+        view_->setFocus();
+    }
+    raise();
+    activateWindow();
+}
+
+void MainWindow::rebuild3D(bool keepView) {
+    if (!view3d_) return;
+    view3d_->setDark(!theme_.lightCanvas);
+    view3d_->beginScene(QString(), QString());
+    // chizma: qatlam bo'yicha (3D jismlar, yuzalar, 3D chiziqlar + 2D chiziqlar rejada)
+    std::map<std::string, std::vector<EntityId>> byLayer;
+    for (EntityId id : doc_.ids())
+        if (const IEntity* e = doc_.find(id)) byLayer[e->layer()].push_back(id);
+    std::size_t budget2d = 300000;
+    for (const auto& [name, ids] : byLayer) {
+        const auto L = doc_.layer(name);
+        if (L && (!L->visible || L->frozen)) continue;
+        if (name.rfind("SYOMKA_", 0) == 0) continue;   // nuqta yozuvlari — 3D da kerak emas
+        Document tmp;
+        std::vector<const IEntity*> flat;
+        for (EntityId id : ids) {
+            const IEntity* e = doc_.find(id);
+            tmp.add(e->clone());
+            const BBox b = e->bbox();
+            if (std::abs(b.min.z) < 1e-9 && std::abs(b.max.z) < 1e-9) flat.push_back(e);
+        }
+        const auto sc = civil::sceneFromDocument(tmp);
+        const QColor lc = aciColor(L ? L->color : 7, theme_.lightCanvas);
+        const QString qn = QString::fromStdString(name);
+        view3d_->beginObject(qn, qn, {t("gui.v3d.p.count", {QString::number(ids.size())})});
+        view3d_->addTriangles(sc, 1.0);
+        // 2D chiziqlar (z = 0): reja ko'rinishi
+        for (const IEntity* e : flat) {
+            if (budget2d == 0) break;
+            std::vector<Vec3> pts;
+            if (auto* c = dynamic_cast<const CircleEntity*>(e)) {
+                for (int i = 0; i <= 48; ++i) pts.push_back(c->center() + Vec3{std::cos(i * kPi / 24), std::sin(i * kPi / 24), 0} * c->radius());
+            } else pts = civil::pathOf(*e);
+            if (pts.size() < 2) continue;
+            std::vector<P3> pp;
+            for (const auto& q : pts) pp.push_back({q.x, q.y, q.z});
+            budget2d -= std::min(budget2d, pp.size());
+            view3d_->addPolyline(pp, lc, 1.0);
+        }
+        view3d_->endObject();
+    }
+    // yer yuzasi (syomka nuqtalaridan TIN, balandlik bo'yicha ranglar)
+    {
+        const auto ids = doc_.idsOnLayer("SYOMKA");
+        if (ids.size() >= 3 && ids.size() <= 60000) {
+            const auto t3 = civil::Tin::build(civil::terrainPoints(doc_, ids));
+            if (!t3.empty()) {
+                double lo = 1e300, hi = -1e300;
+                for (const auto& q : t3.points()) { lo = std::min(lo, q.z); hi = std::max(hi, q.z); }
+                civil::DriveScene sc;
+                auto col = [&](double z) {
+                    const double k = hi > lo ? (z - lo) / (hi - lo) : 0.5;
+                    const QColor c = QColor::fromHsvF(std::clamp(0.30 - 0.27 * k, 0.0, 1.0), 0.45, 0.62 + 0.25 * k);
+                    return std::uint32_t((c.red() << 16) | (c.green() << 8) | c.blue());
+                };
+                for (const auto& tr3 : t3.triangles()) {
+                    const auto &a = t3.points()[tr3[0]], &b = t3.points()[tr3[1]], &c = t3.points()[tr3[2]];
+                    sc.tris.push_back({{a, b, c}, col((a.z + b.z + c.z) / 3), true});
+                }
+                view3d_->beginObject(t("gui.v3d.terrain"), t("gui.v3d.terrain"),
+                                     {t("gui.v3d.p.count", {QString::number(t3.points().size())}), QStringLiteral("Z: %1 … %2").arg(lo, 0, 'f', 2).arg(hi, 0, 'f', 2)});
+                view3d_->addTriangles(sc, 1.0);
+                view3d_->endObject();
+            }
+        }
+    }
+    // bino modeli
+    if (building_ && !building_->model().prisms.empty()) {
+        for (const auto& pr : building_->model().prisms) {
+            std::vector<P3> o;
+            for (const auto& q : pr.outline) o.push_back({q.x, q.y, 0});
+            std::vector<std::vector<P3>> hs;
+            for (const auto& h : pr.holes) {
+                std::vector<P3> hh;
+                for (const auto& q : h) hh.push_back({q.x, q.y, 0});
+                hs.push_back(hh);
+            }
+            const QString kind = QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(pr.kind)));
+            std::uint32_t c = 0xd6d1c6;
+            if (pr.kind == bim::ElemKind::Column) c = 0xb3aca0;
+            else if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::Roof) c = 0x9fb4cc;
+            else if (pr.kind == bim::ElemKind::FoundationSlab || pr.kind == bim::ElemKind::Lean || pr.kind == bim::ElemKind::StripFooting) c = 0x958f85;
+            else if (pr.kind == bim::ElemKind::Stair) c = 0xd9c9a3;
+            else if (pr.kind == bim::ElemKind::Shaft) c = 0xa9b2c8;
+            else if (pr.kind == bim::ElemKind::Infill) c = 0xe4d6be;
+            view3d_->beginObject(kind + " · " + (pr.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(pr.level)})), kind,
+                                 {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)}),
+                                  t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
+                                  t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})});
+            view3d_->addPrism(o, hs, pr.z0, pr.z1, QColor(int(c >> 16), int((c >> 8) & 255), int(c & 255)));
+            view3d_->endObject();
+        }
+        for (const auto& g : building_->model().glass) {
+            std::vector<P3> q;
+            for (const auto& v : g.quad) q.push_back({v.x, v.y, v.z});
+            const QString nm = t(g.door ? "gui.v3d.door" : "gui.v3d.window");
+            view3d_->beginObject(nm + " · " + t("gui.bim.level", {QString::number(g.level)}), nm, {});
+            view3d_->addFace(q, g.door ? QColor(70, 110, 150) : QColor(120, 170, 215), g.door ? 170 : 120, true);
+            view3d_->endObject();
+        }
+    }
+    // armatura
+    if (rebar_ && !rebar_->model().bars.empty()) {
+        std::size_t nseg = 0;
+        for (const auto& b : rebar_->model().bars) nseg += b.pts.size();
+        const bool tubes = nseg < 150000;
+        for (const auto& b : rebar_->model().bars) {
+            std::vector<P3> pts;
+            for (const auto& q : b.pts) pts.push_back({q.x, q.y, q.z});
+            const QString dia = QString::fromUtf8("\xC3\x98") + QString::number(std::lround(b.d * 1000)) + " " + QString::fromStdString(b.cls);
+            const int mm = int(std::lround(b.d * 1000));
+            const QColor c = QColor::fromHsv((mm * 23) % 360, 150, 220);
+            view3d_->beginObject(dia, t("gui.v3d.cat.rebar", {dia}), {t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})});
+            if (tubes) view3d_->addTube(pts, std::max(0.003, b.d / 2), c, b.role == bim::BarRole::Stirrup, b.role == bim::BarRole::Stirrup ? 4 : 6);
+            else view3d_->addPolyline(pts, c, 1.0, b.role == bim::BarRole::Stirrup);
+            view3d_->endObject();
+        }
+    }
+    // koridor
+    if (corridor_ && corridor_->model().sec.size() >= 2) {
+        view3d_->beginObject(t("gui.act.corridor"), t("gui.act.corridor"));
+        view3d_->addTriangles(civil::sceneFromCorridor(corridor_->model()), 1.0);
+        view3d_->endObject();
+    }
+    view3d_->setEmptyText(t("gui.v3d.empty"));
+    view3d_->endScene(keepView);
+}
+
+void MainWindow::makeSampleBuilding() {
+    civil::GridSpec g;
+    g.dx = {6, 6, 6, 6};
+    g.dy = {6, 6, 6};
+    if (building_) {
+        g.floors = building_->params().floors;
+        g.floorH = building_->params().floorHeight;
+    }
+    const BBox b = doc_.extents(true);
+    if (b.valid()) { g.x0 = b.max.x + 20; g.y0 = b.min.y; }
+    const QString path = QDir::temp().filePath("asiacad_sample_grid.json");
+    QFile f(path);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        const std::string js = civil::gridToJson(g);
+        f.write(js.data(), static_cast<qint64>(js.size()));
+    }
+    f.close();
+    runLine(QStringLiteral("GRID \"%1\"").arg(path));
+    view_->zoomExtents();
+    auto* bd = openBuilding();
+    auto p = bd->params();
+    p.floors = g.floors;
+    p.floorHeight = g.floorH;
+    bd->setParams(p, bim::autoLayerMap(doc_));
+    if (rebar_ && rebar_->isVisible()) openRebar();
 }
 
 EarthworkDialog* MainWindow::openEarthwork(int tab) {

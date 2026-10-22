@@ -21,7 +21,8 @@ namespace asiacad::bim {
 
 // Stair — chizmada zinapoya katagi konturi (ZINA/ЛЕСТН/STAIR), modelda — marshlar va maydonchalar;
 // Shaft — lift shaxtasi ichki konturi (LIFT/ЛИФТ/SHAXTA), modelda — shaxta devorlari (plitada teshik)
-enum class ElemKind { Lean, FoundationSlab, StripFooting, Column, Wall, Slab, Roof, Opening, Outline, Stair, Shaft, Ignore };
+// Infill — to'siq devor (gazoblok / g'isht, beton emas): derazalar va eshiklar bilan, tomda parapet
+enum class ElemKind { Lean, FoundationSlab, StripFooting, Column, Wall, Slab, Roof, Opening, Outline, Stair, Shaft, Infill, Ignore };
 
 const char* kindKey(ElemKind k);  // "LEAN", "FOUND", ... (i18n: bim.kind.<key>)
 bool kindFromKey(const std::string& s, ElemKind& out);
@@ -53,6 +54,14 @@ struct BuildingParams {
     double stairT = 0.15;         // marsh plitasi (qiya) qalinligi, m
     double shaftWallT = 0.20;     // lift shaxtasi devori, m
     double shaftMin = 1.50;       // shaxta ichki o'lchami eng kami, m
+    // fasad: to'siq devorlar (TOSIQ_DEVOR / КЛАДКА / ГАЗОБЛОК), derazalar, kirish eshigi, parapet
+    bool facade = true;
+    double infillT = 0.30;        // chiziq bilan berilgan to'siq devor qalinligi, m
+    double winW = 1.5, winH = 1.5, sill = 0.9;   // deraza eni, balandligi, tokcha (poldan), m
+    double winStep = 3.0;         // derazalar qadami (taxminan), m
+    double doorW = 1.8, doorH = 2.4;             // 1-qavat kirish eshigi, m
+    double parapetH = 0.9;        // tom parapeti, m
+    std::string classInfill = "D500";
 };
 
 struct Prism {
@@ -72,13 +81,15 @@ struct PlanInput {
     std::vector<std::vector<Vec3>> columns, walls, slabs, openings, outlines;
     std::vector<std::vector<Vec3>> stairs, shafts;  // zinapoya kataklari, lift shaxtalari (ichki kontur)
     std::vector<std::vector<Vec3>> foundations, strips, leans;   // fundament plani (aniq konturlar)
+    std::vector<std::vector<Vec3>> infill;                       // to'siq devorlar (kontur)
+    std::vector<std::pair<Vec3, Vec3>> infillLines;              // to'siq devor markaz chiziqlari (infillT bilan)
     std::vector<std::pair<Vec3, Vec3>> wallLines;  // markaz chiziqlari (wallT bilan)
     double slabT = 0;                       // qolip chizmasidagi "h=200" / "δ=200" (0 — parametrdan)
     std::optional<double> levelTop;         // qolip chizmasidagi plita usti belgisi "+3.000"
     std::optional<double> zeroAbs;          // "±0,000 = 484,20 абс." — nisbiy nolning absolyut (Boltiq) belgisi
     bool empty() const {
         return columns.empty() && walls.empty() && wallLines.empty() && slabs.empty() && foundations.empty() && strips.empty() && stairs.empty() &&
-               shafts.empty();
+               shafts.empty() && infill.empty() && infillLines.empty();
     }
 };
 
@@ -114,8 +125,19 @@ struct StairInfo {
     std::vector<Vec3> cell;
 };
 
+// Oyna / eshik shishasi (3D ko'rinish uchun): devor o'rtasidagi vertikal to'rtburchak
+struct GlassPane {
+    int level = 0;
+    bool door = false;
+    std::vector<Vec3> quad;   // 4 nuqta (absolyut z)
+};
+
 struct BuildingModel {
     std::vector<Prism> prisms;
+    std::vector<GlassPane> glass;
+    double masonry = 0;                     // to'siq devor hajmi, m³ (betonga kirmaydi)
+    double glazing = 0;                     // deraza / eshik maydoni, m²
+    int windows = 0, doors = 0;
     std::vector<StairInfo> stairs;
     std::vector<PtoRow> pto;                // tur × qavat
     std::map<std::string, double> byConcrete;  // sinf -> m³

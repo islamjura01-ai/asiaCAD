@@ -7,7 +7,7 @@
 //  o'rta — 3D | Kesimlar (piket bo'yicha, material ranglari, kesma/to'kma) | Profil
 //  o'ng — Hajmlar (o'rtacha maydon va aniq: prizmoidal + egrilik), Piketlar (loyiha belgisi tahrirlanadi), Tekshiruv, Qatlamlar
 #include "excel_link.h"
-#include "pipe3d_view.h"
+#include "model3d_view.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/corridor.h>
@@ -68,7 +68,7 @@ public:
     void showTab(int i);
     QTabWidget* palette() const { return palette_; }
     ExcelLink* excel() const { return excel_; }
-    Pipe3DView* view() const { return view_; }
+    Model3DView* view() const { return view_; }
 
 signals:
     void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
@@ -108,7 +108,7 @@ private:
     QComboBox* previewCase_ = nullptr;
     SectionView* preview_view_ = nullptr;
     QTabWidget* midTabs_ = nullptr;
-    Pipe3DView* view_ = nullptr;
+    Model3DView* view_ = nullptr;
     SectionView* secView_ = nullptr;
     QSlider* secSlider_ = nullptr;
     QLabel* secLbl_ = nullptr;

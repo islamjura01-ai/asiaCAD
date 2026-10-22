@@ -180,7 +180,7 @@ void UtilityDialog::buildUi() {
     }
     fl->setColumnStretch(5, 1);
     mv->addLayout(fl);
-    view_ = new Pipe3DView(mid);
+    view_ = new Model3DView(mid);
     mv->addWidget(view_, 1);
 
     // ---- 4: jadvallar

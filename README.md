@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.21: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.22: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,16 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Bino fasadi va 3D boshqaruv (v0.22)
+
+* **To'siq devorlar** (`TOSIQ_DEVOR` / `КЛАДКА` / `ГАЗОБЛОК`): har qavatda derazalar (eni 1.5, balandligi 1.5, tokcha 0.9 m, qadam ≈3 m),
+  1-qavatda kirish eshigi, tomda uzluksiz parapet; kladka hajmi betonga kirmaydi (PTO'da alohida qator, `D500`).
+  `GRID` endi tashqi devorni to'siq devor sifatida chizadi (`infill:false` — monolit beton devor).
+* Bo'sh chizmada BIM / Armatura oynalari nima qilishni aytadi; **Namuna bino** tugmasi ajratib ko'rsatiladi.
+* 3D: **Shift + o'rta tugma** — aylantirish (AutoCAD/Revit), strelkalar, `+`/`−`, **W/A/S/D/Q/E — bino ichida yurish**; **F4** yoki
+  **Ko'rinish → 3D model** — asosiy oynada 2D ⇄ 3D.
+* Yo'qolgan 60 ta interfeys tarjimasi tiklandi; test endi har bir GUI kaliti 6 tilda borligini tekshiradi.
 
 ## Yer ishlari: yuza, profil, kesimlar, kartogramma, hajm (v0.21) — `civil/terrain`
 

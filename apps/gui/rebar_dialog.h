@@ -2,7 +2,7 @@
 // AsiaCAD GUI — "Armatura 3D" menyusi. Yon tomonda shablonlar paneli (element turlari bo'yicha), o'rtada element turi
 // parametrlari va 3D karkas (turlar va qavatlar bo'yicha filtr, beton shaffof), o'ngda ведомость, jami va tekshiruv.
 // Bino modeli "Monolit bino" parametrlaridan (padbetonka -> tom) olinadi; "Ведомостni chizmaga" — REBAR buyrug'i.
-#include "pipe3d_view.h"
+#include "model3d_view.h"
 #include "template_sidebar.h"
 #include "drawing_set_widget.h"
 #include "excel_link.h"
@@ -15,6 +15,7 @@
 #include <QDialog>
 
 class QCheckBox;
+class QPushButton;
 class QComboBox;
 class QDoubleSpinBox;
 class QFormLayout;
@@ -45,14 +46,16 @@ public:
     const bim::RebarSettings& settings() const { return rs_; }
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
-    Pipe3DView* view() const { return view_; }
+    Model3DView* view() const { return view_; }
     void selectKind(bim::ElemKind k);
     QString templatesPath() const;
 
 signals:
     void scheduleRequested(const QString& jsonPath);
+    void sampleRequested();   // bino yo'q — namuna bino yaratish (MainWindow)
 
 private:
+    QPushButton* sample_ = nullptr;
     QString t(const char* key, const QStringList& args = {}) const;
     void buildUi();
     void fillSidebar();
@@ -102,7 +105,7 @@ private:
     QCheckBox* concrete_ = nullptr;
     QSlider* upTo_ = nullptr;
     QLabel* upToLbl_ = nullptr;
-    Pipe3DView* view_ = nullptr;
+    Model3DView* view_ = nullptr;
     QTableWidget* sched_ = nullptr;
     QListWidget* totals_ = nullptr;
     QListWidget* checks_ = nullptr;

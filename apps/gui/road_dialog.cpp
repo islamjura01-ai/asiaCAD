@@ -243,7 +243,7 @@ void RoadDialog::buildUi() {
     auto* v3 = new QWidget(midTabs_);
     auto* v3l = new QVBoxLayout(v3);
     v3l->setContentsMargins(0, 0, 0, 0);
-    view_ = new Pipe3DView(v3);
+    view_ = new Model3DView(v3);
     v3l->addWidget(view_, 1);
     auto* vx = new QHBoxLayout;
     vx->addWidget(new QLabel(t("gui.ut.vexag"), v3));

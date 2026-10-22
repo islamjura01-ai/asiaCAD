@@ -656,7 +656,7 @@ CityDialog::CityDialog(const i18n::Localizer& loc, const Document& doc, bool dar
     auto* tabs = new QTabWidget(split);
     prev_ = new PlanPreview(tabs);
     prev_->setDark(dark);
-    view_ = new Pipe3DView(tabs);
+    view_ = new Model3DView(tabs);
     view_->setDark(dark);
     tabs->addTab(view_, "3D");
     tabs->addTab(prev_, t("gui.gen.city.plan"));

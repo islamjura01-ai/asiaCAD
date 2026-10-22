@@ -6,7 +6,7 @@
 //  past — Excelga/Exceldan (bog'langan), "3D ni chizmaga" (UTIL fayl.json)
 #include "drawing_set_widget.h"
 #include "excel_link.h"
-#include "pipe3d_view.h"
+#include "model3d_view.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/utility.h>
@@ -33,7 +33,7 @@ public:
     const civil::UtilParams& params() const { return p_; }
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
-    Pipe3DView* view() const { return view_; }
+    Model3DView* view() const { return view_; }
     DrawingSetWidget* drawings() const { return set_; }
     QTableWidget* linesTable() const { return lines_; }
     void selectLine(int index);
@@ -69,7 +69,7 @@ private:
     QTableWidget* layers_ = nullptr;
     QDoubleSpinBox *ground_ = nullptr, *radius_ = nullptr, *gap_ = nullptr, *clPipe_ = nullptr, *clCable_ = nullptr, *vexag_ = nullptr;
     QCheckBox* show_[9] = {};
-    Pipe3DView* view_ = nullptr;
+    Model3DView* view_ = nullptr;
     QTableWidget* lines_ = nullptr;
     QTableWidget* points_ = nullptr;
     QTableWidget* cross_ = nullptr;

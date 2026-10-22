@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QStyle>
 #include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
@@ -332,7 +333,7 @@ void RebarDialog::buildUi() {
     fl->addWidget(concrete_);
     fl->addStretch(1);
     mv->addLayout(fl);
-    view_ = new Pipe3DView(mid);
+    view_ = new Model3DView(mid);
     mv->addWidget(view_, 1);
     auto* sh = new QHBoxLayout;
     upToLbl_ = new QLabel(mid);
@@ -362,6 +363,13 @@ void RebarDialog::buildUi() {
 
     // ---- past
     auto* bottom = new QHBoxLayout;
+    auto* sample = new QPushButton(t("gui.bim.sample"), this);
+    sample->setObjectName("sample");
+    sample->setToolTip(t("gui.bim.sample.tip"));
+    sample->setProperty("accent", true);
+    sample_ = sample;
+    bottom->addWidget(sample);
+    connect(sample, &QPushButton::clicked, this, &RebarDialog::sampleRequested);
     summary_ = new QLabel(this);
     summary_->setObjectName("title");
     auto* toDwg = new QPushButton(t("gui.rb.todwg"), this);
@@ -703,15 +711,39 @@ void RebarDialog::render() {
                 for (const auto& q : h) hh.push_back({q.x, q.y, 0});
                 hs.push_back(hh);
             }
+            const QString kind = QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(pr.kind)));
+            view_->beginObject(kind, t("gui.v3d.cat.concrete"), {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)})});
             view_->addPrism(o, hs, pr.z0, pr.z1, kindAccent(pr.kind), 38);
+            view_->endObject();
         }
+    // sterjenlar — haqiqiy diametrli quvurchalar (katta modelda — chiziq)
+    std::size_t nseg = 0;
+    for (const auto& b : rm_.bars)
+        if (visible(b.kind, b.level)) nseg += b.pts.size();
+    const bool tubes = nseg < 120000;
     for (const auto& b : rm_.bars) {
         if (!visible(b.kind, b.level)) continue;
         std::vector<P3> pts;
         pts.reserve(b.pts.size());
         for (const auto& p : b.pts) pts.push_back({p.x, p.y, p.z});
-        view_->addPolyline(pts, diaColor(b.d), b.role == BarRole::Stirrup ? 1.0 : std::clamp(b.d * 110, 1.0, 3.0),
-                           b.role == BarRole::Stirrup);
+        const QString dia = QString::fromUtf8("\xC3\x98") + QString::number(std::lround(b.d * 1000)) + " " + QString::fromStdString(b.cls);
+        const QString role = QString::fromStdString(loc_.tr(std::string("rebar.role.") + bim::roleKey(b.role)));
+        view_->beginObject(dia + " · " + role, t("gui.v3d.cat.rebar", {dia}),
+                           {QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(b.kind))) + ", " +
+                                (b.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(b.level)})),
+                            t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})});
+        if (tubes) view_->addTube(pts, std::max(0.003, b.d / 2), diaColor(b.d), b.role == BarRole::Stirrup, b.role == BarRole::Stirrup ? 4 : 6);
+        else view_->addPolyline(pts, diaColor(b.d), 1.0, b.role == BarRole::Stirrup);
+        view_->endObject();
+    }
+    view_->setEmptyText(t("gui.rb.empty"));
+    if (sample_) {
+        const bool empty = rm_.bars.empty();
+        if (sample_->property("accent").toBool() != empty) {
+            sample_->setProperty("accent", empty);
+            sample_->style()->unpolish(sample_);
+            sample_->style()->polish(sample_);
+        }
     }
     view_->endScene(true);
 }

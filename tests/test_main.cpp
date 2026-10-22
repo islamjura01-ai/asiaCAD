@@ -43,6 +43,9 @@
 #include <chrono>
 #include <format>
 #include <filesystem>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -2613,14 +2616,28 @@ TEST(gen_grid_reads_back_as_building) {
     auto doc = docOf(civil::generateGrid(g));
     const auto plan = bim::readPlan(doc, bim::autoLayerMap(doc));
     CHECK(plan.columns.size() == 28);
-    CHECK(plan.walls.size() == 18);
+    CHECK(plan.infill.size() == 18 && plan.walls.empty());   // tashqi devor — to'siq (gazoblok)
     CHECK(plan.slabs.size() == 1);
     bim::BuildingParams bp;
     bp.floors = 3;
     const auto m = bim::buildModel(plan, bp);
-    // devorlar ustunlarga kirmaydi: 1-qavat devor hajmi = (perimetr − ustunlar) × t × (H − plita)
+    // to'siq devorlar betonga kirmaydi; derazalar: 6 m oraliqda 2 ta, 4.5 m da 1 ta; 1-qavatda kirish eshigi
+    double infill = 0, concrete = 0;
+    for (const auto& pr : m.prisms) (pr.kind == bim::ElemKind::Infill ? infill : concrete) += pr.volume();
+    CHECK(infill > 0 && std::abs(infill - m.masonry) < 1e-9 && std::abs(concrete - m.totalVolume) < 1e-6);
+    CHECK(m.doors == 1 && m.windows == 3 * (2 * (5 * 2 + 1) + 2 * 3 * 2) - 2);   // eshik 6 m oraliqdagi 2 derazani almashtiradi
+    CHECK(m.glass.size() == static_cast<std::size_t>(m.windows + m.doors) && m.glazing > m.windows * 1.5 * 1.5 - 1e-6);
+    double parapet = 0;
+    for (const auto& pr : m.prisms)
+        if (pr.kind == bim::ElemKind::Infill && pr.z0 >= m.heightTop - 1e-9) parapet = std::max(parapet, pr.z1 - pr.z0);
+    CHECK(std::abs(parapet - bp.parapetH) < 1e-9);
+    // monolit devor rejimi — eskicha (DEVOR, betonda)
+    g.infill = false;
+    auto doc2 = docOf(civil::generateGrid(g));
+    const auto plan2 = bim::readPlan(doc2, bim::autoLayerMap(doc2));
+    CHECK(plan2.walls.size() == 18 && plan2.infill.empty());
     double wall = 0;
-    for (const auto& r : m.pto)
+    for (const auto& r : bim::buildModel(plan2, bp).pto)
         if (r.kind == bim::ElemKind::Wall && r.level == 1) wall = r.volume;
     CHECK(wall > 0);
     const auto g2 = civil::gridFromJson(civil::gridToJson(g));
@@ -3449,6 +3466,36 @@ TEST(terrain_cli) {
     CHECK(s.find("6 ta kesim (har 20 m): to'kma 2000.0 m³, kesma 0.0 m³") != std::string::npos);
     CHECK(s.find("ta gorizontal (qadam 0.25 m") != std::string::npos);
     CHECK(s.find("Loyiha yuzasi berilmagan") != std::string::npos);
+}
+// GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak
+TEST(i18n_gui_keys_complete) {
+    namespace fs = std::filesystem;
+    const fs::path gui = fs::path(ASIACAD_EXAMPLES_DIR).parent_path() / "apps" / "gui";
+    std::set<std::string> keys;
+    const std::regex re(R"rx((?:\bt|tr_)\("((?:gui|v3d)\.[A-Za-z0-9_.]+)")rx");
+    for (const auto& f : fs::directory_iterator(gui)) {
+        if (f.path().extension() != ".cpp") continue;
+        std::ifstream in(f.path());
+        std::stringstream b;
+        b << in.rdbuf();
+        const std::string src = b.str();
+        for (auto it = std::sregex_iterator(src.begin(), src.end(), re); it != std::sregex_iterator(); ++it) {
+            std::string k = (*it)[1];
+            if (k.back() == '.') continue;   // dinamik qo'shimcha ("gui.dev.tip." + tur)
+            if (k.rfind("v3d.", 0) == 0) k = "gui." + k;
+            keys.insert(k);
+        }
+    }
+    CHECK(keys.size() > 300);
+    auto loc = loadedLocalizer();
+    for (const char* lang : {"uz", "ru", "en", "tr", "kk", "ky"}) {
+        loc.setLanguage(lang);
+        for (const auto& k : keys)
+            if (loc.tr(k) == k) {
+                std::cerr << "  " << lang << ": " << k << "\n";
+                CHECK(false);
+            }
+    }
 }
 TEST(tpl_geo_fit_and_cli) {
     const Vec3 p1{0, 0, 0}, p2{10, 0, 0}, P1{512300.5, 4612345.12, 412.3}, P2{512300.5, 4612355.12, 0};

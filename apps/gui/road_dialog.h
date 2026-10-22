@@ -5,7 +5,7 @@
 //  o'ng — Piketlar (loyiha belgisi qo'lda tuzatiladi), Hajmlar, Tekshiruv
 //  past — Excelga/Exceldan, "3D va profilni chizmaga" (ROAD fayl.json + x,y)
 #include "excel_link.h"
-#include "pipe3d_view.h"
+#include "model3d_view.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/road.h>
@@ -52,7 +52,7 @@ public:
     const civil::RoadParams& params() const { return p_; }
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
-    Pipe3DView* view() const { return view_; }
+    Model3DView* view() const { return view_; }
     void setDesign(int station, double z);      // qo'lda tuzatish
     void applyCategory(const QString& id);
     void showTab(int i);
@@ -89,7 +89,7 @@ private:
     QLabel* catLbl_ = nullptr;
     QTableWidget* pav_ = nullptr;
     QTabWidget* midTabs_ = nullptr;
-    Pipe3DView* view_ = nullptr;
+    Model3DView* view_ = nullptr;
     RoadProfileView* profile_ = nullptr;
     QTableWidget* st_ = nullptr;
     QListWidget* quant_ = nullptr;

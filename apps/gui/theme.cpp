@@ -25,7 +25,7 @@ QLineEdit, QComboBox { background: %11; color: %4; border: 1px solid %6; border-
 QComboBox QAbstractItemView { background: %2; color: %4; selection-background-color: %3; }
 QPushButton { background: %3; color: %4; border: 1px solid %6; border-radius: 8px; padding: 6px 12px; font-weight: 600; }
 QPushButton:hover { border-color: %7; }
-QPushButton#accent { background: %7; color: %8; border: 0; }
+QPushButton#accent, QPushButton[accent="true"] { background: %7; color: %8; border: 0; }
 QToolButton { color: %4; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 4px; }
 QToolButton:hover { background: %3; border-color: %6; }
 QToolButton:checked { background: %7; color: %8; border-color: %7; }

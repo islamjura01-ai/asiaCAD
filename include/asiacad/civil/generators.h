@@ -27,7 +27,8 @@ struct GridSpec {
     double x0 = 0, y0 = 0;             // "1"/"A" o'qlari kesishmasi
     double colB = 0.4, colH = 0.4;     // ustun kesimi, m
     bool walls = true;                 // tashqi perimetr bo'ylab devor (ustunlar orasida)
-    double wallT = 0.25;
+    bool infill = true;                // true — to'siq devor (gazoblok, derazali: TOSIQ_DEVOR), false — monolit beton (DEVOR)
+    double wallT = 0.30;
     bool slab = true;                  // plita konturi (tashqi o'qlardan overhang ga)
     double overhang = 0.2;
     int floors = 5;                    // BINO dialogiga uzatiladi (qavatlar chizmada emas, parametrda)

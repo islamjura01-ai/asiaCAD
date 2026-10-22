@@ -80,6 +80,25 @@ std::vector<Vec3> offsetRing(const std::vector<Vec3>& ring, double d) {
     return ring;
 }
 
+// ichkariga siljitish (kontur markazi tomonga) — parapet halqasi uchun
+std::vector<Vec3> insetRing(const std::vector<Vec3>& ring, double d) {
+    if (d <= 0 || ring.size() < 3) return ring;
+    PolylineEntity pl(ring, true);
+    Vec3 c{0, 0, 0};
+    for (const auto& q : ring) c += q;
+    c = c / static_cast<double>(ring.size());
+    try {
+        auto e = offsetEntity(pl, d, c);
+        if (auto* o = dynamic_cast<PolylineEntity*>(e.get())) {
+            auto v = o->vertices();
+            for (auto& p : v) p.z = 0;
+            if (v.size() >= 3) return v;
+        }
+    } catch (...) {
+    }
+    return {};
+}
+
 std::vector<Vec3> bboxRing(const std::vector<std::vector<Vec3>>& rings) {
     BBox b;
     for (const auto& r : rings)
@@ -109,15 +128,17 @@ void collect(const IEntity& e, ElemKind k, PlanInput& in) {
             case ElemKind::FoundationSlab: in.foundations.push_back(ring); break;
             case ElemKind::Lean: in.leans.push_back(ring); break;
             case ElemKind::StripFooting: in.strips.push_back(ring); break;
+            case ElemKind::Infill: in.infill.push_back(ring); break;
             default: break;
         }
         return;
     }
-    if (k != ElemKind::Wall) return;
-    if (auto* l = dynamic_cast<const LineEntity*>(&e)) in.wallLines.push_back({l->startPoint(), l->endPoint()});
+    if (k != ElemKind::Wall && k != ElemKind::Infill) return;
+    auto& lines = k == ElemKind::Wall ? in.wallLines : in.infillLines;
+    if (auto* l = dynamic_cast<const LineEntity*>(&e)) lines.push_back({l->startPoint(), l->endPoint()});
     else if (auto* pl = dynamic_cast<const PolylineEntity*>(&e)) {
         const auto& v = pl->vertices();
-        for (std::size_t i = 0; i + 1 < v.size(); ++i) in.wallLines.push_back({v[i], v[i + 1]});
+        for (std::size_t i = 0; i + 1 < v.size(); ++i) lines.push_back({v[i], v[i + 1]});
     }
 }
 
@@ -169,6 +190,7 @@ const char* kindKey(ElemKind k) {
         case ElemKind::Outline: return "OUTLINE";
         case ElemKind::Stair: return "STAIR";
         case ElemKind::Shaft: return "SHAFT";
+        case ElemKind::Infill: return "INFILL";
         case ElemKind::Ignore: return "IGNORE";
     }
     return "IGNORE";
@@ -176,7 +198,7 @@ const char* kindKey(ElemKind k) {
 
 bool kindFromKey(const std::string& s, ElemKind& out) {
     for (ElemKind k : {ElemKind::Lean, ElemKind::FoundationSlab, ElemKind::StripFooting, ElemKind::Column, ElemKind::Wall, ElemKind::Slab,
-                       ElemKind::Roof, ElemKind::Opening, ElemKind::Outline, ElemKind::Stair, ElemKind::Shaft, ElemKind::Ignore})
+                       ElemKind::Roof, ElemKind::Opening, ElemKind::Outline, ElemKind::Stair, ElemKind::Shaft, ElemKind::Infill, ElemKind::Ignore})
         if (s == kindKey(k)) { out = k; return true; }
     return false;
 }
@@ -194,6 +216,9 @@ ElemKind guessKind(const std::string& layer) {
     if (has({"LENTA", "ЛЕНТ", "STRIP"})) return ElemKind::StripFooting;
     if (has({"FUNDAMENT", "ФУНДАМЕНТ", "FOUND", "TEMEL", "ІРГЕТАС", "ПОДУШК"})) return ElemKind::FoundationSlab;
     if (has({"USTUN", "УСТУН", "КОЛОН", "COLUMN", "COL_", "KOLON", "ПИЛОН", "PILON", "БАҒАН", "ТИРЕК"})) return ElemKind::Column;
+    if (has({"TOSIQ", "TO'SIQ", "ТЎСИҚ", "ТОСИК", "КЛАДК", "KLADKA", "ГАЗОБЛОК", "GAZOBLOK", "KIRPICH", "КИРПИЧ", "INFILL", "BRICK", "MASONRY",
+             "ПЕРЕГОРОД", "TUĞLA", "GAZBETON", "ГАЗОБЕТОН"}))
+        return ElemKind::Infill;
     if (has({"DEVOR", "ДЕВОР", "СТЕН", "WALL", "DUVAR", "ҚАБЫРҒА", "ДУБАЛ", "ДИАФРАГМ"})) return ElemKind::Wall;
     if (has({"TOM", "КРОВЛ", "ПОКРЫТ", "ROOF", "ÇATI", "ЧАТЫР", "ШАТЫР"})) return ElemKind::Roof;
     if (has({"PLITA", "ПЛИТ", "SLAB", "DÖŞEME", "ПЕРЕКРЫТ", "ЁПМА", "YOPMA"})) return ElemKind::Slab;
@@ -390,6 +415,74 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
         if (own && pl.columns.empty() && w.empty()) issue(false, "bim.chk.no_vertical_floor", {std::to_string(k)});
         for (const auto& c : pl.columns) m.prisms.push_back({ElemKind::Column, k, c, {}, z0, top - t, p.classFrame});
         for (const auto& wl : w) m.prisms.push_back({ElemKind::Wall, k, wl, {}, z0, top - t, p.classFrame});
+        // to'siq devorlar: derazalar (tokcha ostida va ustida devor, orasida shisha), 1-qavatda kirish eshigi
+        {
+            std::vector<std::vector<Vec3>> inf = pl.infill;
+            for (const auto& [a, b] : pl.infillLines)
+                if (auto r = wallRect(a, b, p.infillT); !r.empty()) inf.push_back(r);
+            const double floorLvl = k == 1 ? 0.0 : prevTop, zTop = top - t;
+            // kirish: eng past (y bo'yicha) uzun devor o'rtasida
+            int front = -1;
+            if (k == 1 && p.facade) {
+                double bestY = 1e18;
+                for (std::size_t i = 0; i < inf.size(); ++i) {
+                    const Frame f = frameOf(inf[i]);
+                    if (f.L < p.doorW + 0.8) continue;
+                    const double cy = centroid(inf[i]).y;
+                    if (cy < bestY - 1e-6 || (std::abs(cy - bestY) < 1e-6 && front >= 0 && f.L > frameOf(inf[static_cast<std::size_t>(front)]).L)) {
+                        bestY = cy;
+                        front = static_cast<int>(i);
+                    }
+                }
+            }
+            for (std::size_t i = 0; i < inf.size(); ++i) {
+                const Frame f = frameOf(inf[i]);
+                struct Gap { double a0, a1, zb, zt; bool door; };
+                std::vector<Gap> gaps;
+                if (p.facade && zTop - floorLvl > 1.0) {
+                    int n = static_cast<int>(std::round(f.L / std::max(0.5, p.winStep)));
+                    while (n > 0 && n * p.winW + (n + 1) * 0.4 > f.L) --n;
+                    for (int j = 0; j < n; ++j) {
+                        const double c = f.L * (j + 0.5) / n;
+                        gaps.push_back({c - p.winW / 2, c + p.winW / 2, floorLvl + p.sill, std::min(zTop - 0.1, floorLvl + p.sill + p.winH), false});
+                    }
+                    if (static_cast<int>(i) == front) {
+                        // markazga eng yaqin derazani eshik bilan almashtirish (bo'lmasa — qo'shish)
+                        const double c = f.L / 2;
+                        Gap d{c - p.doorW / 2, c + p.doorW / 2, floorLvl, std::min(zTop - 0.1, floorLvl + p.doorH), true};
+                        std::erase_if(gaps, [&](const Gap& g) { return g.a1 > d.a0 - 0.3 && g.a0 < d.a1 + 0.3; });
+                        gaps.push_back(d);
+                        std::sort(gaps.begin(), gaps.end(), [](const Gap& x, const Gap& y) { return x.a0 < y.a0; });
+                    }
+                }
+                double a = 0;
+                auto piece = [&](double a0, double a1, double zb, double zt) {
+                    if (a1 - a0 > 1e-6 && zt - zb > 1e-6) m.prisms.push_back({ElemKind::Infill, k, f.rect(a0, 0, a1, f.W), {}, zb, zt, p.classInfill});
+                };
+                for (const auto& g : gaps) {
+                    piece(a, g.a0, z0, zTop);          // devor bo'lagi (to'liq balandlik)
+                    piece(g.a0, g.a1, z0, g.zb);       // tokcha osti
+                    piece(g.a0, g.a1, g.zt, zTop);     // peremichka usti
+                    GlassPane gp;
+                    gp.level = k;
+                    gp.door = g.door;
+                    const Vec3 p0 = f.at(g.a0, f.W / 2), p1 = f.at(g.a1, f.W / 2);
+                    gp.quad = {{p0.x, p0.y, g.zb}, {p1.x, p1.y, g.zb}, {p1.x, p1.y, g.zt}, {p0.x, p0.y, g.zt}};
+                    m.glass.push_back(gp);
+                    m.glazing += (g.a1 - g.a0) * (g.zt - g.zb);
+                    (g.door ? m.doors : m.windows) += 1;
+                    a = g.a1;
+                }
+                piece(a, f.L, z0, zTop);
+            }
+            // tom parapeti: tom plitasi konturi bo'ylab uzluksiz halqa (faqat fasad bo'lsa)
+            if (roof && p.facade && p.parapetH > 0 && !inf.empty()) {
+                const auto rs = pl.slabs.empty() ? outlinesOf(pl, false) : pl.slabs;
+                for (const auto& r : rs)
+                    if (auto in2 = insetRing(r, p.infillT); !in2.empty())
+                        m.prisms.push_back({ElemKind::Infill, k, r, {in2}, top, top + p.parapetH, p.classInfill});
+            }
+        }
         // lift shaxtalari: devor halqasi (ichki kontur + qalinlik), plitada teshik (tomdan tashqari)
         std::vector<std::vector<Vec3>> slabHoles = pl.openings;
         for (const auto& sh : pl.shafts) {
@@ -513,6 +606,8 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
             pr.z0 += m.zeroAbs;
             pr.z1 += m.zeroAbs;
         }
+        for (auto& g : m.glass)
+            for (auto& q : g.quad) q.z += m.zeroAbs;
         m.heightTop += m.zeroAbs;
     }
     computePto(m);
@@ -523,8 +618,19 @@ void computePto(BuildingModel& m) {
     m.pto.clear();
     m.byConcrete.clear();
     m.totalVolume = m.totalFormwork = 0;
+    m.masonry = 0;
     std::map<std::pair<int, int>, PtoRow> rows;
     for (const auto& pr : m.prisms) {
+        if (pr.kind == ElemKind::Infill) {   // kladka — betonga va qolipga kirmaydi
+            auto& r = rows[{pr.level, static_cast<int>(pr.kind)}];
+            r.kind = pr.kind;
+            r.level = pr.level;
+            r.count += 1;
+            r.volume += pr.volume();
+            r.concrete = pr.concrete;
+            m.masonry += pr.volume();
+            continue;
+        }
         auto& r = rows[{pr.level, static_cast<int>(pr.kind)}];
         r.kind = pr.kind;
         r.level = pr.level;

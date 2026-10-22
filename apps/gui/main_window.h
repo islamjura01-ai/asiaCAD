@@ -33,6 +33,9 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QWidget;
 
+class QStackedWidget;
+class QTabBar;
+
 namespace asiacad::gui {
 
 class CommandPalette;
@@ -47,6 +50,7 @@ class CityDialog;
 class TemplatesDialog;
 class SurveyDialog;
 class EarthworkDialog;
+class Model3DView;
 class GeoPlaceDialog;
 class DriveDialog;
 class SymbolPalette;
@@ -79,7 +83,12 @@ public:
     TemplatesDialog* openTemplates(int page);  // konstruksiya shablonlari: 0 metall karkas, 1 zina, 2 rampa, 3 tirgak devor
     GeoPlaceDialog* openGeoPlace();
     SurveyDialog* openSurvey(int kind = -1);
-    EarthworkDialog* openEarthwork(int tab = -1);  // yer ishlari: 0 yuza, 1 profil, 2 kesimlar, 3 kartogramma, 4 hajm  // geodezik tahlil: 0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 loyiha nuqtasi (civil::DevKind)          // tanlovni haqiqiy koordinata / belgiga o'tkazish
+    EarthworkDialog* openEarthwork(int tab = -1);
+    Model3DView* view3d() const { return view3d_; }
+    void show3D(bool on);                  // asosiy oynada 2D chizma / 3D model
+    bool is3D() const;
+    void rebuild3D(bool keepView = true);  // 3D sahna: chizma (3D va 2D chiziqlar), yer yuzasi, bino, armatura, koridor
+    void makeSampleBuilding();             // namuna bino (o'qlar to'ri) — bo'sh chizmada  // yer ishlari: 0 yuza, 1 profil, 2 kesimlar, 3 kartogramma, 4 hajm  // geodezik tahlil: 0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 loyiha nuqtasi (civil::DevKind)          // tanlovni haqiqiy koordinata / belgiga o'tkazish
     QDialog* openScratch(const QString& module);  // "0 dan chizish": building | road | waterway | corridor | util
     void locate(double x, double y);        // tuzatish: chizmada joyni ko'rsatish
 
@@ -118,6 +127,9 @@ private:
     UiMode mode_ = UiMode::Classic;
     Theme theme_;
     Viewport* view_ = nullptr;
+    Model3DView* view3d_ = nullptr;
+    QStackedWidget* viewStack_ = nullptr;
+    QTabBar* viewTabs_ = nullptr;
     CommandPalette* palette_ = nullptr;
     SewerDialog* sewer_ = nullptr;
     BuildingDialog* building_ = nullptr;

@@ -16,6 +16,8 @@
 #include "templates_dialog.h"
 #include "survey_dialog.h"
 #include "earthwork_dialog.h"
+#include "model3d_view.h"
+#include <QPainter>
 
 #include <QApplication>
 #include <QDir>
@@ -74,6 +76,7 @@ int main(int argc, char** argv) {
     int tplPage = -1;
     int surveyKind = -1;
     int earthTab = -1;
+    bool show3d = false;
     QString surveyRef;
     bool geoDlg = false;
     bool drive = false;
@@ -121,7 +124,8 @@ int main(int argc, char** argv) {
         else if (a == "--geo") geoDlg = true;
         else if (a == "--survey") surveyKind = next().toInt();     // geodezik tahlil oynasi (0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 nuqta)
         else if (a == "--survey-ref") surveyRef = next();
-        else if (a == "--earth") earthTab = next().toInt();         // yer ishlari oynasi (0 yuza, 1 profil, 2 kesim, 3 kartogramma, 4 hajm)          // loyiha qatlami                    // geo-joylash oynasi (tanlov bilan)
+        else if (a == "--earth") earthTab = next().toInt();
+        else if (a == "--3d") show3d = true;                         // asosiy oynada 3D model         // yer ishlari oynasi (0 yuza, 1 profil, 2 kesim, 3 kartogramma, 4 hajm)          // loyiha qatlami                    // geo-joylash oynasi (tanlov bilan)
         else if (a == "--scratch") scratch = next();             // "0 dan" oynasi: building | road | waterway | util
         else if (a == "--asm") asmIndex = next().toInt();
         else if (a == "--station") station = next().toInt();
@@ -197,6 +201,7 @@ int main(int argc, char** argv) {
             if (!scratch.isEmpty()) w.openScratch(scratch);
             if (tplPage >= 0) w.openTemplates(tplPage);
             if (geoDlg) w.openGeoPlace();
+            if (show3d) w.show3D(true);
             if (earthTab >= 0) {
                 auto* ed = w.openEarthwork(earthTab);
                 if (!surveyRef.isEmpty()) { ed->setDesignMode(3); }
@@ -260,7 +265,7 @@ int main(int argc, char** argv) {
             QWidget* target = &w;
             for (QWidget* tl : QApplication::topLevelWidgets())
                 if ((sewer && tl->isVisible() && tl->inherits("asiacad::gui::SewerDialog")) ||
-                    (building > 0 && !rebar && !drive && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
+                    (building > 0 && !rebar && !drive && !show3d && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
                     (rebar && tl->isVisible() && tl->inherits("asiacad::gui::RebarDialog")) ||
                     (util && tl->isVisible() && tl->inherits("asiacad::gui::UtilityDialog")) ||
                     (road && tl->isVisible() && tl->inherits("asiacad::gui::RoadDialog")) ||
@@ -272,7 +277,17 @@ int main(int argc, char** argv) {
                     (drive && tl->isVisible() && tl->inherits("asiacad::gui::DriveDialog")) ||
                     ((!scratch.isEmpty() || tplPage >= 0 || geoDlg) && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
                     target = tl;
-            target->grab().save(shot);
+            QPixmap pm = target->grab();
+            {   // OpenGL 3D oynalar: grab() ustki chizmani (ViewCube, yozuvlar) olmaydi — framebuffer + tugmalar paneli ustidan
+                QPainter pp(&pm);
+                for (auto* v : target->findChildren<asiacad::gui::Model3DView*>()) {
+                    if (!v->isVisible()) continue;
+                    pp.drawImage(v->mapTo(target, QPoint(0, 0)), v->snapshot().scaled(v->size() * pm.devicePixelRatio()));
+                    for (auto* b : v->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+                        if (b->isVisible()) pp.drawPixmap(b->mapTo(target, QPoint(0, 0)), b->grab());
+                }
+            }
+            pm.save(shot);
             QApplication::exit(0);
         });
     }

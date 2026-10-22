@@ -4,7 +4,7 @@
 //  o'rta — 3D (vertikal masshtab) va bo'ylama profil (yer, tub, qirg'oq, suv sathi / pyezometrik chiziq)
 //  o'ng — Piketlar (tub belgisi qo'lda tuzatiladi), Hajmlar, Tekshiruv; past — Excel (bog'langan), "3D va profilni chizmaga"
 #include "excel_link.h"
-#include "pipe3d_view.h"
+#include "model3d_view.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/waterway.h>
@@ -52,7 +52,7 @@ public:
     const civil::WwParams& params() const { return p_; }
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
-    Pipe3DView* view() const { return view_; }
+    Model3DView* view() const { return view_; }
     void setBottom(int station, double z);      // qo'lda tuzatish
     void applySection(const civil::WwSection& s);
     void setFlow(double q);
@@ -89,7 +89,7 @@ private:
                    *vmin_ = nullptr, *vmax_ = nullptr, *piece_ = nullptr, *chw_ = nullptr, *q_ = nullptr, *step_ = nullptr, *depth_ = nullptr,
                    *slope_ = nullptr, *head_ = nullptr, *ground_ = nullptr, *vexag_ = nullptr;
     QTabWidget* midTabs_ = nullptr;
-    Pipe3DView* view_ = nullptr;
+    Model3DView* view_ = nullptr;
     WwProfileView* profile_ = nullptr;
     QTableWidget* st_ = nullptr;
     QListWidget* quant_ = nullptr;

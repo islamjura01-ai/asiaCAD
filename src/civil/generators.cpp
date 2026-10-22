@@ -149,12 +149,13 @@ Entities generateGrid(const GridSpec& g) {
     // tashqi devorlar: ustunlar orasida, o'q bo'yicha markazlangan (ustun bilan ustma-ust tushmaydi)
     if (g.walls && g.wallT > 0) {
         const double t = g.wallT / 2;
+        const char* wl = g.infill ? "TOSIQ_DEVOR" : "DEVOR";
         for (double y : {Y.front(), Y.back()})
             for (std::size_t i = 0; i + 1 < X.size(); ++i)
-                if (X[i + 1] - hb - (X[i] + hb) > 0.05) rect(out, X[i] + hb, y - t, X[i + 1] - hb, y + t, "DEVOR");
+                if (X[i + 1] - hb - (X[i] + hb) > 0.05) rect(out, X[i] + hb, y - t, X[i + 1] - hb, y + t, wl);
         for (double x : {X.front(), X.back()})
             for (std::size_t j = 0; j + 1 < Y.size(); ++j)
-                if (Y[j + 1] - hh - (Y[j] + hh) > 0.05) rect(out, x - t, Y[j] + hh, x + t, Y[j + 1] - hh, "DEVOR");
+                if (Y[j + 1] - hh - (Y[j] + hh) > 0.05) rect(out, x - t, Y[j] + hh, x + t, Y[j + 1] - hh, wl);
     }
     if (g.core && g.floors >= 2) {
         const std::size_t i = g.dx.size() / 2;
@@ -175,9 +176,9 @@ Entities generateGrid(const GridSpec& g) {
 
 std::string gridToJson(const GridSpec& g) {
     return std::format(
-        "{{\"format\":\"asiacad-grid\",\"version\":1,\"dx\":{},\"dy\":{},\"x0\":{},\"y0\":{},\"colB\":{},\"colH\":{},\"walls\":{},\"wallT\":{},"
+        "{{\"format\":\"asiacad-grid\",\"version\":1,\"dx\":{},\"dy\":{},\"x0\":{},\"y0\":{},\"colB\":{},\"colH\":{},\"walls\":{},\"infill\":{},\"wallT\":{},"
         "\"slab\":{},\"overhang\":{},\"floors\":{},\"floorH\":{},\"core\":{}}}",
-        list(g.dx), list(g.dy), g.x0, g.y0, g.colB, g.colH, g.walls, g.wallT, g.slab, g.overhang, g.floors, g.floorH, g.core);
+        list(g.dx), list(g.dy), g.x0, g.y0, g.colB, g.colH, g.walls, g.infill, g.wallT, g.slab, g.overhang, g.floors, g.floorH, g.core);
 }
 GridSpec gridFromJson(const std::string& t) {
     const auto r = parseOr(t);
@@ -191,6 +192,7 @@ GridSpec gridFromJson(const std::string& t) {
     g.x0 = num(r, "x0", g.x0); g.y0 = num(r, "y0", g.y0);
     g.colB = num(r, "colB", g.colB); g.colH = num(r, "colH", g.colH);
     if (const auto* v = r.find("walls"); v && v->isBool()) g.walls = v->boolean();
+    if (const auto* v = r.find("infill"); v && v->isBool()) g.infill = v->boolean();
     if (const auto* v = r.find("slab"); v && v->isBool()) g.slab = v->boolean();
     if (const auto* v = r.find("core"); v && v->isBool()) g.core = v->boolean();
     g.wallT = num(r, "wallT", g.wallT);

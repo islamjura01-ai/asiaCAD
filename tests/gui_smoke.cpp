@@ -820,6 +820,8 @@ int main(int argc, char** argv) {
         w.runLine("GRID 6x5,4.5 6.6x3");
         BuildingDialog* bd = w.openBuilding();
         CHECK(!bd->model().stairs.empty());
+        CHECK(!bd->model().glass.empty() && bd->model().doors == 1 && bd->model().masonry > 0);   // fasad: derazalar, eshik, kladka
+        CHECK(!bd->findChild<QPushButton*>("sample")->property("accent").toBool());              // bino bor — oddiy tugma
         w.runLine("PLINE 20.3,1.0 20.3,5.5 18.9,5.5 18.9,1.0 18.9,-3");
         w.viewport()->setSelection({w.document().ids().back()});
         DriveDialog* dd = w.openDrive();

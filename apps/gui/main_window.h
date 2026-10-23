@@ -98,6 +98,7 @@ public:
     bool selectTag(const QString& tag);
     void startPipeDraw(const QString& args);   // "K1-1 SYS=K1 SPEC=PVC-SN8-200 DEPTH=1.8" — keyin chizmada quduqlar bosiladi
     void pipeDrawDialog();
+    void asBuiltDialog();
     QString nextNetName(const QString& prefix) const;   // "sewer:K1:seg:2" | "sewer:K1:mh:0" | "ids:1,2"
     bool newSheet(const QString& name, const QString& size, bool portrait);
     enum SheetSource { SrcScreen = 0, SrcAll = 1, SrcPick = 2 };

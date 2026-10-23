@@ -170,6 +170,7 @@ const char* commandSyntax(const std::string& c) {
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
+        {"ASBUILT", "net|ROAD pts [REF=INV|TOP] [TOL=cm] [TOLP=cm] [MAXD=m] [XLSX=f] [NODRAW]"},
         {"PIPEDRAW", "name p1 p2 [p…] [SYS=K1|K2] [SPEC=id] [SLOPE=‰] [DEPTH=m] [RIM=m]"},
         {"OBJEDIT", "UTIL LINE=n [DN=mm] [ZUP=m] [ZDOWN=m] [DEPTH=m] [KIND=k] | UTIL NODE=n [GROUND=m] [BOTTOM=m] [NAME=t] | ROAD ST=n DESIGN=m | WW ST=n BOTTOM=m"},
         {"PIPEEDIT", "net SEG=n|MH=n KEY=value ..."},
@@ -381,6 +382,7 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchSheet(cmd, a)) return;
     if (dispatchLinks(cmd, a)) return;
     if (dispatchProps(cmd, a)) return;
+    if (dispatchAsBuilt(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;
@@ -571,6 +573,9 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             if (a.size() > k && a[k].find(',') == std::string::npos) bp.slabT = parseNumber(a[k++]);
         }
         const auto model = bim::buildModel(bim::readPlan(doc_, lm), bp);
+        // parametrlar chizmada saqlanadi — tuzatish paneli element hajmini shu bo'yicha ko'rsatadi
+        if (const std::string pj = bim::paramsToJson(bp, lm); doc_.dictGet("bim:params") != pj)
+            stack_.execute(std::make_unique<DictCommand>("bim:params", pj, cmd));
         for (const auto& [ln, kk] : lm)
             if (kk != bim::ElemKind::Ignore) say("bim.msg.layer", {ln, loc_.tr(std::string("bim.kind.") + bim::kindKey(kk))});
         auto levelName = [&](int lv) { return lv == 0 ? loc_.tr("bim.level.found") : loc_.tr("bim.level.n", {std::to_string(lv)}); };

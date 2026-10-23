@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.27: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.28: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,17 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Ijro syomkasi, shoxobcha lotogi, bino elementi, smeta (v0.28) — `ASBUILT`
+- **Ijro syomkasi** (Geodeziya → «Ijro syomkasi»): syomka nuqtalari loyiha bilan solishtiriladi —
+  kanalizatsiya tarmog'i (nuqta eng yaqin quvur o'qiga; loyiha: lotok yoki quvur usti) yoki yo'l (piket va o'qdan masofa bo'yicha loyiha yuzasi).
+  Har nuqtada Δh (sm) yozuvi: yashil — dopuskda, qizil — oshgan; plandagi siljish (sm); statistika: o'rtacha, o'rta kvadratik, eng katta;
+  Excel: nuqta, X/Y, o'lchangan va loyiha Z, Δh (formula), siljish, element, PK, holat. `IJRO K1-1 QATLAM:SYOMKA TOL=5 TOLP=10 XLSX=f.xlsx`
+- **Shoxobcha lotogi**: quvur chizishda oxirgi quduq mavjud tarmoqqa ulansa — quvur ustlari bo'yicha moslanadi: boshlanishdagi chuqurlik saqlanadi,
+  nishablik shunga tanlanadi (normadan kam emas; 30 ‰ dan oshsa — qolgani ulanish qudug'ida perepad).
+- **Bino elementi paneli**: USTUN/DEVOR/PLITA/... qatlamidagi konturni tanlang — tur, kesim maydoni, qavatdagi balandlik, beton hajmi va qolip
+  (1 qavat → jami), beton sinfi (Bino oynasi parametrlari bo'yicha). To'rtburchakda **Kenglik / Uzunlik** maydonlari — kesimni o'zgartirish.
+- **Smeta**: quvur panelida xandaq eni va hajmi, qum to'shama, ko'mish; «Excel (smeta)» — quduqlar, bo'laklar, hajmlar va **yer ishlari** varag'i.
 
 ## Tuzatish paneli hamma modulda + quvurni sichqoncha bilan chizish (v0.27) — `OBJEDIT`, `PIPEDRAW`
 - **Yer osti tarmoqlari** (3D chizilgandan keyin chiziqni bosing): diametr, o'q belgisi boshi/oxiri (o'z oqimli tarmoqda oraliq uchlar chiziqli),

@@ -106,6 +106,10 @@ void glyph(QPainter& p, const QString& n) {
         for (int i = 0; i < 4; ++i) { L(3 + i * 6, 3, 3 + i * 6, 21); L(3, 3 + i * 6, 21, 3 + i * 6); }
         p.save(); QPen d = p.pen(); d.setWidthF(d.widthF() * 1.6); p.setPen(d); QPainterPath z; z.moveTo(3, 18); z.cubicTo(9, 14, 12, 10, 21, 5); p.drawPath(z); p.restore();
     }
+    else if (n == "asbuilt") {  // loyiha chizig'i + o'lchangan nuqtalar + belgi
+        L(3, 15, 21, 15); dot(7, 12.5, 1.5); dot(12, 16.8, 1.5); dot(17, 13.5, 1.5); L(7, 12.5, 7, 15); L(12, 16.8, 12, 15); L(17, 13.5, 17, 15);
+        P({{13, 6}, {15.5, 8.5}, {20, 3.5}});
+    }
     else if (n == "pipedraw") {  // quduq — quvur — quduq + qalam
         C(5, 16, 2.6); C(17, 8, 2.6); L(7.3, 14.8, 14.7, 9.2); L(15, 18, 21, 12); L(15, 18, 14, 21); L(14, 21, 17, 20);
     }

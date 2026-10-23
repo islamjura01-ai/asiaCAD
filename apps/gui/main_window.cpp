@@ -98,6 +98,7 @@ const ActDef kActs[] = {
     {"extend", "extend", "gui.act.extend", true},  {"fillet", "fillet", "gui.act.fillet", true},
     {"sewer", "pipes", "gui.act.sewer", false},
     {"pipedraw", "pipedraw", "gui.act.pipedraw", false},
+    {"asbuilt", "asbuilt", "gui.act.asbuilt", false},
     {"building", "bim", "gui.act.building", false},
     {"rebar", "rebar", "gui.act.rebar", false},
     {"util", "util", "gui.act.util", false},
@@ -337,7 +338,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.27"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.28"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -359,7 +360,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"pipedraw", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"pipedraw", "#1F7BE0"}, {"asbuilt", "#2BA84A"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
             {"rect", "#1C8C6E"}, {"polygon", "#1C8C6E"}, {"ellipse", "#1C8C6E"}, {"spline", "#1C8C6E"}, {"hatch", "#1C8C6E"}, {"symbols", "#3E9B3A"}, {"steel", "#4F6D8A"},
             {"steelframe", "#4F6D8A"}, {"stairtpl", "#D9466A"}, {"ramptpl", "#E7881B"}, {"rwalltpl", "#8A7B5C"}, {"geoplace", "#0E9F8E"},
             {"ptimport", "#0E9F8E"}, {"ptexport", "#0E9F8E"}, {"devplan", "#0E9F8E"}, {"devvert", "#0E9F8E"}, {"devheight", "#0E9F8E"},
@@ -423,6 +424,7 @@ void MainWindow::buildActions() {
     connect(act_["palette"], &QAction::triggered, this, [this] { palette_->open(view_); });
     connect(act_["sewer"], &QAction::triggered, this, [this] { openSewer(); });
     connect(act_["pipedraw"], &QAction::triggered, this, [this] { pipeDrawDialog(); });
+    connect(act_["asbuilt"], &QAction::triggered, this, [this] { asBuiltDialog(); });
     connect(act_["building"], &QAction::triggered, this, [this] { openBuilding(); });
     connect(act_["rebar"], &QAction::triggered, this, [this] { openRebar(); });
     connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
@@ -564,7 +566,7 @@ void MainWindow::buildRibbon() {
         auto* ic = new QLabel(brand);
         ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
         auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.27</span>"),
+                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.28</span>"),
                               brand);
         nm->setObjectName("brandName");
         nm->setTextFormat(Qt::RichText);
@@ -585,7 +587,7 @@ void MainWindow::buildRibbon() {
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}, {"leader", "text"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.utilities", {{"gui.grp.utilities", {"pipedraw", "sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}}, {"gui.grp.earth", {"ewtin", "ewprofile", "ewsections", "ewcarto", "ewvolume"}},
+        {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}}, {"gui.grp.asbuilt", {"asbuilt"}}, {"gui.grp.earth", {"ewtin", "ewprofile", "ewsections", "ewcarto", "ewvolume"}},
                             {"gui.grp.deviation", {"devplan", "devvert", "devheight", "devaxis", "devpoint"}},
                             {"gui.grp.clean", {"devclear"}}, {"gui.grp.geo", {"geoplace"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.tab.struct", {{"gui.grp.templates", {"steelframe", "stairtpl", "ramptpl", "rwalltpl"}}, {"gui.grp.km", {"steel"}},
@@ -1551,6 +1553,57 @@ void MainWindow::startPipeDraw(const QString& args) {
     view_->setPipeArgs(args);
     view_->setTool(Tool::PipeDraw);
     view_->setFocus();
+}
+
+void MainWindow::asBuiltDialog() {
+    QStringList objs;
+    for (const auto& [k, v] : doc_.dict())
+        if (k.rfind("sewer:", 0) == 0 && k.find(":at") == std::string::npos) objs << QString::fromStdString(k.substr(6));
+    const bool road = !doc_.dictGet("road:main").empty();
+    if (objs.isEmpty() && !road) {
+        QMessageBox::information(this, t("gui.act.asbuilt"), t("gui.ab.none"));
+        return;
+    }
+    QDialog dlg(this);
+    dlg.setWindowTitle(t("gui.act.asbuilt"));
+    auto* f = new QFormLayout(&dlg);
+    auto* obj = new QComboBox(&dlg);
+    for (const auto& o : objs) obj->addItem(o, o);
+    if (road) obj->addItem(t("gui.ab.road"), QStringLiteral("ROAD"));
+    auto* layer = new QComboBox(&dlg);
+    for (const auto& [name, l] : doc_.layers()) layer->addItem(QString::fromStdString(name));
+    layer->setCurrentText(QStringLiteral("SYOMKA"));
+    auto* ref = new QComboBox(&dlg);
+    ref->addItem(t("gui.ab.inv"), "INV");
+    ref->addItem(t("gui.ab.top"), "TOP");
+    auto* tol = new QDoubleSpinBox(&dlg);
+    tol->setRange(0.1, 100);
+    tol->setValue(5);
+    auto* tolp = new QDoubleSpinBox(&dlg);
+    tolp->setRange(0.1, 500);
+    tolp->setValue(10);
+    auto* xl = new QCheckBox(t("gui.ab.xlsx"), &dlg);
+    f->addRow(t("gui.ab.obj"), obj);
+    f->addRow(t("gui.ab.pts"), layer);
+    f->addRow(t("gui.ab.ref"), ref);
+    f->addRow(t("gui.ab.tol"), tol);
+    f->addRow(t("gui.ab.tolp"), tolp);
+    f->addRow(xl);
+    connect(obj, &QComboBox::currentIndexChanged, &dlg, [obj, ref](int) { ref->setEnabled(obj->currentData().toString() != "ROAD"); });
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    f->addRow(bb);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted) return;
+    QString line = QStringLiteral("ASBUILT \"%1\" \"%2:%3\" REF=%4 TOL=%5 TOLP=%6")
+                       .arg(obj->currentData().toString(), QString::fromStdString(loc_.keywordName("LAYER")), layer->currentText(), ref->currentData().toString())
+                       .arg(tol->value())
+                       .arg(tolp->value());
+    if (xl->isChecked()) {
+        const QString file = QFileDialog::getSaveFileName(this, t("gui.act.asbuilt"), QStringLiteral("ijro_syomka.xlsx"), QStringLiteral("Excel (*.xlsx)"));
+        if (!file.isEmpty()) line += " \"XLSX=" + file + "\"";
+    }
+    runLine(line);
 }
 
 void MainWindow::pipeDrawDialog() {

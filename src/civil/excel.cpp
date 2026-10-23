@@ -226,6 +226,24 @@ Workbook sewerWorkbook(const civil::SewerNetwork& n, const civil::SewerResult& r
     q.add({Cell::s(T(tr, "xl.bedding")), Cell::n(r.beddingVolume, N2)});
     q.add({Cell::s(T(tr, "xl.backfill")), Cell::n(r.backfillVolume, N2)});
     for (const auto& [d, c] : r.manholeCount) q.add({Cell::s(T(tr, "xl.manholes", {std::format("{:.2f}", d)})), Cell::n(c, INT)});
+    // 3a. Yer ishlari har bo'lak bo'yicha (smeta uchun): xandaq = eni × (o'rtacha chuqurlik + 0,1) × uzunlik
+    Sheet& ew = wb.add(T(tr, "xl.sh.earth"));
+    ew.add({Cell::s("№", H), hd(tr, "xl.c.from"), hd(tr, "xl.c.to"), hd(tr, "xl.c.len"), hd(tr, "xl.c.pipelen"), hd(tr, "xl.c.depthup"),
+            hd(tr, "xl.c.depthdown"), hd(tr, "xl.c.trenchw"), hd(tr, "xl.c.trench"), hd(tr, "xl.c.bedding"), hd(tr, "xl.c.backfill")});
+    ew.widths = {5, 9, 9, 10, 11, 11, 11, 10, 12, 12, 12};
+    for (std::size_t i = 0; i < r.segments.size() && i + 1 < n.manholes.size(); ++i) {
+        const auto& sg = r.segments[i];
+        const int row = static_cast<int>(ew.rows.size());
+        ew.add({Cell::n(static_cast<double>(i + 1), INT), Cell::s(n.manholes[i].name), Cell::s(n.manholes[i + 1].name), Cell::n(sg.length, N2),
+                Cell::n(sg.pipeLength, N2), Cell::n(sg.depthUp, N2), Cell::n(sg.depthDown, N2), Cell::n(sg.trenchW, N2),
+                Cell::f(std::format("H{0}*((F{0}+G{0})/2+0.1)*D{0}", r1(row)), sg.trench, N2), Cell::f(std::format("0.1*H{0}*D{0}", r1(row)), sg.bedding, N2),
+                Cell::n(sg.backfill, N2)});
+    }
+    const int lastE = static_cast<int>(ew.rows.size());
+    ew.add({Cell::s(T(tr, "gui.bim.total"), TOT), {}, {}, Cell::f(std::format("SUM(D2:D{})", lastE), r.totalLength, TOT),
+            Cell::f(std::format("SUM(E2:E{})", lastE), [&] { double t = 0; for (const auto& x : r.segments) t += x.pipeLength; return t; }(), TOT), {}, {}, {},
+            Cell::f(std::format("SUM(I2:I{})", lastE), r.trenchVolume, TOT), Cell::f(std::format("SUM(J2:J{})", lastE), r.beddingVolume, TOT),
+            Cell::f(std::format("SUM(K2:K{})", lastE), r.backfillVolume, TOT)});
     // 4. Parametrlar
     Sheet& p = wb.add(T(tr, "xl.sh.params"));
     p.add({hd(tr, "xl.c.key"), hd(tr, "xl.c.value"), hd(tr, "xl.c.desc")});

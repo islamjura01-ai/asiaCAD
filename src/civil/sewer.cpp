@@ -336,9 +336,13 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
         const double bw = std::max(0.7, dout + 0.6);  // xandaq tubi kengligi (taxminiy)
         const double avgD = (s.depthUp + s.depthDown) / 2 + 0.1;
         const double v = bw * avgD * s.length;
+        s.trenchW = bw;
+        s.trench = v;
+        s.bedding = 0.1 * bw * s.length;
+        s.backfill = v - s.bedding - kPI * dout * dout / 4 * s.length;
         r.trenchVolume += v;
-        r.beddingVolume += 0.1 * bw * s.length;
-        r.backfillVolume += v - 0.1 * bw * s.length - kPI * dout * dout / 4 * s.length;
+        r.beddingVolume += s.bedding;
+        r.backfillVolume += s.backfill;
         r.segments.push_back(s);
         prev = s.spec;
     }

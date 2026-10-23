@@ -41,6 +41,7 @@ private:
     bool buildUtil(EntityId id);
     bool buildRoad(EntityId id);
     bool buildWw(EntityId id);
+    bool buildBim(EntityId id);   // plan elementi (ustun, devor, plita ...) — qavatlar bo'yicha hajm, qolip, beton sinfi
     void navRow(const QString& prevTag, const QString& nextTag, const char* prevKey, const char* nextKey);
     void buildLink(EntityId id);
     void buildGeneric(const std::vector<EntityId>& sel);

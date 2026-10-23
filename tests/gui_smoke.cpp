@@ -1276,6 +1276,32 @@ int main(int argc, char** argv) {
         CHECK(br.manholes.size() == 2 && br.manholes.back().name == "K1-1-2");
         CHECK(w.selectTag("sewer:K1-2:seg:0") && sp->title().contains("K1-1-2"));
     }
+
+    // 34. Bino elementi paneli (ustun kesimi), quvur panelida smeta tugmasi, ijro syomkasi amali
+    {
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        SmartPanel* sp = w.smartPanel();
+        w.runLine("CLAYER USTUN");
+        w.runLine("PLINE 0,0 0.4,0 0.4,0.6 0,0.6 C");
+        const EntityId cid = w.document().ids().back();
+        w.viewport()->setSelection({cid});
+        QApplication::processEvents();
+        CHECK(sp->title().contains(QString::fromStdString(loc.tr("bim.kind.COLUMN"))));
+        QLineEdit* rw = sp->field("RECTW");
+        CHECK(rw && rw->text() == "0.400");
+        rw->setText("0.5");
+        emit rw->editingFinished();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        const auto* pl = dynamic_cast<const PolylineEntity*>(w.document().find(cid));
+        CHECK(pl && std::abs(pl->area() - 0.3) < 1e-9);
+        w.runLine(QStringLiteral("SEWER \"%1/k1_kocha.kan.json\"").arg(ASIACAD_EXAMPLES_DIR));
+        CHECK(w.selectTag("sewer:K1:seg:0") && sp->findChild<QPushButton*>("netXlsx"));
+        CHECK(w.findChild<QAction*>() != nullptr);
+    }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

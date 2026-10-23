@@ -66,6 +66,7 @@ struct SewerNetwork {
 
 struct SegmentResult {
     double length = 0, slope = 0;         // length — quduq markazlari orasida (gorizontal)
+    double trenchW = 0, trench = 0, bedding = 0, backfill = 0;   // xandaq eni (m) va hajmlar (m³), shu bo'lak
     double pipeLength = 0;                // haqiqiy quvur: markazlar orasi − quduq radiuslari + quduqqa kirishlar
     double invUp = 0, invDown = 0;        // quvur tubi belgilari
     double depthUp = 0, depthDown = 0;    // yer sathidan quvur tubigacha

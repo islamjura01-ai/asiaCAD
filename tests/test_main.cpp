@@ -353,7 +353,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 108);
+    CHECK(loc.canonicalCommands().size() == 109);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2236,8 +2236,9 @@ TEST(excel_sewer_roundtrip) {
     n.segments[0].flowLs = 4;
     const auto r = civil::compute(n);
     auto wb = xlsx::fromBytes(xlsx::toBytes(excel::sewerWorkbook(n, r, tr)));
-    CHECK(wb.sheets.size() == 5);
+    CHECK(wb.sheets.size() == 6);   // + yer ishlari (xandaq, qum, ko'mish har bo'lak)
     CHECK(wb.sheets[0].name == tr("xl.sh.manholes", {}));
+    CHECK(wb.sheets[3].name == tr("xl.sh.earth", {}) && wb.sheets[3].rows.size() == r.segments.size() + 2);
     // Excel'da tahrirlash: 2-quduq yer belgisi, 2-bo'lak nishabligi, yangi quduq qo'shish
     auto& m = wb.sheets[0];
     m.rows[2][3] = xlsx::Cell::n(100.1);
@@ -3673,6 +3674,66 @@ TEST(objedit_and_pipedraw) {
         in.run("UNDO");
         CHECK(doc.dictGet("sewer:K1-3").empty());
     }
+}
+
+
+// ---------- Shoxobcha lotogi, to'rtburchak xossalari, smeta va ijro syomkasi (ASBUILT) ----------
+TEST(branch_rect_estimate_asbuilt) {
+    // to'rtburchak (ustun kesimi) — markaz va yo'nalish saqlanib o'lcham o'zgaradi
+    PolylineEntity col({{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.6, 0}, {0, 0.6, 0}}, true);
+    bool hasW = false;
+    for (const auto& f : entityProps(col)) hasW |= f.key == "RECTW" && std::abs(f.value - 0.4) < 1e-12;
+    CHECK(hasW);
+    auto c2 = withProp(col, "RECTW", "0.5");
+    CHECK(c2 && std::abs(static_cast<PolylineEntity&>(*c2).area() - 0.3) < 1e-12);
+    CHECK(std::abs(static_cast<PolylineEntity&>(*c2).vertices()[0].x + 0.05) < 1e-12);
+
+    auto loc = loadedLocalizer();
+    loc.setLanguage("en");
+    Document doc;
+    CommandStack st(doc);
+    std::ostringstream out;
+    cli::Interpreter in(doc, st, loc, out);
+    in.run(std::string("PTIMPORT \"") + ASIACAD_EXAMPLES_DIR + "/geodeziya/yer_syomka.txt\"");
+    in.run("PIPEDRAW K1-1 8,30 35,32 62,30 92,28");
+    in.run("PIPEDRAW K1-2 40,58 50,45 62,30");
+    CHECK(out.str().find("Branch matched to manhole K1-1 / K1-1-3") != std::string::npos);
+    const auto mainN = civil::fromJson(doc.dictGet("sewer:K1-1"));
+    const auto br = civil::fromJson(doc.dictGet("sewer:K1-2"));
+    const auto rm = civil::compute(mainN), rb = civil::compute(br);
+    // shoxobcha oxiri asosiy quvur lotogidan past emas, ko'mish yetarli
+    const double mainInv = std::min(rm.manholes[2].invIn, rm.manholes[2].invOut);
+    CHECK(rb.segments.back().invDown >= mainInv - 1e-9);
+    CHECK(rb.segments.back().coverMin > 0.8);
+    CHECK(rb.errors() == 0);
+    // smeta Excel
+    const std::string xl = (std::filesystem::temp_directory_path() / "asiacad_smeta_test.xlsx").string();
+    in.run("PIPEEDIT K1-1 \"XLSX=" + xl + "\"");
+    auto wb = xlsx::load(xl);
+    CHECK(wb.sheets.size() == 6 && wb.sheets[3].rows.size() == 5);
+    std::filesystem::remove(xl);
+    // ijro syomkasi: lotok bo'ylab 3 nuqta (2 tasi me'yorda, 1 tasi +12 sm)
+    const auto& s0 = rm.segments[0];
+    auto invAt = [&](double x) {  // 1-bo'lak (8,30)->(35,32) bo'ylab x da
+        const double t = (x - 8) / 27.0;
+        return s0.invUp + (s0.invDown - s0.invUp) * t;
+    };
+    auto yAt = [](double x) { return 30 + 2 * (x - 8) / 27.0; };
+    in.run("CLAYER IJRO_TEST");
+    in.run(std::format("POINT {},{},{} {},{},{} {},{},{}", 12, yAt(12), invAt(12) + 0.02, 20, yAt(20) + 0.05, invAt(20) - 0.01, 30, yAt(30), invAt(30) + 0.12));
+    const std::string ab = (std::filesystem::temp_directory_path() / "asiacad_ab_test.xlsx").string();
+    in.run("ASBUILT K1-1 LAYER:IJRO_TEST TOL=5 TOLP=10 \"XLSX=" + ab + "\"");
+    CHECK(out.str().find("As-built — K1-1: 3 points, within tolerance (±5 cm) 2") != std::string::npos);
+    CHECK(out.str().find("Δh +12.0 cm") != std::string::npos);
+    int red = 0, green = 0;
+    doc.forEach([&](const IEntity& e) { if (e.xget("asbuilt") == "K1-1") (e.color() == 1 ? red : green)++; });
+    CHECK(red == 1 && green == 2);
+    auto wab = xlsx::load(ab);
+    CHECK(wab.sheets.size() == 1 && wab.sheets[0].rows.size() >= 4);
+    std::filesystem::remove(ab);
+    in.run("ASBUILT K1-1 LAYER:IJRO_TEST NODRAW");
+    in.run("ASBUILT ROAD LAYER:IJRO_TEST");
+    CHECK(out.str().find("No ROAD model") != std::string::npos);
 }
 
 // GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak

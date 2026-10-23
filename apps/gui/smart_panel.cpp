@@ -1,6 +1,8 @@
 #include "smart_panel.h"
 
+#include <asiacad/bim/building.h>
 #include <asiacad/civil/pipe_catalog.h>
+#include <asiacad/core/entities.h>
 #include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/civil/utility.h>
@@ -9,6 +11,7 @@
 #include <asiacad/i18n/json.h>
 
 #include <QComboBox>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -120,6 +123,7 @@ void SmartPanel::rebuild(const std::vector<EntityId>& sel) {
                 else if (!e->xget("ww").empty()) done = buildWw(sel.front());
             }
         }
+        if (!done && sel.size() == 1) buildBim(sel.front());
         if (!done) buildGeneric(sel);
         if (sel.size() == 1) buildLink(sel.front());
     }
@@ -189,9 +193,18 @@ bool SmartPanel::buildSewer(EntityId id) {
         addInfo(t("gui.pp.qfull"), fmt(s.qFull, 1) + " l/s · " + fmt(s.vFull, 2) + " m/s");
         if (s.flowLs > 0) addInfo(t("gui.pp.fill"), fmt(s.fill, 2) + " · " + fmt(s.velocity, 2) + " m/s", s.fill > s.maxFill ? QColor(232, 80, 80) : QColor());
         addInfo(t("gui.pp.minslope"), fmt(s.minSlope * 1000, 1) + " ‰", s.slope < s.minSlope - 1e-12 ? QColor(232, 80, 80) : QColor());
+        addInfo(t("gui.pp.trench"), fmt(s.trenchW, 2) + " m · " + fmt(s.trench, 1) + " m³");
+        addInfo(t("gui.pp.bedback"), fmt(s.bedding, 2) + " / " + fmt(s.backfill, 1) + " m³");
         for (const auto& is : r.issues)
             if (is.segment == i) addInfo(QStringLiteral("⚠"), QString::fromStdString(loc_.tr(is.key, is.args)), issueColor(is.level));
         nav(QStringLiteral("sewer:%1:mh:%2").arg(net).arg(i), QStringLiteral("sewer:%1:mh:%2").arg(net).arg(i + 1), "gui.pp.mhup", "gui.pp.mhdown");
+        auto* xl = new QPushButton(t("gui.pp.xlsx", {net}), body_);
+        xl->setObjectName("netXlsx");
+        connect(xl, &QPushButton::clicked, this, [this, net] {
+            const QString f = QFileDialog::getSaveFileName(this, t("gui.pp.xlsx", {net}), net + QStringLiteral("_smeta.xlsx"), QStringLiteral("Excel (*.xlsx)"));
+            if (!f.isEmpty()) emit edit(QStringLiteral("PIPEEDIT \"%1\" \"XLSX=%2\"").arg(net, f), QString());
+        });
+        lay_->addWidget(xl);
         nav(i > 0 ? QStringLiteral("sewer:%1:seg:%2").arg(net).arg(i - 1) : QString(),
             i + 1 < static_cast<int>(r.segments.size()) ? QStringLiteral("sewer:%1:seg:%2").arg(net).arg(i + 1) : QString(), "gui.pp.prev", "gui.pp.next");
         return true;
@@ -359,6 +372,52 @@ bool SmartPanel::buildWw(EntityId id) {
         if (std::abs(is.s - s.s) < 1e-6) addInfo(QStringLiteral("⚠"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? QColor(232, 80, 80) : QColor(230, 160, 40));
     navRow(i > 0 ? QStringLiteral("ww:main:st:%1").arg(i - 1) : QString(),
            i + 1 < static_cast<int>(m.st.size()) ? QStringLiteral("ww:main:st:%1").arg(i + 1) : QString(), "gui.pp.prevpk", "gui.pp.nextpk");
+    return true;
+}
+
+bool SmartPanel::buildBim(EntityId id) {
+    const IEntity* e = doc_.find(id);
+    if (!e || !e->xdata().empty()) return false;
+    bim::BuildingParams p;
+    std::map<std::string, bim::ElemKind> lm;
+    if (const std::string js = doc_.dictGet("bim:params"); !js.empty()) {
+        try { bim::paramsFromJson(js, p, lm); } catch (...) {}
+    }
+    const auto it = lm.find(e->layer());
+    const bim::ElemKind k = it != lm.end() ? it->second : bim::guessKind(e->layer());
+    using K = bim::ElemKind;
+    if (k == K::Ignore || k == K::Opening || k == K::Outline) return false;
+    // kontur yoki markaz chizig'i (devor)
+    double A = 0, P = 0, L = 0;
+    if (const auto* pl = dynamic_cast<const PolylineEntity*>(e); pl && pl->isClosed()) { A = pl->area(); P = pl->length2d(); }
+    else if (const auto* c = dynamic_cast<const ICurve*>(e)) L = c->length();
+    else return false;
+    double h = 0, thick = 0;
+    int times = 1;
+    std::string cls;
+    const double hFloor = p.floorHeight - p.slabT;
+    switch (k) {
+    case K::Column: case K::Wall: h = hFloor; times = p.floors; cls = p.classFrame; thick = p.wallT; break;
+    case K::Infill: h = hFloor; times = p.floors; cls = p.classInfill; thick = p.infillT; break;
+    case K::Slab: h = p.slabT; times = std::max(1, p.floors - 1); cls = p.classSlab; break;
+    case K::Roof: h = p.roofT; cls = p.classSlab; break;
+    case K::FoundationSlab: case K::StripFooting: h = p.foundT; cls = p.classFound; thick = p.stripWidth; break;
+    case K::Lean: h = p.leanT; cls = p.classLean; break;
+    case K::Stair: case K::Shaft: h = hFloor; times = p.floors; cls = p.classFrame; thick = p.shaftWallT; break;
+    default: return false;
+    }
+    if (L > 0) { A = L * thick; P = 2 * (L + thick); }  // chiziq: devor qalinligi bilan
+    const QString kind = QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(k)));
+    addSection(t("gui.pp.bim", {kind}));
+    if (L > 0) addInfo(t("gui.pp.bimline"), fmt(L, 2) + " × " + fmt(thick, 2) + " m");
+    addInfo(t("gui.pp.bimarea"), fmt(A, 3) + " m² · P " + fmt(P, 2) + " m");
+    addInfo(t("gui.pp.bimh"), fmt(h, 2) + " m" + (times > 1 ? QStringLiteral(" × %1").arg(times) : QString()));
+    const double v1 = A * h;
+    const double form1 = (k == K::Column || k == K::Wall || k == K::Stair || k == K::Shaft) ? P * h : (k == K::Infill || k == K::Lean) ? 0.0 : A;
+    addInfo(t("gui.pp.bimvol"), fmt(v1, 3) + " m³" + (times > 1 ? " → " + fmt(v1 * times, 2) + " m³" : QString()));
+    if (form1 > 0) addInfo(t("gui.pp.bimform"), fmt(form1, 2) + " m²" + (times > 1 ? " → " + fmt(form1 * times, 2) + " m²" : QString()));
+    addInfo(t("gui.pp.bimclass"), QString::fromStdString(cls));
+    if (doc_.dictGet("bim:params").empty()) addInfo(QStringLiteral("ℹ"), t("gui.pp.bimdefault"), QColor(110, 160, 220));
     return true;
 }
 

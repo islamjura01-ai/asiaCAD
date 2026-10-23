@@ -9,6 +9,19 @@
 namespace asiacad {
 
 namespace {
+// Yopiq 4 uchli to'g'ri to'rtburchak (ustun, plita): tomonlar a = |v1-v0|, b = |v2-v1|
+bool isRect(const PolylineEntity& p, double& a, double& b) {
+    const auto& v = p.vertices();
+    if (!p.isClosed() || v.size() != 4 || p.hasBulges()) return false;
+    for (int i = 0; i < 4; ++i) {
+        const Vec3 d1 = v[(i + 1) % 4] - v[i], d2 = v[(i + 2) % 4] - v[(i + 1) % 4];
+        const double l1 = std::hypot(d1.x, d1.y), l2 = std::hypot(d2.x, d2.y);
+        if (l1 < 1e-9 || l2 < 1e-9 || std::abs(d1.x * d2.x + d1.y * d2.y) > 1e-6 * l1 * l2) return false;
+    }
+    a = std::hypot(v[1].x - v[0].x, v[1].y - v[0].y);
+    b = std::hypot(v[2].x - v[1].x, v[2].y - v[1].y);
+    return true;
+}
 PropField num(const char* k, double v, const char* unit = "m", bool ed = true, int dec = 3) {
     PropField f;
     f.key = k;
@@ -73,6 +86,10 @@ std::vector<PropField> entityProps(const IEntity& e) {
         f = {num("VERTS", static_cast<double>(p.vertices().size()), "", false, 0), num("LENGTH", p.length2d(), "m", false),
              num("LENGTH3D", p.length(), "m", false)};
         if (p.isClosed()) f.push_back(num("AREA", p.area(), "m²", false));
+        if (double a = 0, b = 0; isRect(p, a, b)) {  // to'rtburchak: kesim o'lchamlari (markaz va yo'nalish saqlanadi)
+            f.push_back(num("RECTW", a));
+            f.push_back(num("RECTH", b));
+        }
         f.push_back(num("CLOSED", p.isClosed() ? 1 : 0, "", true, 0));
         if (!p.is3d()) f.push_back(num("ELEV", p.vertices().empty() ? 0.0 : p.vertices().front().z));
         break;
@@ -156,9 +173,20 @@ std::unique_ptr<IEntity> withProp(const IEntity& e, const std::string& key, cons
         auto pts = p.vertices();
         bool closed = p.isClosed();
         const double v = parse(value);
+        double ra = 0, rb = 0;
         if (key == "CLOSED") closed = v != 0;
         else if (key == "ELEV") for (auto& q : pts) q.z = v;
-        else return nullptr;
+        else if ((key == "RECTW" || key == "RECTH") && isRect(p, ra, rb)) {
+            if (v <= 0) throw Error("prop.err.value", {value});
+            const Vec3 c = (pts[0] + pts[2]) * 0.5;
+            Vec3 u = pts[1] - pts[0], w = pts[2] - pts[1];
+            u = u * (1.0 / ra);
+            w = w * (1.0 / rb);
+            const double na = key == "RECTW" ? v : ra, nb = key == "RECTH" ? v : rb;
+            const double z = pts[0].z;
+            pts = {c - u * (na / 2) - w * (nb / 2), c + u * (na / 2) - w * (nb / 2), c + u * (na / 2) + w * (nb / 2), c - u * (na / 2) + w * (nb / 2)};
+            for (auto& q : pts) q.z = z;
+        } else return nullptr;
         return keep(e, std::make_unique<PolylineEntity>(pts, p.bulges(), closed));
     }
     case EntityType::Text: {

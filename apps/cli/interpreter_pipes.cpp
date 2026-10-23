@@ -5,7 +5,9 @@
 // Tarmoq hujjat lug'atida ("sewer:<nom>") saqlanadi; o'zgarishdan keyin plan va profil qayta chiziladi.
 #include "interpreter.h"
 
+#include <asiacad/civil/excel.h>
 #include <asiacad/civil/pipe_catalog.h>
+#include <asiacad/io/xlsx.h>
 #include <asiacad/civil/road.h>
 #include <asiacad/civil/terrain.h>
 #include <asiacad/civil/utility.h>
@@ -128,16 +130,20 @@ bool Interpreter::dispatchProps(const std::string& cmd, const Args& a) {
         if (!ps) throw Error("sewer.chk.spec", {"1", spec});
         net.defaultSlope = slope > 0 ? slope : ps->dn <= 150 ? 0.008 : ps->dn <= 200 ? 0.007 : 1.0 / ps->dn;
         // mavjud tarmoq quduqlari (ulanish va yer belgisi uchun)
-        struct Mh { std::string net, name; double x, y, rim, inv; };
+        struct Mh { std::string net, name; double x, y, rim, inv, din; };
         std::vector<Mh> existing;
         for (const auto& [k, v] : doc_.dict()) {
             if (k.rfind("sewer:", 0) != 0 || k.find(":at") != std::string::npos) continue;
             try {
                 const auto other = civil::fromJson(v);
                 const auto r = civil::compute(other);
-                for (std::size_t j = 0; j < other.manholes.size() && j < r.manholes.size(); ++j)
+                for (std::size_t j = 0; j < other.manholes.size() && j < r.manholes.size(); ++j) {
+                    double din = 0;  // shu quduqdan chiquvchi (yo'q bo'lsa kiruvchi) quvur ichki diametri
+                    const std::size_t sj = j < r.segments.size() ? j : j - 1;
+                    if (sj < r.segments.size() && r.segments[sj].spec) din = r.segments[sj].spec->id_mm() / 1000.0;
                     existing.push_back({other.name, other.manholes[j].name, other.manholes[j].x, other.manholes[j].y, other.manholes[j].rim,
-                                        std::min(r.manholes[j].invIn, r.manholes[j].invOut)});
+                                        std::min(r.manholes[j].invIn, r.manholes[j].invOut), din});
+                }
             } catch (...) {
             }
         }
@@ -169,6 +175,26 @@ bool Interpreter::dispatchProps(const std::string& cmd, const Args& a) {
             net.manholes.push_back(m);
         }
         for (std::size_t i = 0; i + 1 < pts.size(); ++i) net.segments.push_back({spec, 0, 0});
+        // Shoxobcha: mavjud quduqqa ulansa — lotok "shelyga" (quvur ustlari) bo'yicha moslanadi: boshlanishda kerakli chuqurlik saqlanadi,
+        // nishablik shunga tanlanadi (normadan kam emas, 30 ‰ dan ko'p bo'lsa — qolgani quduqda perepad)
+        if (const Mh* j = near(pts.back())) {
+            double L = 0;
+            for (std::size_t i = 0; i + 1 < net.manholes.size(); ++i)
+                L += std::hypot(net.manholes[i + 1].x - net.manholes[i].x, net.manholes[i + 1].y - net.manholes[i].y);
+            const double din = ps->id_mm() / 1000.0;
+            const double target = j->inv + std::max(0.0, j->din - din);
+            const double startMin = net.manholes.front().rim - net.startDepth;
+            const double minS = slope > 0 ? slope : net.defaultSlope;
+            double sl = minS, invUp = startMin;
+            if (L > 0) {
+                const double need = (startMin - target) / L;
+                if (need >= minS) sl = std::min(need, std::max(minS, 0.03));
+                else invUp = target + minS * L;   // boshi chuqurroq
+            }
+            net.manholes.front().invert = invUp;
+            for (auto& sg : net.segments) sg.slope = sl;
+            say("pipe.msg.branch", {j->net, j->name, std::format("{:.1f}", sl * 1000), std::format("{:.2f}", net.manholes.front().rim - invUp)});
+        }
         // profil joyi: chizmaning o'ng tomoni (SEWER kabi)
         BBox b = doc_.extents(true);
         const auto res = civil::compute(net);
@@ -330,6 +356,13 @@ bool Interpreter::dispatchProps(const std::string& cmd, const Args& a) {
         throw Error("sewer.err.format", {ex.what()});
     }
     const auto before = civil::compute(net);
+    for (const auto& [k, v] : kv)
+        if (k == "XLSX") {  // smeta / hajmlar jadvali (quduqlar, bo'laklar, hajmlar, yer ishlari)
+            auto tr = [this](const std::string& key, const std::vector<std::string>& args) { return loc_.tr(key, args); };
+            xlsx::save(excel::sewerWorkbook(net, before, tr), v);
+            say("dev.msg.saved", {v});
+            return true;
+        }
     int seg = -1, mh = -1;
     for (const auto& [k, v] : kv) {
         if (k == "SEG") seg = static_cast<int>(parseNumber(v)) - 1;

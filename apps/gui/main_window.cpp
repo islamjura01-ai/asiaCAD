@@ -536,6 +536,26 @@ void MainWindow::buildRibbon() {
     ribbon_->setObjectName("ribbon");
     ribbon_->setDocumentMode(true);
     ribbon_->setFixedHeight(134);
+    {   // brend: o'ng yuqori burchakda katta logotip va nom
+        auto* brand = new QWidget(ribbon_);
+        brand->setObjectName("brand");
+        brand->setStyleSheet("#brand { background: transparent; }");
+        brand->setAttribute(Qt::WA_TranslucentBackground);
+        auto* bl = new QHBoxLayout(brand);
+        bl->setContentsMargins(8, 2, 14, 2);
+        bl->setSpacing(8);
+        auto* ic = new QLabel(brand);
+        ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
+        auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
+                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.22</span>"),
+                              brand);
+        nm->setObjectName("brandName");
+        nm->setTextFormat(Qt::RichText);
+        bl->addWidget(ic);
+        bl->addWidget(nm);
+        ribbon_->setCornerWidget(brand, Qt::TopRightCorner);
+        setWindowIcon(makeIcon("logo", QColor("#E0A526"), QColor("#14213D"), 256));
+    }
     // Har bir sahifa: guruhlar (tugmalar + pastda guruh nomi)
     struct Group { const char* title; std::vector<const char*> keys; std::vector<const char*> small = {}; bool iconsOnly = false; int rows = 3; };
     struct Page { const char* title; std::vector<Group> groups; };

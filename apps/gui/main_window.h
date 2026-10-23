@@ -52,6 +52,7 @@ class TemplatesDialog;
 class SurveyDialog;
 class EarthworkDialog;
 class Model3DView;
+class SheetCanvas;
 class GeoPlaceDialog;
 class DriveDialog;
 class SymbolPalette;
@@ -88,6 +89,15 @@ public:
     Model3DView* view3d() const { return view3d_; }
     void show3D(bool on);                  // asosiy oynada 2D chizma / 3D model
     bool is3D() const;
+    // Listlar (Revit Sheets): qog'oz, GOST shtamp, masshtabli ko'rinishlar, PDF
+    void showSheets();
+    bool isSheets() const;
+    SheetCanvas* sheetView() const { return sheetView_; }
+    bool newSheet(const QString& name, const QString& size, bool portrait);
+    enum SheetSource { SrcScreen = 0, SrcAll = 1, SrcPick = 2 };
+    bool addSheetView(int source, double scale, const QString& title);   // SrcPick — chizmada 2 nuqta so'raladi
+    bool exportSheetsPdf(const QString& path, bool all);
+    int currentSheet() const;
     void rebuild3D(bool keepView = true);  // 3D sahna: chizma (3D va 2D chiziqlar), yer yuzasi, bino, armatura, koridor
     void makeSampleBuilding();             // namuna bino (o'qlar to'ri) — bo'sh chizmada  // yer ishlari: 0 yuza, 1 profil, 2 kesimlar, 3 kartogramma, 4 hajm  // geodezik tahlil: 0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 loyiha nuqtasi (civil::DevKind)          // tanlovni haqiqiy koordinata / belgiga o'tkazish
     QDialog* openScratch(const QString& module);  // "0 dan chizish": building | road | waterway | corridor | util
@@ -132,6 +142,14 @@ private:
     Model3DView* view3d_ = nullptr;
     QStackedWidget* viewStack_ = nullptr;
     QTabBar* viewTabs_ = nullptr;
+    QWidget* sheetPage_ = nullptr;
+    SheetCanvas* sheetView_ = nullptr;
+    QComboBox* sheetBox_ = nullptr;
+    void buildSheetPage();
+    void refreshSheets();
+    void sheetNewDialog();
+    void sheetViewDialog();
+    void sheetStampDialog();
     CommandPalette* palette_ = nullptr;
     SewerDialog* sewer_ = nullptr;
     BuildingDialog* building_ = nullptr;

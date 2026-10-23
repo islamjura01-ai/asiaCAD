@@ -1,4 +1,6 @@
 #include <asiacad/core/document.h>
+
+#include <cctype>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/error.h>
 #include <asiacad/i18n/utf8.h>
@@ -185,6 +187,13 @@ bool Document::isEditable(EntityId id) const {
     if (!e) return false;
     const auto& l = layers_.at(e->layer());
     return !l.locked && !l.frozen;
+}
+
+const Sheet* Document::sheet(const std::string& name) const {
+    auto up = [](std::string v) { for (auto& c : v) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); return v; };
+    for (const auto& s : sheets_)
+        if (up(s.name) == up(name)) return &s;
+    return nullptr;
 }
 
 } // namespace asiacad

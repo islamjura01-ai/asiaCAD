@@ -2,6 +2,7 @@
 // AsiaCAD — Document: entity'lar, qatlamlar (layer) va ID boshqaruvi
 #include <asiacad/core/block.h>
 #include <asiacad/core/entity.h>
+#include <asiacad/core/sheet.h>
 #include <asiacad/core/spatial_index.h>
 
 #include <algorithm>
@@ -76,12 +77,18 @@ public:
 
     EntityId peekNextId() const { return nextId_; }
 
+    // ---- Listlar (qog'oz, shtamp, ko'rinishlar) — o'zgartirish SheetsCommand orqali (undo) ----
+    const std::vector<Sheet>& sheets() const { return sheets_; }
+    void setSheets(std::vector<Sheet> s) { sheets_ = std::move(s); }
+    const Sheet* sheet(const std::string& name) const;
+
 private:
     std::unordered_map<EntityId, std::unique_ptr<IEntity>> entities_;
     std::vector<EntityId> order_;
     std::map<std::string, Layer> layers_;
     std::map<std::string, BlockPtr> blocks_;
     EntityId nextId_ = 1;
+    std::vector<Sheet> sheets_;
 
     // Indeks: qurilgan daraxt + undan keyin o'zgarganlar (stale_ — daraxtdagi eskirgan yozuvlar,
     // dirty_ — ularning hozirgi qutilari). O'zgarishlar ko'payganda daraxt qayta quriladi.

@@ -106,6 +106,9 @@ void glyph(QPainter& p, const QString& n) {
         for (int i = 0; i < 4; ++i) { L(3 + i * 6, 3, 3 + i * 6, 21); L(3, 3 + i * 6, 21, 3 + i * 6); }
         p.save(); QPen d = p.pen(); d.setWidthF(d.widthF() * 1.6); p.setPen(d); QPainterPath z; z.moveTo(3, 18); z.cubicTo(9, 14, 12, 10, 21, 5); p.drawPath(z); p.restore();
     }
+    else if (n == "sheet") {  // list: qog'oz, ramka, shtamp
+        R(3, 5, 18, 14, 0.5); R(5, 6.5, 14.5, 11, 0.3); L(12, 14, 19.5, 14); L(12, 14, 12, 17.5); L(12, 15.8, 19.5, 15.8);
+    }
     else if (n == "volume") {  // prizma / hajm
         P({{4, 9}, {12, 5}, {20, 9}, {12, 13}}, true); L(4, 9, 4, 17); L(20, 9, 20, 17); L(12, 13, 12, 21); P({{4, 17}, {12, 21}, {20, 17}});
     }

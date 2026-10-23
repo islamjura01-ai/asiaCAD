@@ -77,6 +77,8 @@ int main(int argc, char** argv) {
     int surveyKind = -1;
     int earthTab = -1;
     bool show3d = false;
+    QString pdfOut;
+    QStringList sheetSpecs;  // --paper A3[:SCREEN] — list yaratib, ko'rinish qo'shish va Listlar sahifasini ko'rsatish
     QString surveyRef;
     bool geoDlg = false;
     bool drive = false;
@@ -125,6 +127,8 @@ int main(int argc, char** argv) {
         else if (a == "--survey") surveyKind = next().toInt();     // geodezik tahlil oynasi (0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 nuqta)
         else if (a == "--survey-ref") surveyRef = next();
         else if (a == "--earth") earthTab = next().toInt();
+        else if (a == "--paper") sheetSpecs << next();
+        else if (a == "--pdf") pdfOut = next();  // barcha listlarni PDF ga
         else if (a == "--3d") show3d = true;                         // asosiy oynada 3D model         // yer ishlari oynasi (0 yuza, 1 profil, 2 kesim, 3 kartogramma, 4 hajm)          // loyiha qatlami                    // geo-joylash oynasi (tanlov bilan)
         else if (a == "--scratch") scratch = next();             // "0 dan" oynasi: building | road | waterway | util
         else if (a == "--asm") asmIndex = next().toInt();
@@ -202,6 +206,14 @@ int main(int argc, char** argv) {
             if (tplPage >= 0) w.openTemplates(tplPage);
             if (geoDlg) w.openGeoPlace();
             if (show3d) w.show3D(true);
+            for (const QString& sa : sheetSpecs) {  // masalan: --paper A3  yoki  --paper A1:SCREEN  (SHOW — faqat ko'rsatish)
+                if (sa == "SHOW") continue;
+                const QStringList parts = sa.split(':');
+                w.newSheet(QStringLiteral("L-%1").arg(w.document().sheets().size() + 1), parts.value(0, "A3"), false);
+                w.addSheetView(parts.value(1) == "SCREEN" ? asiacad::gui::MainWindow::SrcScreen : asiacad::gui::MainWindow::SrcAll, 0, QStringLiteral("Bosh reja"));
+            }
+            if (!sheetSpecs.isEmpty()) w.showSheets();
+            if (!pdfOut.isEmpty()) w.exportSheetsPdf(pdfOut, true);
             if (earthTab >= 0) {
                 auto* ed = w.openEarthwork(earthTab);
                 if (!surveyRef.isEmpty()) { ed->setDesignMode(3); }

@@ -352,7 +352,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 102);
+    CHECK(loc.canonicalCommands().size() == 103);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2218,7 +2218,7 @@ TEST(xlsx_zip_inflate_roundtrip) {
     CHECK(back.sheets[0].at(2, 1)->kind == Cell::Formula && back.sheets[0].at(2, 1)->text == "SUM(B2:B2)");
     CHECK(back.sheets[0].column("Qiymat") == 1);
     // matnli son ("1,5") ham son sifatida o'qiladi
-    Sheet t;
+    xlsx::Sheet t;
     t.add({Cell::s("1,5")});
     CHECK(t.num(0, 0) && std::abs(*t.num(0, 0) - 1.5) < 1e-12);
 }
@@ -3468,11 +3468,84 @@ TEST(terrain_cli) {
     CHECK(s.find("Loyiha yuzasi berilmagan") != std::string::npos);
 }
 // GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak
+
+// ---------- Listlar (Revit Sheets): format, GOST shtamp, ko'rinishlar, .acad, CLI + undo ----------
+TEST(sheet_layout_and_views) {
+    Sheet s;
+    s.size = "A3";
+    double w, h;
+    CHECK(paperSize("a1", false, w, h) && w == 594 && h == 841);
+    CHECK(!paperSize("B5", true, w, h));
+    const PaperRect f = sheetFrame(s), st = sheetStamp(s);
+    CHECK(f.x0 == 20 && f.y0 == 5 && f.x1 == 415 && f.y1 == 292);
+    CHECK(st.w() == 185 && st.h() == 55 && st.x1 == 415);
+    CHECK(fitScale(100, 60, 380, 220) == 500);
+    CHECK(fitScale(10, 5, 380, 220) == 50);
+    SheetView v;
+    CHECK(makeView(s, {0, 0, 0}, {100, 60, 0}, 0, "Bosh reja", v) && v.scale == 500 && std::abs(v.w - 200) < 1e-9);
+    s.views.push_back(v);
+    SheetView v2;
+    CHECK(makeView(s, {0, 0, 0}, {20, 20, 0}, 200, "", v2));
+    CHECK(!viewRect(v2).overlaps(viewRect(v)));
+    const PaperRect u = sheetUsable(s);
+    CHECK(viewRect(v2).x0 >= u.x0 - 1e-9 && viewRect(v2).x1 <= u.x1 + 1e-9 && viewRect(v2).y0 >= u.y0);
+    SheetView big;
+    CHECK(!makeView(s, {0, 0, 0}, {1000, 1000, 0}, 100, "", big));  // 1:100 da sig'maydi
+    s.stamp["CODE"] = "2026-GP";
+    const auto prims = sheetPrims(s, 2, 5, [](const std::string& k) { return k; });
+    int texts = 0;
+    bool code = false, num = false, title = false;
+    for (const auto& p : prims) {
+        if (p.kind != SheetPrim::Text) continue;
+        ++texts;
+        code |= p.text == "2026-GP" && p.h == 5;
+        num |= p.text == "2";
+        title |= p.text.find("Bosh reja") == 0 && p.text.find("1:500") != std::string::npos;
+    }
+    CHECK(code && num && title && texts > 15 && prims.size() > 50);
+}
+
+TEST(sheet_cli_undo_and_acad) {
+    auto loc = loadedLocalizer();
+    loc.setLanguage("uz");
+    Document doc;
+    CommandStack st(doc);
+    std::ostringstream out;
+    cli::Interpreter in(doc, st, loc, out);
+    in.run("LINE 0,0 100,60");
+    in.run("VARAQ YANGI L-1 A3");
+    in.run("VARAQ KOʻRINISH L-1 0,0 100,60 \"TITLE=Bosh reja\"");
+    in.run("SHEET STAMP L-1 CODE=GP-1 \"OBJECT=Metro bekati\" DEV=Islom");
+    in.run("SHEET NEW L-2 A4 PORTRAIT");
+    CHECK(doc.sheets().size() == 2 && doc.sheets()[0].views.size() == 1 && doc.sheets()[0].views[0].scale == 500);
+    CHECK(doc.sheets()[1].stamp.at("OBJECT") == "Metro bekati" && !doc.sheets()[1].landscape);  // umumiy maydonlar ko'chadi
+    in.run("VARAQ YANGI L-1");
+    CHECK(out.str().find("allaqachon bor") != std::string::npos);
+    in.run("UNDO");
+    CHECK(doc.sheets().size() == 1);
+    in.run("REDO");
+    CHECK(doc.sheets().size() == 2);
+    in.run("SHEET SIZE L-1 A1");
+    CHECK(doc.sheet("l-1") && doc.sheet("L-1")->size == "A1" && doc.sheet("L-1")->views.size() == 1);
+    in.run("SHEET DEL L-1 1");
+    CHECK(doc.sheet("L-1")->views.empty());
+    in.run("UNDO");
+    std::ostringstream os;
+    writeAcad(doc, os);
+    auto r = readAcad(os.str());
+    CHECK(r.doc.sheets().size() == 2 && r.doc.sheets()[0].views.size() == 1);
+    const auto& v0 = r.doc.sheets()[0].views[0];
+    CHECK(v0.title == "Bosh reja" && v0.scale == 500 && std::abs(v0.center.x - 50) < 1e-12 && r.doc.sheets()[0].stamp.at("CODE") == "GP-1");
+    CHECK(!r.doc.sheets()[1].landscape && r.doc.sheets()[1].size == "A4");
+    in.run("VARAQ");
+    CHECK(out.str().find("1. L-1 — A1 YOTIQ") != std::string::npos);
+}
+
 TEST(i18n_gui_keys_complete) {
     namespace fs = std::filesystem;
     const fs::path gui = fs::path(ASIACAD_EXAMPLES_DIR).parent_path() / "apps" / "gui";
     std::set<std::string> keys;
-    const std::regex re(R"rx((?:\bt|tr_)\("((?:gui|v3d)\.[A-Za-z0-9_.]+)")rx");
+    const std::regex re(R"rx((?:\bt|tr_|\.tr)\("((?:gui|v3d|sheet)\.[A-Za-z0-9_.]+)")rx");
     for (const auto& f : fs::directory_iterator(gui)) {
         if (f.path().extension() != ".cpp") continue;
         std::ifstream in(f.path());

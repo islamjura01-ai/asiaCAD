@@ -141,11 +141,13 @@ void Viewport::setTheme(const Theme& t) {
 QString Viewport::fmtPoint(const Vec3& p) { return num(p.x) + "," + num(p.y); }
 
 Vec3 Viewport::toWorld(const QPointF& s) const {
-    return {center_.x + (s.x() - width() / 2.0) / scale_, center_.y - (s.y() - height() / 2.0) / scale_, 0};
+    const QPointF m = viewMid();
+    return {center_.x + (s.x() - m.x()) / scale_, center_.y - (s.y() - m.y()) / scale_, 0};
 }
 
 QPointF Viewport::toScreen(const Vec3& w) const {
-    return {width() / 2.0 + (w.x - center_.x) * scale_, height() / 2.0 - (w.y - center_.y) * scale_};
+    const QPointF m = viewMid();
+    return {m.x() + (w.x - center_.x) * scale_, m.y() - (w.y - center_.y) * scale_};
 }
 
 void Viewport::setView(const Vec3& c, double ppu) {
@@ -962,6 +964,31 @@ void Viewport::paintGL() {
     drawOverlay(p);
 }
 
+void Viewport::renderModel(QPainter& p, const QRectF& target, const Vec3& center, double ppu, double penMul) {
+    const auto savedTarget = target_;
+    const Vec3 savedC = center_;
+    const double savedS = scale_, savedPen = penMul_;
+    const Theme savedTheme = theme_;
+    target_ = target;
+    center_ = center;
+    scale_ = ppu;
+    penMul_ = penMul;
+    theme_.lightCanvas = true;  // qog'oz: oq fon, 7-rang qora
+    p.save();
+    p.setClipRect(target);
+    BBox view;
+    view.expand(toWorld(target.topLeft()));
+    view.expand(toWorld(target.bottomRight()));
+    for (EntityId id : doc_.query(view, true))
+        if (const IEntity* e = doc_.find(id)) drawEntity(p, *e, QColor(), false);
+    p.restore();
+    target_ = savedTarget;
+    center_ = savedC;
+    scale_ = savedS;
+    penMul_ = savedPen;
+    theme_ = savedTheme;
+}
+
 void Viewport::drawGrid(QPainter& p) {
     // qadam 1-2-5·10^k: ekranda kamida 14 px
     double step = std::pow(10.0, std::floor(std::log10(14.0 / scale_)));
@@ -991,7 +1018,7 @@ void Viewport::drawGrid(QPainter& p) {
 
 void Viewport::drawEntity(QPainter& p, const IEntity& e, const QColor& inherit, bool selected, int depth) {
     const QColor col = previewColor_.isValid() ? previewColor_ : colorOf(e, inherit);
-    QPen pen(selected && !previewColor_.isValid() ? theme_.selection : col, selected ? 2.4 : 1.25);
+    QPen pen(selected && !previewColor_.isValid() ? theme_.selection : col, (selected ? 2.4 : 1.25) * penMul_);
     pen.setCosmetic(true);
     if (selected) pen.setStyle(Qt::DashLine);
     p.setPen(pen);
@@ -1020,6 +1047,14 @@ void Viewport::drawEntity(QPainter& p, const IEntity& e, const QColor& inherit, 
     switch (e.type()) {
     case EntityType::Point: {
         const QPointF q = toScreen(static_cast<const PointEntity&>(e).position());
+        if (target_) {  // qog'ozda: kichik nuqta (syomka nuqtalari)
+            p.save();
+            p.setPen(Qt::NoPen);
+            p.setBrush(col);
+            p.drawEllipse(q, 1.1 * penMul_, 1.1 * penMul_);
+            p.restore();
+            break;
+        }
         p.drawLine(q + QPointF(-4, -4), q + QPointF(4, 4));
         p.drawLine(q + QPointF(-4, 4), q + QPointF(4, -4));
         break;
@@ -1096,7 +1131,7 @@ void Viewport::drawEntity(QPainter& p, const IEntity& e, const QColor& inherit, 
         if (pat != "SOLID") {  // naqsh: 45° shtrix, ekranga mos zichlikda
             p.save();
             p.setClipPath(path);
-            QPen hp(selected ? theme_.selection : col, 1);
+            QPen hp(selected ? theme_.selection : col, penMul_);
             hp.setCosmetic(true);
             p.setPen(hp);
             const QRectF r = path.boundingRect();

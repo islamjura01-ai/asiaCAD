@@ -18,6 +18,19 @@ public:
     virtual std::string name() const = 0;
 };
 
+// Listlar to'plamini almashtirish (yangi, o'chirish, shtamp, ko'rinish — barchasi bitta undo qadami)
+class SheetsCommand final : public ICommand {
+public:
+    SheetsCommand(std::vector<Sheet> after, std::string name) : after_(std::move(after)), name_(std::move(name)) {}
+    void execute(Document& doc) override { before_ = doc.sheets(); doc.setSheets(after_); }
+    void undo(Document& doc) override { doc.setSheets(before_); }
+    std::string name() const override { return name_; }
+
+private:
+    std::vector<Sheet> after_, before_;
+    std::string name_;
+};
+
 // Yangi entity qo'shish
 class AddEntityCommand final : public ICommand {
 public:

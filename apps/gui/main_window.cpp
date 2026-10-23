@@ -13,6 +13,7 @@
 #include "survey_dialog.h"
 #include "earthwork_dialog.h"
 #include "model3d_view.h"
+#include "sheet_view.h"
 #include <QStackedWidget>
 #include <QTabBar>
 #include <asiacad/civil/terrain.h>
@@ -29,6 +30,8 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCheckBox>
+#include <QDate>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -129,6 +132,7 @@ const ActDef kActs[] = {
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
     {"view3d", "volume", "gui.act.view3d", false},
+    {"sheets", "sheet", "gui.act.sheets", false},
 };
 
 // Asbob -> Tool va kanonik buyruq
@@ -248,6 +252,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     viewTabs_->setDrawBase(false);
     viewTabs_->addTab(QString());
     viewTabs_->addTab(QString());
+    viewTabs_->addTab(QString());
     col->addWidget(viewTabs_);
     viewStack_ = new QStackedWidget(central);
     view3d_ = new Model3DView(viewStack_);
@@ -259,8 +264,12 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     });
     viewStack_->addWidget(view_);
     viewStack_->addWidget(view3d_);
+    buildSheetPage();
+    viewStack_->addWidget(sheetPage_);
     col->addWidget(viewStack_, 1);
-    connect(viewTabs_, &QTabBar::currentChanged, this, [this](int i) { show3D(i == 1); });
+    connect(viewTabs_, &QTabBar::currentChanged, this, [this](int i) {
+        if (i == 2) showSheets(); else show3D(i == 1);
+    });
     setCentralWidget(central);
 
     buildModuleBars();
@@ -323,7 +332,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.23"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.24"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -350,7 +359,7 @@ QIcon MainWindow::icon(const QString& name) const {
             {"steelframe", "#4F6D8A"}, {"stairtpl", "#D9466A"}, {"ramptpl", "#E7881B"}, {"rwalltpl", "#8A7B5C"}, {"geoplace", "#0E9F8E"},
             {"ptimport", "#0E9F8E"}, {"ptexport", "#0E9F8E"}, {"devplan", "#0E9F8E"}, {"devvert", "#0E9F8E"}, {"devheight", "#0E9F8E"},
             {"devaxis", "#0E9F8E"}, {"devpoint", "#0E9F8E"}, {"devclear", "#E0A526"},
-            {"ewtin", "#3E9B3A"}, {"ewprofile", "#3E9B3A"}, {"ewsections", "#3E9B3A"}, {"ewcarto", "#3E9B3A"}, {"ewvolume", "#3E9B3A"}, {"view3d", "#7A3FC8"},
+            {"ewtin", "#3E9B3A"}, {"ewprofile", "#3E9B3A"}, {"ewsections", "#3E9B3A"}, {"ewcarto", "#3E9B3A"}, {"ewvolume", "#3E9B3A"}, {"view3d", "#7A3FC8"}, {"sheets", "#7A3FC8"},
             {"leader", "#C8324B"}, {"dimangular", "#C8324B"},
             {"layers", "#D99A1E"}, {"laymcur", "#2BA84A"}, {"laymatch", "#1C8C9E"}, {"layoff", "#6B7280"}, {"layfrz", "#2F7FD8"}, {"laylck", "#C2410C"}, {"layulk", "#E58A3A"}, {"layiso", "#7A3FC8"}, {"layuniso", "#A27BDB"}, {"layon", "#3E9B3A"},
             {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
@@ -436,6 +445,7 @@ void MainWindow::buildActions() {
     connect(act_["ewtin"], &QAction::triggered, this, [this] { openEarthwork(0); });
     act_["view3d"]->setShortcut(QKeySequence(Qt::Key_F4));
     connect(act_["view3d"], &QAction::triggered, this, [this] { show3D(!is3D()); });
+    connect(act_["sheets"], &QAction::triggered, this, [this] { if (isSheets()) show3D(false); else showSheets(); });
     connect(act_["ewprofile"], &QAction::triggered, this, [this] { openEarthwork(1); });
     connect(act_["ewsections"], &QAction::triggered, this, [this] { openEarthwork(2); });
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
@@ -575,7 +585,7 @@ void MainWindow::buildRibbon() {
         {"gui.tab.struct", {{"gui.grp.templates", {"steelframe", "stairtpl", "ramptpl", "rwalltpl"}}, {"gui.grp.km", {"steel"}},
                             {"gui.grp.geo", {"geoplace"}}, {"gui.grp.analyze", {"view3d", "drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
-        {"gui.tab.view", {{"gui.grp.model", {"view3d"}}, {"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
+        {"gui.tab.view", {{"gui.grp.model", {"view3d", "sheets"}}, {"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
                           {"gui.grp.interface", {"palette"}}}},
     };
     for (const auto& pg : pages) {
@@ -1090,6 +1100,7 @@ void MainWindow::retranslate() {
     if (viewTabs_) {
         viewTabs_->setTabText(0, t("gui.view.2d"));
         viewTabs_->setTabText(1, t("gui.view.3d"));
+        viewTabs_->setTabText(2, t("gui.view.sheets"));
     }
     updatingUi_ = true;
     for (const auto& d : kActs) {
@@ -1249,6 +1260,7 @@ bool MainWindow::runLine(const QString& line, bool echo) {
     refreshProperties();
     refreshTitle();
     if (is3D()) rebuild3D(true);
+    refreshSheets();
     if (!cont) close();
     return cont;
 }
@@ -1470,6 +1482,221 @@ void MainWindow::show3D(bool on) {
     }
     raise();
     activateWindow();
+}
+
+// ---------------------------------------------------------------- Listlar (Revit Sheets)
+void MainWindow::buildSheetPage() {
+    sheetPage_ = new QWidget(viewStack_);
+    sheetPage_->setObjectName("sheetPage");
+    auto* v = new QVBoxLayout(sheetPage_);
+    v->setContentsMargins(6, 4, 6, 0);
+    v->setSpacing(4);
+    auto* bar = new QHBoxLayout;
+    sheetBox_ = new QComboBox(sheetPage_);
+    sheetBox_->setObjectName("sheetBox");
+    sheetBox_->setMinimumWidth(200);
+    bar->addWidget(sheetBox_);
+    auto btn = [&](const char* key, const char* obj, auto fn) {
+        auto* b = new QPushButton(sheetPage_);
+        b->setObjectName(obj);
+        b->setProperty("i18n", key);
+        b->setText(t(key));
+        connect(b, &QPushButton::clicked, this, fn);
+        bar->addWidget(b);
+        return b;
+    };
+    btn("gui.sheet.new", "sheetNew", [this] { sheetNewDialog(); })->setProperty("accent", true);
+    btn("gui.sheet.view", "sheetAddView", [this] { sheetViewDialog(); });
+    btn("gui.sheet.stamp", "sheetStamp", [this] { sheetStampDialog(); });
+    btn("gui.sheet.del", "sheetDel", [this] {
+        const int i = currentSheet();
+        if (i < 0) return;
+        runLine(QStringLiteral("SHEET DEL \"%1\"").arg(QString::fromStdString(doc_.sheets()[static_cast<std::size_t>(i)].name)));
+    });
+    bar->addStretch(1);
+    btn("gui.sheet.pdf", "sheetPdf", [this] {
+        const QString f = QFileDialog::getSaveFileName(this, t("gui.sheet.pdf"), QString(), QStringLiteral("PDF (*.pdf)"));
+        if (!f.isEmpty()) exportSheetsPdf(f, false);
+    });
+    btn("gui.sheet.pdfall", "sheetPdfAll", [this] {
+        const QString f = QFileDialog::getSaveFileName(this, t("gui.sheet.pdfall"), QString(), QStringLiteral("PDF (*.pdf)"));
+        if (!f.isEmpty()) exportSheetsPdf(f, true);
+    });
+    v->addLayout(bar);
+    sheetView_ = new SheetCanvas(doc_, loc_, view_, sheetPage_);
+    sheetView_->setObjectName("sheetView");
+    v->addWidget(sheetView_, 1);
+    connect(sheetBox_, &QComboBox::currentIndexChanged, this, [this](int i) {
+        if (!updatingUi_ && i >= 0) sheetView_->setCurrent(i);
+    });
+    connect(sheetView_, &SheetCanvas::openView, this, [this](int i) {
+        const int si = currentSheet();
+        if (si < 0) return;
+        const auto& sv = doc_.sheets()[static_cast<std::size_t>(si)].views[static_cast<std::size_t>(i)];
+        show3D(false);
+        view_->setView(sv.center, std::min(view_->width() / sv.modelW(), view_->height() / sv.modelH()) * 0.92);
+    });
+}
+
+int MainWindow::currentSheet() const {
+    if (doc_.sheets().empty()) return -1;
+    return std::clamp(sheetView_->current(), 0, static_cast<int>(doc_.sheets().size()) - 1);
+}
+
+void MainWindow::refreshSheets() {
+    if (!sheetBox_) return;
+    const auto& ss = doc_.sheets();
+    updatingUi_ = true;
+    const int keep = sheetBox_->currentIndex();
+    const int oldCount = sheetBox_->count();
+    sheetBox_->clear();
+    for (std::size_t i = 0; i < ss.size(); ++i)
+        sheetBox_->addItem(QStringLiteral("%1. %2  (%3)").arg(i + 1).arg(QString::fromStdString(ss[i].name), QString::fromStdString(ss[i].size)));
+    // yangi list qo'shilganda — o'sha, aks holda joriysi saqlanadi (fayl ochilganda — birinchisi)
+    int cur = (oldCount > 0 && static_cast<int>(ss.size()) == oldCount + 1) ? oldCount : std::clamp(keep, 0, std::max(0, static_cast<int>(ss.size()) - 1));
+    if (!ss.empty()) sheetBox_->setCurrentIndex(cur);
+    updatingUi_ = false;
+    sheetView_->setCurrent(ss.empty() ? 0 : cur);
+    for (const char* n : {"sheetAddView", "sheetStamp", "sheetDel", "sheetPdf", "sheetPdfAll"})
+        if (auto* b = sheetPage_->findChild<QPushButton*>(n)) b->setEnabled(!ss.empty());
+}
+
+bool MainWindow::isSheets() const { return viewStack_ && viewStack_->currentWidget() == sheetPage_; }
+
+void MainWindow::showSheets() {
+    if (viewTabs_->currentIndex() != 2) {
+        const QSignalBlocker b(viewTabs_);
+        viewTabs_->setCurrentIndex(2);
+    }
+    viewStack_->setCurrentWidget(sheetPage_);
+    refreshSheets();
+    sheetView_->setFocus();
+}
+
+bool MainWindow::newSheet(const QString& name, const QString& size, bool portrait) {
+    const auto n = doc_.sheets().size();
+    runLine(QStringLiteral("SHEET NEW \"%1\" %2%3").arg(name, size, portrait ? QStringLiteral(" PORTRAIT") : QString()));
+    return doc_.sheets().size() == n + 1;
+}
+
+bool MainWindow::addSheetView(int source, double scale, const QString& title) {
+    const int si = currentSheet();
+    if (si < 0) return false;
+    const QString sheet = QString::fromStdString(doc_.sheets()[static_cast<std::size_t>(si)].name);
+    auto run = [this, sheet, scale, title](const Vec3& a, const Vec3& b) {
+        const auto before = doc_.sheets();
+        QString line = QStringLiteral("SHEET VIEW \"%1\" %2 %3").arg(sheet, Viewport::fmtPoint(a), Viewport::fmtPoint(b));
+        if (scale > 0) line += QStringLiteral(" SCALE=%1").arg(scale);
+        if (!title.isEmpty()) line += QStringLiteral(" \"TITLE=%1\"").arg(title);
+        runLine(line);
+        showSheets();
+        const int i = currentSheet();
+        return i >= 0 && doc_.sheets()[static_cast<std::size_t>(i)].views.size() > (i < static_cast<int>(before.size()) ? before[static_cast<std::size_t>(i)].views.size() : 0);
+    };
+    if (source == SrcPick) {
+        show3D(false);
+        pickCb_ = [run](const std::vector<Vec3>& pts) {
+            if (pts.size() == 2) run(pts[0], pts[1]);
+        };
+        view_->startPick(2, {QStringLiteral("gui.sheet.pick1"), QStringLiteral("gui.sheet.pick2")});
+        return true;
+    }
+    if (source == SrcAll) {
+        const BBox b = doc_.extents(true);
+        if (!b.valid()) return false;
+        const double m = std::max(b.max.x - b.min.x, b.max.y - b.min.y) * 0.03;
+        return run({b.min.x - m, b.min.y - m, 0}, {b.max.x + m, b.max.y + m, 0});
+    }
+    return run(view_->toWorld(QPointF(0, view_->height())), view_->toWorld(QPointF(view_->width(), 0)));
+}
+
+bool MainWindow::exportSheetsPdf(const QString& path, bool all) {
+    std::vector<int> which;
+    if (all) for (int i = 0; i < static_cast<int>(doc_.sheets().size()); ++i) which.push_back(i);
+    else if (currentSheet() >= 0) which.push_back(currentSheet());
+    const bool ok = sheetView_->exportPdf(path, which);
+    if (ok) appendHistory(t("gui.sheet.saved", {path}), theme_.accent);
+    return ok;
+}
+
+void MainWindow::sheetNewDialog() {
+    QDialog dlg(this);
+    dlg.setWindowTitle(t("gui.sheet.new"));
+    auto* f = new QFormLayout(&dlg);
+    auto* name = new QLineEdit(QStringLiteral("L-%1").arg(doc_.sheets().size() + 1), &dlg);
+    auto* size = new QComboBox(&dlg);
+    for (const auto& s : paperSizes()) size->addItem(QString::fromStdString(s));
+    size->setCurrentText(doc_.sheets().empty() ? QStringLiteral("A3") : QString::fromStdString(doc_.sheets().back().size));
+    auto* orient = new QComboBox(&dlg);
+    orient->addItem(t("gui.sheet.landscape"));
+    orient->addItem(t("gui.sheet.portrait"));
+    f->addRow(t("gui.sheet.name"), name);
+    f->addRow(t("gui.sheet.size"), size);
+    f->addRow(t("gui.sheet.orient"), orient);
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    f->addRow(bb);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() == QDialog::Accepted && !name->text().trimmed().isEmpty())
+        newSheet(name->text().trimmed(), size->currentText(), orient->currentIndex() == 1);
+}
+
+void MainWindow::sheetViewDialog() {
+    if (currentSheet() < 0) return;
+    QDialog dlg(this);
+    dlg.setWindowTitle(t("gui.sheet.view"));
+    auto* f = new QFormLayout(&dlg);
+    auto* src = new QComboBox(&dlg);
+    src->addItem(t("gui.sheet.src.screen"), int(SrcScreen));
+    src->addItem(t("gui.sheet.src.all"), int(SrcAll));
+    src->addItem(t("gui.sheet.src.pick"), int(SrcPick));
+    auto* sc = new QComboBox(&dlg);
+    sc->addItem(t("gui.sheet.auto"), 0.0);
+    for (double d : standardScales())
+        if (d >= 10 && d <= 50000) sc->addItem(QString::fromStdString(scaleLabel(d)), d);
+    auto* title = new QLineEdit(&dlg);
+    f->addRow(t("gui.sheet.source"), src);
+    f->addRow(t("gui.sheet.scale"), sc);
+    f->addRow(t("gui.sheet.vtitle"), title);
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    f->addRow(bb);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() == QDialog::Accepted) addSheetView(src->currentData().toInt(), sc->currentData().toDouble(), title->text().trimmed());
+}
+
+void MainWindow::sheetStampDialog() {
+    const int si = currentSheet();
+    if (si < 0) return;
+    const Sheet& s = doc_.sheets()[static_cast<std::size_t>(si)];
+    QDialog dlg(this);
+    dlg.setWindowTitle(t("gui.sheet.stamp"));
+    auto* f = new QFormLayout(&dlg);
+    static const char* keys[] = {"CODE", "OBJECT", "BUILDING", "TITLE", "STAGE", "ORG", "DEV", "CHK", "NCTRL", "APPR", "DATE"};
+    std::vector<QLineEdit*> edits;
+    for (const char* k : keys) {
+        auto it = s.stamp.find(k);
+        auto* e = new QLineEdit(it == s.stamp.end() ? QString() : QString::fromStdString(it->second), &dlg);
+        if (std::string(k) == "DATE" && e->text().isEmpty()) e->setText(QDate::currentDate().toString(QStringLiteral("MM.yy")));
+        f->addRow(t((std::string("gui.sheet.f.") + k).c_str()), e);
+        edits.push_back(e);
+    }
+    auto* all = new QCheckBox(t("gui.sheet.allsheets"), &dlg);
+    all->setChecked(doc_.sheets().size() > 1);
+    f->addRow(all);
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    f->addRow(bb);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted) return;
+    QString line = QStringLiteral("SHEET STAMP \"%1\"").arg(QString::fromStdString(s.name));
+    for (std::size_t i = 0; i < edits.size(); ++i) {
+        QString v = edits[i]->text();
+        v.replace('"', '\'');
+        line += QStringLiteral(" \"%1=%2\"").arg(QString::fromLatin1(keys[i]), v);
+    }
+    if (all->isChecked()) line += QStringLiteral(" ALL");
+    runLine(line);
 }
 
 void MainWindow::rebuild3D(bool keepView) {

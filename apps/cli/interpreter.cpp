@@ -167,6 +167,7 @@ const char* commandSyntax(const std::string& c) {
         {"XSECTIONS", "path EG=sel FG=sel|Z=z [STEP=20] [L=20] [R=20] [SAMPLE=0.5] [SCALE=200] [COLS=4] [PK0=m] [AT=x,y] [NOMARKS] [XLSX=f]"},
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
+        {"SHEET", "[NEW name [A0..A4] [PORTRAIT]] | VIEW name p1 p2 [SCALE=n] [TITLE=t] | STAMP name KEY=t… | SIZE name A0..A4 [PORTRAIT] | RENAME name new | DEL name [n]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
         {"DIMRADIUS", "sel p [h] [0..6]"},
@@ -363,6 +364,7 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchDraft(cmd, a)) return;
     if (dispatchSurvey(cmd, a)) return;
     if (dispatchTerrain(cmd, a)) return;
+    if (dispatchSheet(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;

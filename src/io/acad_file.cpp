@@ -405,7 +405,46 @@ void writeAcad(const Document& doc, std::ostream& os) {
         first = false;
         writeEntity(os, e);
     });
-    os << "\n]\n}\n";
+    os << "\n]";
+    if (!doc.sheets().empty()) {  // listlar: qog'oz, shtamp, ko'rinishlar
+        os << ",\n\"sheets\":[";
+        for (std::size_t i = 0; i < doc.sheets().size(); ++i) {
+            const Sheet& sh = doc.sheets()[i];
+            os << (i ? ",\n" : "\n") << "{\"name\":";
+            writeStr(os, sh.name);
+            os << ",\"size\":";
+            writeStr(os, sh.size);
+            os << ",\"landscape\":" << (sh.landscape ? "true" : "false") << ",\"stamp\":{";
+            bool f = true;
+            for (const auto& [k, v] : sh.stamp) {
+                if (!f) os << ',';
+                f = false;
+                writeStr(os, k);
+                os << ':';
+                writeStr(os, v);
+            }
+            os << "},\"views\":[";
+            for (std::size_t j = 0; j < sh.views.size(); ++j) {
+                const SheetView& v = sh.views[j];
+                os << (j ? "," : "") << "{\"c\":";
+                writeVec(os, v.center);
+                os << ",\"scale\":";
+                writeNum(os, v.scale);
+                os << ",\"at\":";
+                writeVec(os, v.at);
+                os << ",\"w\":";
+                writeNum(os, v.w);
+                os << ",\"h\":";
+                writeNum(os, v.h);
+                os << ",\"title\":";
+                writeStr(os, v.title);
+                os << '}';
+            }
+            os << "]}";
+        }
+        os << "\n]";
+    }
+    os << "\n}\n";
 }
 
 void saveAcad(const Document& doc, const std::string& path, bool keepBackup) {
@@ -536,6 +575,38 @@ AcadLoadResult readAcad(std::string_view text) {
         }
     }
     for (const auto& [t, n] : unknown) res.warnings.push_back({"acad.warn.unknown_type", {t, std::to_string(n)}});
+    if (const json::Value* sv = root.find("sheets"); sv && sv->isArray()) {
+        std::vector<Sheet> sheets;
+        for (const auto& so : sv->arr()) {
+            if (!so.isObject()) continue;
+            EntityReader r(so, "sheet");
+            Sheet sh;
+            sh.name = r.str("name");
+            if (sh.name.empty()) continue;
+            sh.size = r.str("size", "A3");
+            double w, h;
+            if (!paperSize(sh.size, true, w, h)) sh.size = "A3";
+            sh.landscape = r.boolean("landscape", true);
+            if (const json::Value* st = so.find("stamp"); st && st->isObject())
+                for (const auto& [k, v] : st->obj())
+                    if (v.isString()) sh.stamp[k] = v.str();
+            if (const json::Value* vv = so.find("views"); vv && vv->isArray())
+                for (const auto& vo : vv->arr()) {
+                    if (!vo.isObject()) continue;
+                    EntityReader q(vo, sh.name);
+                    SheetView v;
+                    if (const json::Value* c = vo.find("c")) EntityReader::toVec(*c, v.center);
+                    if (const json::Value* a = vo.find("at")) EntityReader::toVec(*a, v.at);
+                    v.scale = q.num("scale", 100);
+                    v.w = q.num("w", 100);
+                    v.h = q.num("h", 100);
+                    v.title = q.str("title");
+                    if (v.scale > 0 && v.w > 0 && v.h > 0) sh.views.push_back(v);
+                }
+            sheets.push_back(std::move(sh));
+        }
+        res.doc.setSheets(std::move(sheets));
+    }
     if (const json::Value* next = root.find("nextId"); next && next->isNumber() && next->num() >= 1)
         res.doc.reserveIds(static_cast<EntityId>(next->num()));
     return res;

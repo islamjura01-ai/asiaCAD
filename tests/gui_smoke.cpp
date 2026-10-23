@@ -24,6 +24,8 @@
 #include <QPushButton>
 #include <QListWidget>
 #include <QToolButton>
+#include <QImage>
+#include "sheet_view.h"
 #include <QMenu>
 #include <QKeyEvent>
 #include <QTabWidget>
@@ -1092,6 +1094,64 @@ int main(int argc, char** argv) {
         v->setCrosshairSize(100);
         CHECK(v->crosshairSize() == 100);
         v->setCrosshairSize(5);
+    }
+
+    // 31. Listlar (Revit Sheets): yangi list, ko'rinish, sahifa, PDF, ko'rinishni ikki marta bosish — chizmada
+    {
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        w.runLine("PLINE 0,0 80,0 80,50 0,50 C");
+        w.runLine("CIRCLE 40,25 10");
+        w.viewport()->zoomExtents();
+        CHECK(w.document().sheets().empty());
+        w.showSheets();
+        CHECK(w.isSheets() && w.sheetView()->isVisible());
+        CHECK(!w.findChild<QPushButton*>("sheetAddView")->isEnabled());
+        CHECK(w.newSheet("L-1", "A3", false) && w.document().sheets().size() == 1);
+        CHECK(w.findChild<QPushButton*>("sheetAddView")->isEnabled());
+        CHECK(w.addSheetView(MainWindow::SrcAll, 0, "Reja"));
+        CHECK(w.isSheets() && w.document().sheets()[0].views.size() == 1 && w.document().sheets()[0].views[0].scale == 500);
+        CHECK(w.addSheetView(MainWindow::SrcScreen, 1000, QString()));
+        CHECK(w.document().sheets()[0].views.size() == 2);
+        CHECK(w.newSheet("L-2", "A4", true) && w.currentSheet() == 1);
+        auto* box = w.findChild<QComboBox*>("sheetBox");
+        CHECK(box && box->count() == 2);
+        box->setCurrentIndex(0);
+        CHECK(w.currentSheet() == 0);
+        // rasm chiziladi (oq qog'oz + qora chiziqlar)
+        QImage img = w.sheetView()->grab().toImage();
+        int dark = 0, white = 0;
+        for (int y = 0; y < img.height(); y += 3)
+            for (int x = 0; x < img.width(); x += 3) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.lightness() > 245) ++white; else if (c.lightness() < 60) ++dark;
+            }
+        CHECK(white > 2000 && dark > 50);
+        // PDF
+        const QString pdf = QDir::temp().filePath("asiacad_sheets_test.pdf");
+        QFile::remove(pdf);
+        CHECK(w.exportSheetsPdf(pdf, true));
+        QFile pf(pdf);
+        CHECK(pf.open(QIODevice::ReadOnly) && pf.read(5) == "%PDF-" && pf.size() > 3000);
+        pf.close();
+        QFile::remove(pdf);
+        // ko'rinishni ikki marta bosish — 2D chizmada o'sha joy
+        const auto& v0 = w.document().sheets()[0].views[0];
+        SheetCanvas* sv = w.sheetView();
+        QPointF hit;
+        for (int y = 5; y < sv->height() && hit.isNull(); y += 4)
+            for (int x = 5; x < sv->width(); x += 4)
+                if (sv->viewAt(QPointF(x, y)) == 0) { hit = QPointF(x, y); break; }
+        CHECK(!hit.isNull());
+        QMouseEvent dbl(QEvent::MouseButtonDblClick, hit, sv->mapToGlobal(hit), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(sv, &dbl);
+        CHECK(!w.isSheets() && !w.is3D());
+        CHECK(QLineF(w.viewport()->toScreen(v0.center), QPointF(w.viewport()->width() / 2.0, w.viewport()->height() / 2.0)).length() < 2);
+        // undo — ro'yxat yangilanadi
+        w.runLine("UNDO");
+        CHECK(w.document().sheets().size() == 1 && box->count() == 1);
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

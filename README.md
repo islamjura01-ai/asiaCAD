@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.23: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.24: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,18 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Listlar — Revit "Sheets" / AutoCAD "Layout" (v0.24) — `core/sheet`, `SHEET`
+- **Ko'rinish → Listlar** yorlig'i (2D chizma | 3D model | Listlar): oq qog'oz A4…A0 (tik/yotiq), GOST 2.301 ramkasi (chapda 20 mm), asosiy yozuv 185×55 (GOST 21.101 sh.3).
+- **+ Ko'rinish**: ekrandagi ko'rinish, butun chizma yoki chizmada 2 nuqtali oyna; masshtab — standart (1:50…1:50000) yoki **Avto** (sig'adigan eng yirigi);
+  bo'sh joyga avtomatik joylanadi, ostida «Nom  M 1:500». Ko'rinishni ikki marta bosish — 2D chizmada o'sha joy ochiladi.
+- **Shtamp…**: shifr, obyekt, bino, chizma nomi, bosqich, tashkilot, Ishlab chiqdi / Tekshirdi / N.nazorat / Tasdiqladi, sana; «barcha listlarga» bilan;
+  yangi list umumiy maydonlarni oldingisidan oladi. List raqami va listlar soni avtomatik.
+- **PDF / Barchasi PDF**: haqiqiy o'lchamli sahifalar (300 dpi, chiziq 0,25 mm, ramka 0,7 mm) — chop etishga tayyor.
+- Listlar `.acad` faylida saqlanadi; har o'zgarish undo/redo bilan.
+- Buyruq satri: `VARAQ` (ru `ЛИСТ`, en `SHEET`/`LAYOUT`):
+  `SHEET NEW L-1 A1 [PORTRAIT]`, `SHEET VIEW L-1 x1,y1 x2,y2 [SCALE=500] ["TITLE=Bosh reja"]`, `SHEET STAMP L-1 CODE=… "OBJECT=…" DEV=… [ALL]`,
+  `SHEET SIZE L-1 A2`, `SHEET RENAME L-1 GP-1`, `SHEET DEL L-1 [n]`, `SHEET` — ro'yxat. Model birligi — metr.
 
 ## AutoCAD uslubidagi sichqoncha va yordamchilar (v0.23) — `apps/gui/viewport`
 - **UCS belgisi** pastki chap burchakda: X (qizil) va Y (yashil) o'qlar harflari bilan, kvadrat — WCS.

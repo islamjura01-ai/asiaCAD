@@ -113,6 +113,10 @@ public:
 
     void simulateCursor(const Vec3& world);  // sinov: kursorni dunyo nuqtasiga qo'yish
 
+    // Modelni boshqa sirtga chizish (list ko'rinishi, PDF): target — qurilma to'rtburchagi, ppu — piksel/m,
+    // qog'oz ranglari (7-rang qora), penMul — chiziq qalinligi koeffitsienti
+    void renderModel(QPainter& p, const QRectF& target, const Vec3& center, double ppu, double penMul = 1.0);
+
     Vec3 toWorld(const QPointF& s) const;
     QPointF toScreen(const Vec3& w) const;
     static QString fmtPoint(const Vec3& p);
@@ -223,7 +227,10 @@ private:
     std::optional<OtrackHit> otHit_;
     QTimer* hoverTimer_ = nullptr;
     std::optional<Vec3> hoverSnap_;
-    bool shiftHeld_ = false;            // Shift — ORTO vaqtincha teskari (AutoCAD)
+    bool shiftHeld_ = false;
+    std::optional<QRectF> target_;       // renderModel: tashqi sirt
+    double penMul_ = 1.0;
+    QPointF viewMid() const { return target_ ? target_->center() : QPointF(width() / 2.0, height() / 2.0); }            // Shift — ORTO vaqtincha teskari (AutoCAD)
     QPointF panStart_;
     Vec3 panCenter_;
     bool boxing_ = false;

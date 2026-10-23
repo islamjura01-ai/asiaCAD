@@ -2,6 +2,7 @@
   "language": "tr",
   "name": "Türkçe",
   "commands": {
+    "LINKS": ["BAGLANTILAR"],
     "SHEET": ["PAFTA"],
     "TIN": ["YUZEY"],
     "CONTOUR": ["ESYUKSELTI"],
@@ -107,6 +108,7 @@
     "EXIT": ["ÇIKIŞ"]
   },
   "keywords": {
+    "UPDATE": ["GUNCELLE"],
     "NEW": ["YENI"],
     "VIEW": ["GORUNUS"],
     "STAMP": ["ANTET"],
@@ -2055,6 +2057,17 @@
     "gui.sheet.saved": "PDF kaydedildi: {0}",
     "gui.sheet.hint": "Tekerlek — yakınlaştır, orta tuş — kaydır, görünüşe çift tıkla — çizimde aç",
     "gui.act.sheets": "Paftalar",
-    "desc.SHEET": "Paftalar: kağıt boyutu, çerçeve ve antet, ölçekli çizim görünüşleri"
+    "desc.SHEET": "Paftalar: kağıt boyutu, çerçeve ve antet, ölçekli çizim görünüşleri",
+    "desc.LINKS": "Dinamik bağlantılar (Civil 3D gibi): kaynak değişince profil, kesitler, eş yükselti, kartogram güncellenir",
+    "link.msg.created": "Dinamik bağlantı #{0} (kaynak: {1} nesne) — kaynak değişince sonuç kendiliğinden güncellenir",
+    "link.msg.updated": "↻ Bağlantı #{0}: {1} yeniden oluşturuldu ({2} nesne)",
+    "link.msg.broken": "⚠ Bağlantı #{0} durduruldu: {1}",
+    "link.msg.none": "Güncellenecek dinamik bağlantı yok",
+    "link.msg.item": "#{0} [{1}] {2} — kaynak: {3}, sonuç: {4}",
+    "link.msg.del": "Bağlantı #{0} silindi (sonuç çizimde kalır)",
+    "link.msg.state": "Bağlantı #{0}: {1}",
+    "link.err.notfound": "#{0} bağlantısı yok",
+    "gui.ew.dynamic": "Dinamik (kaynak değişince güncelle)",
+    "gui.ew.dynamic.tip": "Civil 3D gibi: noktalar, eksen veya sınır değişince profil, kesitler, eş yükselti ve kartogram yeniden oluşturulur. Liste: BAGLANTILAR"
   }
 }

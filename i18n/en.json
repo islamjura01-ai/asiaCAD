@@ -2,6 +2,7 @@
   "language": "en",
   "name": "English",
   "commands": {
+    "LINKS": ["DYNLINKS"],
     "SHEET": ["LAYOUT", "SH"],
     "TIN": ["SURFACE"],
     "CONTOUR": ["CONTOURS"],
@@ -107,6 +108,7 @@
     "EXIT": ["QUIT"]
   },
   "keywords": {
+    "UPDATE": ["UPD"],
     "NEW": ["NEW"],
     "VIEW": ["VIEW"],
     "STAMP": ["STAMP"],
@@ -2055,6 +2057,17 @@
     "gui.sheet.saved": "PDF saved: {0}",
     "gui.sheet.hint": "Wheel — zoom, middle button — pan, double-click a view — open it in the drawing",
     "gui.act.sheets": "Sheets",
-    "desc.SHEET": "Sheets: paper size, GOST frame and title block, scaled drawing views"
+    "desc.SHEET": "Sheets: paper size, GOST frame and title block, scaled drawing views",
+    "desc.LINKS": "Dynamic links (like Civil 3D): profile, sections, contours, cartogram rebuild when their source changes",
+    "link.msg.created": "Dynamic link #{0} (source: {1} objects) — the result rebuilds when the source changes",
+    "link.msg.updated": "↻ Link #{0}: {1} rebuilt ({2} objects)",
+    "link.msg.broken": "⚠ Link #{0} suspended: {1}",
+    "link.msg.none": "No dynamic links to update",
+    "link.msg.item": "#{0} [{1}] {2} — source: {3}, result: {4}",
+    "link.msg.del": "Link #{0} removed (result stays in the drawing)",
+    "link.msg.state": "Link #{0}: {1}",
+    "link.err.notfound": "No link #{0}",
+    "gui.ew.dynamic": "Dynamic (rebuild when the source changes)",
+    "gui.ew.dynamic.tip": "Like Civil 3D: when points, the alignment or the boundary change, profile, sections, contours and cartogram rebuild. List: LINKS"
   }
 }

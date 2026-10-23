@@ -36,6 +36,7 @@ struct AcadLoadResult {
 };
 
 void writeAcad(const Document& doc, std::ostream& os);
+std::string entityJson(const IEntity& e);  // bitta obyekt (id'siz) — geometriya izi uchun
 // Atomar: avval <fayl>.tmp ga yoziladi, so'ng almashtiriladi; eski fayl <fayl>.bak bo'lib qoladi.
 void saveAcad(const Document& doc, const std::string& path, bool keepBackup = true);
 

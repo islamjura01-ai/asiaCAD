@@ -70,6 +70,8 @@ bool forced(const std::vector<std::string>& a) { return !a.empty() && a.back() =
 
 } // namespace
 
+std::vector<std::string> tokenizeLine(const std::string& line) { return tokenize(line); }
+
 const char* commandSyntax(const std::string& c) {
     static const std::map<std::string, const char*> m = {
         {"LINE", "p1 p2 [p3 ...]"},
@@ -167,6 +169,7 @@ const char* commandSyntax(const std::string& c) {
         {"XSECTIONS", "path EG=sel FG=sel|Z=z [STEP=20] [L=20] [R=20] [SAMPLE=0.5] [SCALE=200] [COLS=4] [PK0=m] [AT=x,y] [NOMARKS] [XLSX=f]"},
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
+        {"LINKS", "[ON n | OFF n | DEL n | UPDATE [n]]"},
         {"SHEET", "[NEW name [A0..A4] [PORTRAIT]] | VIEW name p1 p2 [SCALE=n] [TITLE=t] | STAMP name KEY=t… | SIZE name A0..A4 [PORTRAIT] | RENAME name new | DEL name [n]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
         {"DIMALIGNED", "p1 p2 p [h] [0..6]"},
@@ -191,6 +194,7 @@ std::string localizeSyntax(const i18n::Localizer& loc, std::string s) {
 }
 
 void Interpreter::say(const std::string& key, const std::vector<std::string>& args) {
+    if (quiet_) return;
     out_ << loc_.tr(key, args) << '\n';
 }
 
@@ -351,7 +355,13 @@ bool Interpreter::run(const std::string& rawLine) {
     }
     try {
         if (canon.empty()) throw Error("err.unknown_command", {toks[0]});
+        const std::size_t before = stack_.pushCount();
         dispatch(canon, args);
+        // Dinamik bog'lanishlar: manba o'zgargan bo'lsa natija qayta quriladi va shu amal bilan bitta undo qadami bo'ladi
+        static const std::set<std::string> skip{"UNDO", "REDO", "OPEN", "NEW", "LINKS", "SAVE", "SAVEAS", "LANG", "HELP", "LIST"};
+        if (!doc_.links().empty() && !skip.count(canon)) {
+            updateLinks(false, 0, stack_.pushCount() > before);
+        }
     } catch (const Error& ex) {
         say("err.prefix", {loc_.tr(ex.key(), ex.args())});
     } catch (const std::exception& ex) {
@@ -365,6 +375,7 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchSurvey(cmd, a)) return;
     if (dispatchTerrain(cmd, a)) return;
     if (dispatchSheet(cmd, a)) return;
+    if (dispatchLinks(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;

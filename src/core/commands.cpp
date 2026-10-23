@@ -139,6 +139,7 @@ void CompositeCommand::undo(Document& doc) {
 // ---------------- Stack ----------------
 ICommand& CommandStack::execute(std::unique_ptr<ICommand> cmd) {
     cmd->execute(doc_);
+    ++pushes_;
     if (cleanIndex_ > undo_.size()) cleanLost_ = true;  // toza holat redo shoxida edi
     redo_.clear();
     undo_.push_back(std::move(cmd));
@@ -149,6 +150,18 @@ ICommand& CommandStack::execute(std::unique_ptr<ICommand> cmd) {
     }
     return *undo_.back();
 }
+void CommandStack::squash(std::size_t n) {
+    if (n < 2 || n > undo_.size()) return;
+    const std::size_t start = undo_.size() - n, oldSize = undo_.size();
+    auto comp = std::make_unique<CompositeCommand>(undo_[start]->name());
+    for (std::size_t i = start; i < oldSize; ++i) comp->add(std::move(undo_[i]));
+    undo_.resize(start);
+    undo_.push_back(std::move(comp));
+    if (cleanIndex_ > start && cleanIndex_ <= oldSize) {
+        if (cleanIndex_ == oldSize) cleanIndex_ = undo_.size(); else cleanLost_ = true;
+    }
+}
+
 bool CommandStack::undo() {
     if (undo_.empty()) return false;
     auto cmd = std::move(undo_.back());

@@ -76,7 +76,7 @@ target_include_directories(asiacad_civil PUBLIC include)
 target_link_libraries(asiacad_civil PUBLIC asiacad_core asiacad_io)
 
 # Buyruq interpretatori: CLI va GUI uchun umumiy
-add_library(asiacad_cmd apps/cli/interpreter.cpp apps/cli/interpreter_draft.cpp apps/cli/interpreter_survey.cpp apps/cli/interpreter_terrain.cpp apps/cli/interpreter_sheet.cpp)
+add_library(asiacad_cmd apps/cli/interpreter.cpp apps/cli/interpreter_draft.cpp apps/cli/interpreter_survey.cpp apps/cli/interpreter_terrain.cpp apps/cli/interpreter_sheet.cpp apps/cli/interpreter_links.cpp)
 target_include_directories(asiacad_cmd PUBLIC apps/cli)
 target_link_libraries(asiacad_cmd PUBLIC asiacad_io asiacad_i18n asiacad_civil)
 

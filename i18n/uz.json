@@ -2,6 +2,7 @@
   "language": "uz",
   "name": "Oʻzbekcha",
   "commands": {
+    "LINKS": ["BOGʻLANISHLAR", "БОҒЛАНИШЛАР", "DINAMIK"],
     "SHEET": ["VARAQ", "ВАРАҚ", "LISTLAR"],
     "TIN": ["YUZA", "ЮЗА"],
     "CONTOUR": ["GORIZONTAL", "ГОРИЗОНТАЛ"],
@@ -107,6 +108,7 @@
     "EXIT": ["CHIQISH", "ЧИҚИШ"]
   },
   "keywords": {
+    "UPDATE": ["YANGILA", "ЯНГИЛА"],
     "NEW": ["YANGI", "ЯНГИ"],
     "VIEW": ["KOʻRINISH", "КЎРИНИШ"],
     "STAMP": ["SHTAMP", "ШТАМП"],
@@ -2055,6 +2057,17 @@
     "gui.sheet.saved": "PDF saqlandi: {0}",
     "gui.sheet.hint": "Gʻildirak — zoom, oʻrta tugma — siljitish, koʻrinishni ikki marta bosing — chizmada ochiladi",
     "gui.act.sheets": "Listlar",
-    "desc.SHEET": "Listlar: qogʻoz formati, GOST ramka va shtamp, chizmadan masshtabli koʻrinishlar"
+    "desc.SHEET": "Listlar: qogʻoz formati, GOST ramka va shtamp, chizmadan masshtabli koʻrinishlar",
+    "desc.LINKS": "Dinamik bogʻlanishlar (Civil 3D kabi): manba oʻzgarsa profil, kesimlar, gorizontallar, kartogramma oʻzi yangilanadi",
+    "link.msg.created": "Dinamik bogʻlanish #{0} (manba: {1} ta obyekt) — manba oʻzgarsa natija oʻzi yangilanadi",
+    "link.msg.updated": "↻ Bogʻlanish #{0}: {1} qayta qurildi ({2} ta obyekt)",
+    "link.msg.broken": "⚠ Bogʻlanish #{0} toʻxtatildi: {1}",
+    "link.msg.none": "Yangilanadigan dinamik bogʻlanish yoʻq",
+    "link.msg.item": "#{0} [{1}] {2} — manba: {3} ta, natija: {4} ta",
+    "link.msg.del": "Bogʻlanish #{0} oʻchirildi (natija chizmada qoladi)",
+    "link.msg.state": "Bogʻlanish #{0}: {1}",
+    "link.err.notfound": "#{0} raqamli bogʻlanish yoʻq",
+    "gui.ew.dynamic": "Dinamik (manba oʻzgarsa natija oʻzi yangilanadi)",
+    "gui.ew.dynamic.tip": "Civil 3D kabi: nuqtalar, oʻq yoki chegara oʻzgarsa profil, kesimlar, gorizontallar va kartogramma qayta quriladi. Roʻyxat: BOGʻLANISHLAR"
   }
 }

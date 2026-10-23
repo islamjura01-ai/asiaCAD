@@ -352,7 +352,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 103);
+    CHECK(loc.canonicalCommands().size() == 104);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3467,6 +3467,72 @@ TEST(terrain_cli) {
     CHECK(s.find("ta gorizontal (qadam 0.25 m") != std::string::npos);
     CHECK(s.find("Loyiha yuzasi berilmagan") != std::string::npos);
 }
+
+// ---------- Dinamik bog'lanishlar (Civil 3D kabi) ----------
+TEST(dynamic_links) {
+    auto loc = loadedLocalizer();
+    loc.setLanguage("uz");
+    Document doc;
+    CommandStack st(doc);
+    std::ostringstream out;
+    cli::Interpreter in(doc, st, loc, out);
+    for (int x = 0; x <= 100; x += 10)
+        for (int y = 0; y <= 60; y += 10) in.run(std::format("POINT {},{},{}", x, y, 100 + 0.01 * x));
+    in.run("PLINE 0,30 100,30");
+    const EntityId axis = doc.ids().back();
+    in.run(std::format("PROFILE {} EG=ALL Z=101 STEP=20", axis));
+    CHECK(doc.links().size() == 1 && doc.links()[0].line.find("AT=") != std::string::npos);
+    const auto out0 = doc.links()[0].outputs;
+    CHECK(!out0.empty() && doc.contains(out0.front()));
+    in.run("CONTOUR ALL STEP=0.25");
+    CHECK(doc.links().size() == 2);
+    const std::size_t undo0 = st.undoCount();
+    // o'qni cho'zish: profil qayta quriladi (manba o'zgardi), gorizontallar — yo'q (nuqtalar o'zgarmadi)
+    out.str({});
+    in.run(std::format("ERASE {}", axis));
+    CHECK(out.str().find("to'xtatildi") != std::string::npos || out.str().find("toʻxtatildi") != std::string::npos);
+    CHECK(!doc.links()[0].on);
+    in.run("UNDO");
+    CHECK(doc.contains(axis) && doc.links()[0].on && doc.contains(out0.front()));
+    CHECK(st.undoCount() == undo0);
+    // nuqtani ko'chirish — ikkala natija ham yangilanadi, bitta undo qadami
+    out.str({});
+    in.run("MOVE 1 0,0 0,0,5");
+    CHECK(out.str().find("↻") != std::string::npos);
+    CHECK(st.undoCount() == undo0 + 1);
+    CHECK(!doc.contains(out0.front()) && !doc.links()[0].outputs.empty());
+    const auto out1 = doc.links()[0].outputs;
+    in.run("UNDO");
+    CHECK(st.undoCount() == undo0 && doc.contains(out0.front()) && !doc.contains(out1.front()));
+    in.run("REDO");
+    CHECK(doc.contains(out1.front()) && !doc.contains(out0.front()));
+    // natija o'z manbasiga kirmaydi: hech narsa o'zgarmasa yangilanish yo'q
+    out.str({});
+    in.run("LINE 500,500 510,500");
+    CHECK(out.str().find("↻") == std::string::npos);
+    // yangi nuqta ALL tanloviga qo'shiladi -> qayta qurish
+    out.str({});
+    in.run("POINT 55,35,103");
+    CHECK(out.str().find("↻ Bogʻlanish #2") != std::string::npos);
+    // o'chirib qo'yish, majburiy yangilash, ro'yxat, .acad
+    in.run("LINKS OFF 2");
+    out.str({});
+    in.run("POINT 56,36,104");
+    CHECK(out.str().find("#2") == std::string::npos);
+    in.run("LINKS UPDATE 2");
+    in.run("BOGʻLANISHLAR");
+    CHECK(out.str().find("#1 [") != std::string::npos);
+    std::ostringstream os;
+    writeAcad(doc, os);
+    auto r = readAcad(os.str());
+    CHECK(r.doc.links().size() == 2 && r.doc.links()[1].line == doc.links()[1].line && r.doc.links()[0].outputs == doc.links()[0].outputs);
+    // STATIC — bog'lanmaydi
+    in.run(std::format("PROFILE {} EG=ALL Z=101 STATIC", axis));
+    CHECK(doc.links().size() == 2);
+    in.run("LINKS DEL 1");
+    CHECK(doc.links().size() == 1 && doc.links()[0].id == 2);
+}
+
 // GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak
 
 // ---------- Listlar (Revit Sheets): format, GOST shtamp, ko'rinishlar, .acad, CLI + undo ----------

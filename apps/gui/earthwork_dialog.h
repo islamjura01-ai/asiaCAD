@@ -48,6 +48,7 @@ private:
     QString layerToken(const QComboBox* c) const;
     void updateInfo();
     void runTab(bool excel);
+    QString commandBody(int tab, const QString& xlsx) const;
 
     const i18n::Localizer& loc_;
     const Document& doc_;
@@ -62,6 +63,10 @@ private:
     QDoubleSpinBox *sStep_ = nullptr, *sL_ = nullptr, *sR_ = nullptr, *sScale_ = nullptr;
     QSpinBox* sCols_ = nullptr;
     QDoubleSpinBox *kCell_ = nullptr, *vCell_ = nullptr;
+    QCheckBox* dyn_ = nullptr;   // dinamik bog'lanish (Civil 3D kabi)
+public:
+    QCheckBox* dynamicBox() const { return dyn_; }
+private:
     QLabel *pathInfo_ = nullptr, *boundInfo_ = nullptr, *atInfo_ = nullptr, *res_ = nullptr;
 };
 

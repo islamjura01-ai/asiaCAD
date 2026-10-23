@@ -30,15 +30,21 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
     for (const auto& t : a) {
         const auto eq = t.find('=');
         if (eq != std::string::npos && eq > 0) kv[utf8::toUpper(t.substr(0, eq))] = t.substr(eq + 1);
-        else if (utf8::toUpper(t) == "BALANCE" || utf8::toUpper(t) == "NODRAW" || utf8::toUpper(t) == "NOMARKS") kv[utf8::toUpper(t)] = "1";
+        else if (utf8::toUpper(t) == "BALANCE" || utf8::toUpper(t) == "NODRAW" || utf8::toUpper(t) == "NOMARKS" || utf8::toUpper(t) == "STATIC")
+            kv[utf8::toUpper(t)] = "1";
         else pos.push_back(t);
     }
     auto num = [&](const char* k, double d) { return kv.count(k) ? parseNumber(kv[k]) : d; };
     auto has = [&](const char* k) { return kv.count(k) > 0; };
+    const std::vector<EntityId> prevLast = last_;
+    // dinamik bog'lanish (Civil 3D kabi): natija manbaga bog'lanadi; STATIC — bog'lanmasin
+    auto link = [&](std::vector<std::string> extra = {}) {
+        if (!regen_ && !has("STATIC")) makeLink(cmd, a, extra, prevLast);
+    };
     auto point = [&](const char* k) { return parsePoint(kv[k]); };
     auto boundary = [&]() -> std::vector<Vec3> {
         if (!has("BOUND")) return {};
-        for (EntityId id : parseSelection(kv["BOUND"]))
+        for (EntityId id : notLinkOutput(parseSelection(kv["BOUND"])))
             if (const IEntity* e = doc_.find(id)) {
                 auto v = civil::pathOf(*e);
                 if (v.size() >= 3) return v;
@@ -47,7 +53,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
     };
     const auto bound = boundary();
     auto tinFrom = [&](const std::string& sel) {
-        const auto pts = civil::terrainPoints(doc_, parseSelection(sel));
+        const auto pts = civil::terrainPoints(doc_, notLinkOutput(parseSelection(sel)));
         if (pts.size() < 3) throw Error("terr.err.points", {sel, std::to_string(pts.size())});
         const bool clip = (cmd == "TIN" || cmd == "CONTOUR") && !bound.empty();   // hajmda chegara — faqat maydon uchun
         auto t = civil::Tin::build(pts, clip ? &bound : nullptr, num("MAXEDGE", 0));
@@ -56,7 +62,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
     };
     auto pathArg = [&]() {
         if (pos.empty()) throw usage();
-        for (EntityId id : parseSelection(pos[0]))
+        for (EntityId id : notLinkOutput(parseSelection(pos[0])))
             if (const IEntity* e = doc_.find(id)) {
                 auto v = civil::pathOf(*e);
                 if (v.size() >= 2) return v;
@@ -68,7 +74,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
     auto design = [&]() {
         civil::Design d;
         if (has("FG")) {
-            const auto pts = civil::terrainPoints(doc_, parseSelection(kv["FG"]));
+            const auto pts = civil::terrainPoints(doc_, notLinkOutput(parseSelection(kv["FG"])));
             if (pts.size() < 3) throw Error("terr.err.points", {kv["FG"], std::to_string(pts.size())});
             fgTin = civil::Tin::build(pts, nullptr, num("MAXEDGE", 0));
             d.tin = &fgTin;
@@ -103,6 +109,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
             addLayered(cmd, std::move(es));
             say("terr.msg.tin", {std::to_string(t.points().size()), std::to_string(t.triangles().size()), std::format("{:.1f}", t.area()),
                                  std::format("{:.3f}", lo), std::format("{:.3f}", hi)});
+            link();
         } else {
             const double step = num("STEP", 0.5), major = num("MAJOR", step * 5);
             if (step <= 0) throw usage();
@@ -130,6 +137,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
             }
             addLayered(cmd, std::move(es));
             say("terr.msg.contour", {std::to_string(n), std::format("{:g}", step), std::format("{:.2f}", lo), std::format("{:.2f}", hi)});
+            link();
         }
         return true;
     }
@@ -159,6 +167,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
         }
         say("terr.msg.profile", {std::format("{:.2f}", L), std::to_string(st), std::format("{:.2f}", zmin), std::format("{:.2f}", zmax),
                                  std::format("{:g}", p.hScale), std::format("{:g}", p.vScale)});
+        link(has("AT") ? std::vector<std::string>{} : std::vector<std::string>{std::format("AT={},{}", p.at.x, p.at.y)});
         if (has("XLSX")) { xlsx::save(civil::profileWorkbook(pr, p, tr), kv["XLSX"]); say2(kv["XLSX"]); }
     } else if (cmd == "XSECTIONS") {
         const auto path = pathArg();
@@ -182,6 +191,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
         addLayered(cmd, std::move(es));
         say("terr.msg.sections", {std::to_string(xs.size()), std::format("{:g}", p.step), std::format("{:.1f}", v.fill), std::format("{:.1f}", v.cut),
                                   std::format("{:+.1f}", nz(v.fill - v.cut))});
+        link(has("AT") ? std::vector<std::string>{} : std::vector<std::string>{std::format("AT={},{}", p.at.x, p.at.y)});
         if (has("XLSX")) { xlsx::save(civil::sectionsWorkbook(xs, v, p, tr), kv["XLSX"]); say2(kv["XLSX"]); }
     } else if (cmd == "CARTOGRAM") {
         civil::CartoSpec s;
@@ -199,6 +209,7 @@ bool Interpreter::dispatchTerrain(const std::string& cmd, const Args& a) {
         say("terr.msg.carto", {std::to_string(nc), std::format("{:g}", s.cell), std::format("{:.1f}", r.area), std::format("{:.1f}", r.fill),
                                std::format("{:.1f}", -r.cut), std::format("{:+.1f}", nz(r.fill + r.cut))});
         if (!std::isnan(r.balanceZ)) say("terr.msg.h0", {std::format("{:.3f}", r.balanceZ)});
+        if (!has("NODRAW")) link();
         if (has("XLSX")) { xlsx::save(civil::cartogramWorkbook(r, tr), kv["XLSX"]); say2(kv["XLSX"]); }
     } else {   // VOLUME
         const auto fg = design();

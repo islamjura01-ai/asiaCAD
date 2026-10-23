@@ -31,6 +31,18 @@ private:
     std::string name_;
 };
 
+class LinksCommand final : public ICommand {
+public:
+    LinksCommand(std::vector<DynLink> after, std::string name) : after_(std::move(after)), name_(std::move(name)) {}
+    void execute(Document& doc) override { before_ = doc.links(); doc.setLinks(after_); }
+    void undo(Document& doc) override { doc.setLinks(before_); }
+    std::string name() const override { return name_; }
+
+private:
+    std::vector<DynLink> after_, before_;
+    std::string name_;
+};
+
 // Yangi entity qo'shish
 class AddEntityCommand final : public ICommand {
 public:
@@ -162,6 +174,9 @@ public:
     std::string undoName() const { return canUndo() ? undo_.back()->name() : std::string{}; }
     std::string redoName() const { return canRedo() ? redo_.back()->name() : std::string{}; }
     std::size_t undoCount() const { return undo_.size(); }
+    // Oxirgi n ta buyruqni bitta undo qadamiga birlashtiradi (dinamik yangilanish foydalanuvchi amali bilan birga qaytadi)
+    void squash(std::size_t n);
+    std::size_t pushCount() const { return pushes_; }  // execute() chaqiruvlari soni (o'zgarish bo'ldimi)
 
     // Saqlangandan keyin o'zgarish bo'lganmi
     bool isDirty() const { return undo_.size() != cleanIndex_ || cleanLost_; }
@@ -181,6 +196,7 @@ private:
     std::vector<std::unique_ptr<ICommand>> redo_;
     std::size_t cleanIndex_ = 0;
     bool cleanLost_ = false;
+    std::size_t pushes_ = 0;
 };
 
 } // namespace asiacad

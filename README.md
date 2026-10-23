@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.24: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.25: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,15 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Dinamik bog'lanishlar — Civil 3D "dynamic model" (v0.25) — `LINKS`, `apps/cli/interpreter_links.cpp`
+- `TIN`, `CONTOUR`, `PROFILE`, `XSECTIONS`, `CARTOGRAM` natijasi o'z manbasiga bog'lanadi: nuqtalar (EG/FG), o'q, chegara.
+- Manba o'zgarsa — nuqta ko'chirildi, balandligi o'zgardi, tutqich bilan o'q cho'zildi, qatlamga yangi nuqta qo'shildi — natija **o'zi qayta quriladi**
+  (`↻ Bog'lanish #2: BO'YLAMA qayta qurildi`). 2D chiziq qo'shish kabi yuzaga ta'sir qilmaydigan o'zgarish yangilamaydi (nuqtalar izi solishtiriladi).
+- Yangilanish foydalanuvchi amali bilan **bitta undo qadami**: Ctrl+Z ham manbani, ham natijani qaytaradi.
+- Natija boshqa bog'lanishning manbasiga kirmaydi; profil/kesim joyi (AT=) qotiriladi. Manba yaroqsiz bo'lsa (o'q o'chirildi) — bog'lanish to'xtaydi, eski natija qoladi.
+- `BOGʻLANISHLAR` (ru `СВЯЗИ`, en `LINKS`): ro'yxat; `LINKS OFF 2`, `LINKS ON 2`, `LINKS UPDATE [n]`, `LINKS DEL n` (natija chizmada qoladi).
+  Statik natija: buyruq oxiriga `STATIC`, yoki "Yer ishlari" oynasida «Dinamik» belgisini olib tashlang. Bog'lanishlar `.acad` da saqlanadi.
 
 ## Listlar — Revit "Sheets" / AutoCAD "Layout" (v0.24) — `core/sheet`, `SHEET`
 - **Ko'rinish → Listlar** yorlig'i (2D chizma | 3D model | Listlar): oq qog'oz A4…A0 (tik/yotiq), GOST 2.301 ramkasi (chapda 20 mm), asosiy yozuv 185×55 (GOST 21.101 sh.3).

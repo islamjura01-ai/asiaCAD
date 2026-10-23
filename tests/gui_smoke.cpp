@@ -26,6 +26,7 @@
 #include <QToolButton>
 #include <QImage>
 #include "sheet_view.h"
+#include <QCheckBox>
 #include <QMenu>
 #include <QKeyEvent>
 #include <QTabWidget>
@@ -1012,6 +1013,12 @@ int main(int argc, char** argv) {
         CHECK(!ed->isVisible() && w.viewport()->tool() == Tool::Pick);
         w.viewport()->feedPoint({0, -200, 0});
         CHECK(ed->isVisible() && ed->command(EarthworkDialog::Profile).contains("AT=0,-200"));
+        // dinamik bog'lanish: sukut bo'yicha yoqilgan; o'chirilsa — STATIC
+        CHECK(ed->dynamicBox()->isChecked() && !ed->command(EarthworkDialog::Profile).contains("STATIC"));
+        CHECK(!doc.links().empty());
+        ed->dynamicBox()->setChecked(false);
+        CHECK(ed->command(EarthworkDialog::Sections).endsWith(" STATIC") && !ed->command(EarthworkDialog::Volume).contains("STATIC"));
+        ed->dynamicBox()->setChecked(true);
         ed->close();
     }
 

@@ -360,6 +360,12 @@ std::unique_ptr<IEntity> makeEntity(const std::string& type, const EntityReader&
 
 } // namespace
 
+std::string entityJson(const IEntity& e) {
+    std::ostringstream os;
+    writeEntity(os, e, false);
+    return os.str();
+}
+
 void writeAcad(const Document& doc, std::ostream& os) {
     os << "{\n\"format\":\"asiacad\",\n\"version\":" << kAcadFormatVersion << ",\n\"generator\":\"AsiaCAD 0.11\",\n";
     os << "\"nextId\":" << doc.peekNextId() << ",\n\"layers\":[\n";
@@ -440,6 +446,20 @@ void writeAcad(const Document& doc, std::ostream& os) {
                 writeStr(os, v.title);
                 os << '}';
             }
+            os << "]}";
+        }
+        os << "\n]";
+    }
+    if (!doc.links().empty()) {  // dinamik bog'lanishlar
+        os << ",\n\"links\":[";
+        for (std::size_t i = 0; i < doc.links().size(); ++i) {
+            const DynLink& l = doc.links()[i];
+            os << (i ? ",\n" : "\n") << "{\"id\":" << l.id << ",\"on\":" << (l.on ? "true" : "false") << ",\"line\":";
+            writeStr(os, l.line);
+            os << ",\"fp\":";
+            writeStr(os, l.fp);
+            os << ",\"out\":[";
+            for (std::size_t j = 0; j < l.outputs.size(); ++j) os << (j ? "," : "") << l.outputs[j];
             os << "]}";
         }
         os << "\n]";
@@ -606,6 +626,23 @@ AcadLoadResult readAcad(std::string_view text) {
             sheets.push_back(std::move(sh));
         }
         res.doc.setSheets(std::move(sheets));
+    }
+    if (const json::Value* lv = root.find("links"); lv && lv->isArray()) {
+        std::vector<DynLink> links;
+        for (const auto& lo : lv->arr()) {
+            if (!lo.isObject()) continue;
+            EntityReader r(lo, "link");
+            DynLink l;
+            l.id = static_cast<int>(r.num("id", 0));
+            l.on = r.boolean("on", true);
+            l.line = r.str("line");
+            l.fp = r.str("fp");
+            if (const json::Value* o = lo.find("out"); o && o->isArray())
+                for (const auto& v : o->arr())
+                    if (v.isNumber() && res.doc.contains(static_cast<EntityId>(v.num()))) l.outputs.push_back(static_cast<EntityId>(v.num()));
+            if (l.id > 0 && !l.line.empty()) links.push_back(std::move(l));
+        }
+        res.doc.setLinks(std::move(links));
     }
     if (const json::Value* next = root.find("nextId"); next && next->isNumber() && next->num() >= 1)
         res.doc.reserveIds(static_cast<EntityId>(next->num()));

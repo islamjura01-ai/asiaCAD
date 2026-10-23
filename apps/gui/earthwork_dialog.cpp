@@ -67,6 +67,11 @@ EarthworkDialog::EarthworkDialog(const i18n::Localizer& loc, const Document& doc
     ix_ = spin(df, "gui.ew.ix", 0, -500, 500, 2, 1, "ix");
     iy_ = spin(df, "gui.ew.iy", 0, -500, 500, 2, 1, "iy");
     maxEdge_ = spin(df, "gui.ew.maxedge", 0, 0, 10000, 1, 5, "maxedge");
+    dyn_ = new QCheckBox(t("gui.ew.dynamic"), data);
+    dyn_->setObjectName("dynamic");
+    dyn_->setChecked(true);
+    dyn_->setToolTip(t("gui.ew.dynamic.tip"));
+    df->addRow(dyn_);
     auto pickRow = [&](const char* key, QLabel*& info, const QString& name, std::function<void()> f) {
         auto* h = new QHBoxLayout;
         info = new QLabel(data);
@@ -144,7 +149,8 @@ EarthworkDialog::EarthworkDialog(const i18n::Localizer& loc, const Document& doc
         connect(tin, &QPushButton::clicked, this, [this] { emit commandReady(command(Surface)); });
         connect(con, &QPushButton::clicked, this, [this] {
             emit commandReady(QStringLiteral("CONTOUR %1 STEP=%2 MAJOR=%3%4").arg(layerToken(eg_), n(cStep_->value()), n(cMajor_->value()),
-                                                                                  maxEdge_->value() > 0 ? " MAXEDGE=" + n(maxEdge_->value()) : QString()));
+                                                                                  maxEdge_->value() > 0 ? " MAXEDGE=" + n(maxEdge_->value()) : QString()) +
+                               (dyn_->isChecked() ? QString() : QStringLiteral(" STATIC")));
         });
     }
     {
@@ -255,6 +261,12 @@ QString EarthworkDialog::layerToken(const QComboBox* c) const {
 }
 
 QString EarthworkDialog::command(int tb, const QString& xlsx) const {
+    QString c = commandBody(tb, xlsx);
+    if (tb != Volume && dyn_ && !dyn_->isChecked()) c += QStringLiteral(" STATIC");
+    return c;
+}
+
+QString EarthworkDialog::commandBody(int tb, const QString& xlsx) const {
     const QString eg = "\"EG=" + QString::fromStdString(loc_.keywordName("LAYER")) + ":" + eg_->currentData().toString() + "\"";
     QString design;
     const int m = fgMode_->currentIndex();

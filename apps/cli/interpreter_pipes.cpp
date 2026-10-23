@@ -6,13 +6,19 @@
 #include "interpreter.h"
 
 #include <asiacad/civil/pipe_catalog.h>
+#include <asiacad/civil/road.h>
+#include <asiacad/civil/terrain.h>
+#include <asiacad/civil/utility.h>
+#include <asiacad/civil/waterway.h>
 #include <asiacad/core/error.h>
 #include <asiacad/core/grips.h>
 #include <asiacad/core/props.h>
 #include <asiacad/i18n/json.h>
 #include <asiacad/i18n/utf8.h>
 
+#include <cmath>
 #include <format>
+#include <set>
 
 namespace asiacad::cli {
 
@@ -54,7 +60,232 @@ std::size_t Interpreter::sewerDraw(const civil::SewerNetwork& net, const std::st
     return last_.size();
 }
 
+std::size_t Interpreter::smartDraw(const std::string& kind, const std::string& json, std::vector<std::unique_ptr<IEntity>> es,
+                                    const std::string& cmd, const std::string& at, bool replace) {
+    auto comp = std::make_unique<CompositeCommand>(cmd);
+    comp->add(std::make_unique<DictCommand>(kind + ":main", json, cmd));
+    if (!at.empty()) comp->add(std::make_unique<DictCommand>(kind + ":main:at", at, cmd));
+    std::vector<EntityId> old;
+    doc_.forEach([&](const IEntity& e) {
+        if (e.xget(kind) != "main") return;
+        if (replace || (!at.empty() && e.xget("part") == "profile")) old.push_back(e.id());
+    });
+    if (!old.empty()) comp->add(std::make_unique<DeleteCommand>(old));
+    std::set<std::string> made;
+    for (const auto& e : es)
+        if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+    std::vector<AddEntityCommand*> adds;
+    for (auto& e : es) {
+        if (e->xget(kind).empty()) e->xset(kind, "main");
+        auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+        adds.push_back(c.get());
+        comp->add(std::move(c));
+    }
+    stack_.execute(std::move(comp));
+    last_.clear();
+    for (auto* c : adds) last_.push_back(c->entityId());
+    return last_.size();
+}
+
+namespace {
+// Gravitatsion quvurda oraliq uchlar boshi-oxiri orasida chiziqli (2D masofa bo'yicha)
+void interpolateZ(civil::UtilLine& ln) {
+    if (ln.v.size() < 3) return;
+    std::vector<double> d(ln.v.size(), 0);
+    for (std::size_t i = 1; i < ln.v.size(); ++i) d[i] = d[i - 1] + std::hypot(ln.v[i].x - ln.v[i - 1].x, ln.v[i].y - ln.v[i - 1].y);
+    if (d.back() <= 0) return;
+    for (std::size_t i = 1; i + 1 < ln.v.size(); ++i) {
+        ln.v[i].z = ln.v.front().z + (ln.v.back().z - ln.v.front().z) * d[i] / d.back();
+        ln.v[i].src = civil::UtilVertex::Manual;
+    }
+}
+}  // namespace
+
 bool Interpreter::dispatchProps(const std::string& cmd, const Args& a) {
+    if (cmd == "PIPEDRAW") {
+        // PIPEDRAW nom p1 p2 … [SYS=K1|K2] [SPEC=id] [SLOPE=‰] [DEPTH=m] [RIM=m] — quduqlar oqim yo'nalishida;
+        // yer belgisi chizmadagi yer nuqtalaridan (TIN), bo'lmasa RIM; oxirgi nuqta boshqa tarmoq qudug'iga tushsa — ulanish
+        if (a.size() < 3) throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+        civil::SewerNetwork net;
+        net.name = a[0];
+        if (!doc_.dictGet("sewer:" + net.name).empty()) throw Error("pipe.err.exists", {net.name});
+        std::vector<Vec3> pts;
+        std::string spec = "PVC-SN8-200";
+        double slope = 0, rimFix = std::nan("");
+        for (std::size_t i = 1; i < a.size(); ++i) {
+            const auto eq = a[i].find('=');
+            if (eq == std::string::npos) { pts.push_back(parsePoint(a[i])); continue; }
+            const std::string k = utf8::toUpper(a[i].substr(0, eq)), v = a[i].substr(eq + 1);
+            if (k == "SYS") net.system = utf8::toUpper(v);
+            else if (k == "SPEC") spec = v;
+            else if (k == "SLOPE") slope = parseNumber(v) / 1000.0;
+            else if (k == "DEPTH") net.startDepth = parseNumber(v);
+            else if (k == "RIM") rimFix = parseNumber(v);
+            else throw Error("prop.err.key", {k});
+        }
+        if (pts.size() < 2) throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+        const auto* ps = civil::PipeCatalog::builtin().find(spec);
+        if (!ps) throw Error("sewer.chk.spec", {"1", spec});
+        net.defaultSlope = slope > 0 ? slope : ps->dn <= 150 ? 0.008 : ps->dn <= 200 ? 0.007 : 1.0 / ps->dn;
+        // mavjud tarmoq quduqlari (ulanish va yer belgisi uchun)
+        struct Mh { std::string net, name; double x, y, rim, inv; };
+        std::vector<Mh> existing;
+        for (const auto& [k, v] : doc_.dict()) {
+            if (k.rfind("sewer:", 0) != 0 || k.find(":at") != std::string::npos) continue;
+            try {
+                const auto other = civil::fromJson(v);
+                const auto r = civil::compute(other);
+                for (std::size_t j = 0; j < other.manholes.size() && j < r.manholes.size(); ++j)
+                    existing.push_back({other.name, other.manholes[j].name, other.manholes[j].x, other.manholes[j].y, other.manholes[j].rim,
+                                        std::min(r.manholes[j].invIn, r.manholes[j].invOut)});
+            } catch (...) {
+            }
+        }
+        auto near = [&](const Vec3& p) -> const Mh* {
+            for (const auto& m : existing)
+                if (std::hypot(m.x - p.x, m.y - p.y) < 0.6) return &m;
+            return nullptr;
+        };
+        // yer yuzasi: sewer chizmasi va bog'lanish natijalaridan tashqari barcha yer nuqtalari
+        std::vector<EntityId> ground;
+        doc_.forEach([&](const IEntity& e) { if (e.xget("sewer").empty()) ground.push_back(e.id()); });
+        civil::Tin tin;
+        if (std::isnan(rimFix)) {
+            auto tp = civil::terrainPoints(doc_, notLinkOutput(ground));
+            if (tp.size() >= 3) tin = civil::Tin::build(tp);
+        }
+        int fromTin = 0;
+        for (std::size_t i = 0; i < pts.size(); ++i) {
+            civil::Manhole m;
+            m.x = pts[i].x;
+            m.y = pts[i].y;
+            m.name = net.name + "-" + std::to_string(i + 1);
+            double z = 0;
+            if (const Mh* e = near(pts[i])) { m.x = e->x; m.y = e->y; m.rim = e->rim; m.name = e->name; }
+            else if (!std::isnan(rimFix)) m.rim = rimFix;
+            else if (!tin.empty() && tin.z(m.x, m.y, z)) { m.rim = z; ++fromTin; }
+            else if (std::abs(pts[i].z) > 1e-9) m.rim = pts[i].z;
+            else m.rim = 100.0;
+            net.manholes.push_back(m);
+        }
+        for (std::size_t i = 0; i + 1 < pts.size(); ++i) net.segments.push_back({spec, 0, 0});
+        // profil joyi: chizmaning o'ng tomoni (SEWER kabi)
+        BBox b = doc_.extents(true);
+        const auto res = civil::compute(net);
+        for (const auto& e : civil::drawPlan(net, res)) b.expand(e->bbox());
+        const std::string at = std::format("{},{}", b.max.x + 46 * net.textHeight, b.min.y);
+        sewerDraw(net, at, cmd);
+        say("pipe.msg.drawn", {net.name, std::to_string(net.manholes.size()), std::format("{:.2f}", res.totalLength), std::to_string(fromTin),
+                               std::to_string(res.errors()), std::to_string(res.warnings())});
+        // ulanish: oxirgi quduq boshqa tarmoq qudug'i bo'lsa — lotoklar farqi
+        if (const Mh* j = near(pts.back()); j && !res.segments.empty()) {
+            const double drop = res.segments.back().invDown - j->inv;
+            say(drop >= -1e-9 ? "pipe.msg.join" : "pipe.warn.join", {j->net, j->name, std::format("{:.1f}", drop * 100)});
+        }
+        return true;
+    }
+    if (cmd == "OBJEDIT") {
+        // OBJEDIT UTIL LINE=n DN=mm ZUP=m ZDOWN=m DEPTH=m KIND=k | UTIL NODE=n GROUND BOTTOM NAME | ROAD ST=n DESIGN=m | WW ST=n BOTTOM=m
+        if (a.size() < 3) throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+        const std::string kind = utf8::toUpper(a[0]);
+        const std::string dk = kind == "UTIL" ? "util" : kind == "ROAD" ? "road" : kind == "WW" ? "ww" : std::string();
+        if (dk.empty()) throw Error("obj.err.kind", {a[0]});
+        const std::string js = doc_.dictGet(dk + ":main");
+        if (js.empty()) throw Error("obj.err.none", {kind});
+        std::string elemKey;
+        int idx = -1;
+        std::vector<std::pair<std::string, std::string>> kv;
+        for (std::size_t i = 1; i < a.size(); ++i) {
+            const auto eq = a[i].find('=');
+            if (eq == std::string::npos || eq == 0) throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+            const std::string k = utf8::toUpper(a[i].substr(0, eq)), v = a[i].substr(eq + 1);
+            if (k == "LINE" || k == "NODE" || k == "ST") { elemKey = k; idx = static_cast<int>(parseNumber(v)) - 1; }
+            else kv.emplace_back(k, v);
+        }
+        if (idx < 0) throw Error("obj.err.index", {kind});
+        const std::string at = doc_.dictGet(dk + ":main:at");
+        std::string label;
+        int errors = 0;
+        if (dk == "util") {
+            civil::UtilModel m;
+            auto p = civil::defaultUtilParams();
+            civil::utilFromJson(js, m, p);
+            if (elemKey == "LINE") {
+                if (idx >= static_cast<int>(m.lines.size())) throw Error("obj.err.index", {kind});
+                auto& ln = m.lines[static_cast<std::size_t>(idx)];
+                bool zEdit = false;
+                for (const auto& [k, v] : kv) {
+                    if (k == "DN") { ln.dn = parseNumber(v); ln.dnManual = true; }
+                    else if (k == "ZUP") { ln.v.front().z = parseNumber(v); ln.v.front().src = civil::UtilVertex::Manual; zEdit = true; }
+                    else if (k == "ZDOWN") { ln.v.back().z = parseNumber(v); ln.v.back().src = civil::UtilVertex::Manual; zEdit = true; }
+                    else if (k == "DEPTH") {  // quvur ustigacha qatlam, hamma uchlarda
+                        const double c = parseNumber(v);
+                        for (auto& q : ln.v) { q.z = q.ground - c - ln.dn / 2000.0; q.src = civil::UtilVertex::Manual; }
+                    } else if (k == "KIND") {
+                        civil::UtilKind uk;
+                        if (!civil::utilFromKey(utf8::toUpper(v), uk)) throw Error("prop.err.value", {v});
+                        ln.kind = uk;
+                    } else throw Error("prop.err.key", {k});
+                }
+                if (zEdit && civil::isGravity(ln.kind)) interpolateZ(ln);
+                label = std::to_string(idx + 1);
+            } else if (elemKey == "NODE") {
+                if (idx >= static_cast<int>(m.nodes.size())) throw Error("obj.err.index", {kind});
+                auto& n = m.nodes[static_cast<std::size_t>(idx)];
+                for (const auto& [k, v] : kv) {
+                    if (k == "GROUND") n.ground = parseNumber(v);
+                    else if (k == "BOTTOM") { n.bottom = parseNumber(v); n.estimated = false; }
+                    else if (k == "NAME") n.name = v;
+                    else throw Error("prop.err.key", {k});
+                }
+                label = n.name.empty() ? std::to_string(idx + 1) : n.name;
+            } else throw Error("obj.err.index", {kind});
+            civil::checkUtilities(m, p);
+            errors = m.errors();
+            smartDraw("util", civil::utilToJson(m, p), civil::drawUtilities3D(m, 0.5), cmd, std::string(), true);
+        } else if (dk == "road") {
+            civil::RoadModel m;
+            auto p = civil::defaultRoadParams();
+            civil::roadFromJson(js, m, p);
+            if (elemKey != "ST" || idx >= static_cast<int>(m.st.size())) throw Error("obj.err.index", {kind});
+            for (const auto& [k, v] : kv) {
+                if (k == "DESIGN") { m.st[static_cast<std::size_t>(idx)].design = parseNumber(v); m.st[static_cast<std::size_t>(idx)].control = true; }
+                else throw Error("prop.err.key", {k});
+            }
+            civil::recomputeRoad(m, p);
+            errors = m.errors();
+            auto es = civil::drawRoad3D(m);
+            if (!at.empty())
+                for (auto& e : civil::drawRoadProfile(m, parseRawPoint(at), 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("road.lbl.design"), loc_.tr("road.lbl.pk"))) {
+                    e->xset("part", "profile");
+                    es.push_back(std::move(e));
+                }
+            label = civil::pk(m.st[static_cast<std::size_t>(idx)].s);
+            smartDraw("road", civil::roadToJson(m, p), std::move(es), cmd, at, true);
+        } else {
+            civil::WwModel m;
+            auto p = civil::defaultWwParams();
+            civil::wwFromJson(js, m, p);
+            if (elemKey != "ST" || idx >= static_cast<int>(m.st.size())) throw Error("obj.err.index", {kind});
+            for (const auto& [k, v] : kv) {
+                if (k == "BOTTOM") { m.st[static_cast<std::size_t>(idx)].bottom = parseNumber(v); m.st[static_cast<std::size_t>(idx)].control = true; }
+                else throw Error("prop.err.key", {k});
+            }
+            civil::recomputeWaterway(m, p);
+            errors = m.errors();
+            auto es = civil::drawWaterway3D(m, p);
+            if (!at.empty())
+                for (auto& e : civil::drawWaterwayProfile(m, p, parseRawPoint(at), 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("ww.lbl.bottom"),
+                                                          loc_.tr("ww.lbl.water"), loc_.tr("road.lbl.pk"))) {
+                    e->xset("part", "profile");
+                    es.push_back(std::move(e));
+                }
+            label = civil::pk(m.st[static_cast<std::size_t>(idx)].s);
+            smartDraw("ww", civil::wwToJson(m, p), std::move(es), cmd, at, true);
+        }
+        say("obj.msg.edited", {loc_.tr("obj.kind." + dk), label, std::to_string(errors)});
+        return true;
+    }
     if (cmd != "SETPROP" && cmd != "PIPEEDIT") return false;
     auto usage = [&]() { return Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))}); };
     if (a.size() < 2) throw usage();

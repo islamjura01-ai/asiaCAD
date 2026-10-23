@@ -38,6 +38,10 @@ private:
                         std::function<void(const QString&)> onEdit);
     void addInfo(const QString& label, const QString& value, const QColor& color = QColor());
     bool buildSewer(EntityId id);
+    bool buildUtil(EntityId id);
+    bool buildRoad(EntityId id);
+    bool buildWw(EntityId id);
+    void navRow(const QString& prevTag, const QString& nextTag, const char* prevKey, const char* nextKey);
     void buildLink(EntityId id);
     void buildGeneric(const std::vector<EntityId>& sel);
     QString t(const char* key, const QStringList& args = {}) const;

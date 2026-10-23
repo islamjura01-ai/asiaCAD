@@ -33,6 +33,9 @@ private:
     bool dispatchLinks(const std::string& canon, const Args& a);
     // interpreter_pipes.cpp: aqlli obyektlar — SETPROP (har qanday obyekt xossasi), PIPEEDIT (kanalizatsiya quvuri/qudug'i)
     bool dispatchProps(const std::string& canon, const Args& a);
+    // Modul modeli (util | road | ww) — lug'atga "<kind>:main", chizma xdata bilan; replace — eski chizma o'chiriladi
+    std::size_t smartDraw(const std::string& kind, const std::string& json, std::vector<std::unique_ptr<IEntity>> es, const std::string& cmdName,
+                          const std::string& profileAt, bool replace);
     std::size_t sewerDraw(const civil::SewerNetwork& net, const std::string& at, const std::string& cmdName);
     void makeLink(const std::string& canon, const Args& a, const std::vector<std::string>& extra, const std::vector<EntityId>& prevLast);
     std::vector<EntityId> linkSources(const std::string& line, const std::vector<EntityId>* extraExclude = nullptr) const;

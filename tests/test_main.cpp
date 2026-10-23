@@ -353,7 +353,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 106);
+    CHECK(loc.canonicalCommands().size() == 108);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3603,6 +3603,76 @@ TEST(props_and_pipe_edit) {
     writeAcad(doc, os);
     auto rr = readAcad(os.str());
     CHECK(rr.doc.dictGet("sewer:K1") == doc.dictGet("sewer:K1") && rr.doc.find(pipe2) && rr.doc.find(pipe2)->xget("seg") == "1");
+}
+
+
+// ---------- Aqlli obyektlar: yer osti, yo'l, suv yo'li (OBJEDIT) va quvur chizish (PIPEDRAW) ----------
+TEST(objedit_and_pipedraw) {
+    auto loc = loadedLocalizer();
+    loc.setLanguage("en");
+    {
+        Document doc;
+        CommandStack st(doc);
+        std::ostringstream out;
+        cli::Interpreter in(doc, st, loc, out);
+        in.run(std::string("OPEN \"") + ASIACAD_EXAMPLES_DIR + "/yer_osti.acad\"");
+        in.run("UTIL +");
+        CHECK(!doc.dictGet("util:main").empty());
+        EntityId line0 = kInvalidId;
+        doc.forEach([&](const IEntity& e) { if (e.xget("util") == "main" && e.xget("line") == "0" && line0 == kInvalidId) line0 = e.id(); });
+        CHECK(line0 != kInvalidId);
+        const std::size_t n0 = doc.size();
+        in.run("OBJEDIT UTIL LINE=1 DN=300 DEPTH=1.5");
+        civil::UtilModel m;
+        auto p = civil::defaultUtilParams();
+        civil::utilFromJson(doc.dictGet("util:main"), m, p);
+        CHECK(m.lines[0].dn == 300 && m.lines[0].dnManual);
+        for (const auto& v : m.lines[0].v) CHECK(std::abs(v.ground - v.z - 0.15 - 1.5) < 1e-9);
+        CHECK(doc.size() == n0 && !doc.contains(line0));
+        in.run("UNDO");
+        CHECK(doc.contains(line0));
+        in.run("OBJEDIT ROAD ST=1 DESIGN=1");
+        CHECK(out.str().find("No ROAD model") != std::string::npos || out.str().find("ROAD") != std::string::npos);
+    }
+    {
+        Document doc;
+        CommandStack st(doc);
+        std::ostringstream out;
+        cli::Interpreter in(doc, st, loc, out);
+        in.run(std::string("OPEN \"") + ASIACAD_EXAMPLES_DIR + "/yol.acad\"");
+        in.run("ROAD + 0,-80");
+        civil::RoadModel m;
+        auto p = civil::defaultRoadParams();
+        civil::roadFromJson(doc.dictGet("road:main"), m, p);
+        CHECK(m.st.size() > 3 && !doc.dictGet("road:main:at").empty());
+        in.run("OBJEDIT ROAD ST=3 DESIGN=" + std::format("{:.3f}", m.st[2].ground + 2));
+        civil::roadFromJson(doc.dictGet("road:main"), m, p);
+        CHECK(m.st[2].control && std::abs(m.st[2].design - m.st[2].ground - 2) < 1e-3);
+        bool prof = false;
+        doc.forEach([&](const IEntity& e) { prof |= e.xget("road") == "main" && e.xget("part") == "profile"; });
+        CHECK(prof);
+    }
+    {
+        Document doc;
+        CommandStack st(doc);
+        std::ostringstream out;
+        cli::Interpreter in(doc, st, loc, out);
+        in.run(std::string("PTIMPORT \"") + ASIACAD_EXAMPLES_DIR + "/geodeziya/yer_syomka.txt\"");
+        in.run("PIPEDRAW K1-1 10,10 40,12 80,15");
+        auto net = civil::fromJson(doc.dictGet("sewer:K1-1"));
+        CHECK(net.manholes.size() == 3 && net.segments.size() == 2 && net.manholes[0].rim > 399 && net.manholes[0].rim < 405);
+        CHECK(std::abs(net.startDepth - 1.5) < 1e-12 || net.startDepth > 0);
+        in.run("PIPEDRAW K1-2 30,50 45,40 40.2,12.1 SPEC=PVC-SN8-200 DEPTH=1.2");
+        auto br = civil::fromJson(doc.dictGet("sewer:K1-2"));
+        CHECK(br.manholes.back().name == "K1-1-2" && br.manholes.back().x == 40);   // mavjud quduqqa ulandi
+        CHECK(out.str().find("Connection: manhole K1-1 / K1-1-2") != std::string::npos);
+        in.run("PIPEDRAW K1-3 0,0 10,0 RIM=200");
+        CHECK(civil::fromJson(doc.dictGet("sewer:K1-3")).manholes[1].rim == 200);
+        in.run("PIPEDRAW K1-1 0,0 5,5");
+        CHECK(out.str().find("already exists") != std::string::npos);
+        in.run("UNDO");
+        CHECK(doc.dictGet("sewer:K1-3").empty());
+    }
 }
 
 // GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak

@@ -170,6 +170,8 @@ const char* commandSyntax(const std::string& c) {
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
+        {"PIPEDRAW", "name p1 p2 [p…] [SYS=K1|K2] [SPEC=id] [SLOPE=‰] [DEPTH=m] [RIM=m]"},
+        {"OBJEDIT", "UTIL LINE=n [DN=mm] [ZUP=m] [ZDOWN=m] [DEPTH=m] [KIND=k] | UTIL NODE=n [GROUND=m] [BOTTOM=m] [NAME=t] | ROAD ST=n DESIGN=m | WW ST=n BOTTOM=m"},
         {"PIPEEDIT", "net SEG=n|MH=n KEY=value ..."},
         {"LINKS", "[ON n | OFF n | DEL n | UPDATE [n]]"},
         {"SHEET", "[NEW name [A0..A4] [PORTRAIT]] | VIEW name p1 p2 [SCALE=n] [TITLE=t] | STAMP name KEY=t… | SIZE name A0..A4 [PORTRAIT] | RENAME name new | DEL name [n]"},
@@ -814,20 +816,7 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args)
                  << std::format("  [X={:.2f} Y={:.2f}]", i.x, i.y) << '\n';
         if (draw) {
-            auto es = civil::drawUtilities3D(m, 0.5);
-            auto comp = std::make_unique<CompositeCommand>(cmd);
-            std::set<std::string> made;
-            for (const auto& e : es)
-                if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
-            std::vector<AddEntityCommand*> adds;
-            for (auto& e : es) {
-                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
-                adds.push_back(c.get());
-                comp->add(std::move(c));
-            }
-            stack_.execute(std::move(comp));
-            last_.clear();
-            for (auto* c : adds) last_.push_back(c->entityId());
+            smartDraw("util", civil::utilToJson(m, p), civil::drawUtilities3D(m, 0.5), cmd, std::string(), true);
             say("util.msg.drawn", {std::to_string(last_.size())});
         }
     } else if (cmd == "ROAD") {
@@ -862,21 +851,12 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             std::vector<std::unique_ptr<IEntity>> es;
             if (draw3d) es = civil::drawRoad3D(m);
             if (profileAt)
-                for (auto& e : civil::drawRoadProfile(m, *profileAt, 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("road.lbl.design"), loc_.tr("road.lbl.pk")))
+                for (auto& e : civil::drawRoadProfile(m, *profileAt, 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("road.lbl.design"), loc_.tr("road.lbl.pk"))) {
+                    e->xset("road", "main");
+                    e->xset("part", "profile");
                     es.push_back(std::move(e));
-            auto comp = std::make_unique<CompositeCommand>(cmd);
-            std::set<std::string> made;
-            for (const auto& e : es)
-                if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
-            std::vector<AddEntityCommand*> adds;
-            for (auto& e : es) {
-                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
-                adds.push_back(c.get());
-                comp->add(std::move(c));
-            }
-            stack_.execute(std::move(comp));
-            last_.clear();
-            for (auto* c : adds) last_.push_back(c->entityId());
+                }
+            smartDraw("road", civil::roadToJson(m, p), std::move(es), cmd, profileAt ? std::format("{},{}", profileAt->x, profileAt->y) : std::string(), draw3d);
             say("road.msg.drawn", {std::to_string(last_.size())});
         }
     } else if (cmd == "CORRIDOR") {
@@ -1124,21 +1104,12 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             if (draw3d) es = civil::drawWaterway3D(m, p);
             if (profileAt)
                 for (auto& e : civil::drawWaterwayProfile(m, p, *profileAt, 10, 2.0, loc_.tr("road.lbl.ground"), loc_.tr("ww.lbl.bottom"),
-                                                          loc_.tr("ww.lbl.water"), loc_.tr("road.lbl.pk")))
+                                                          loc_.tr("ww.lbl.water"), loc_.tr("road.lbl.pk"))) {
+                    e->xset("ww", "main");
+                    e->xset("part", "profile");
                     es.push_back(std::move(e));
-            auto comp = std::make_unique<CompositeCommand>(cmd);
-            std::set<std::string> made;
-            for (const auto& e : es)
-                if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
-            std::vector<AddEntityCommand*> adds;
-            for (auto& e : es) {
-                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
-                adds.push_back(c.get());
-                comp->add(std::move(c));
-            }
-            stack_.execute(std::move(comp));
-            last_.clear();
-            for (auto* c : adds) last_.push_back(c->entityId());
+                }
+            smartDraw("ww", civil::wwToJson(m, p), std::move(es), cmd, profileAt ? std::format("{},{}", profileAt->x, profileAt->y) : std::string(), draw3d);
             say("road.msg.drawn", {std::to_string(last_.size())});
         }
     } else if (cmd == "PIPES") {

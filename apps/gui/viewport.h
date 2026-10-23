@@ -29,7 +29,7 @@ enum class Tool { Select, Line, Pline, Circle, Arc, Point, Text, Move, Copy, Rot
                   DimLinear, DimAligned, DimRadius, DimDiameter, Grip,
                   Offset, Trim, Extend, Fillet,
                   Rect, Polygon, Ellipse, Spline, Stretch, Scale, Mirror, Chamfer, Break, Leader, DimAngular,
-                  Symbol, MatchProp, LayPick, SteelBeam, SteelSec, Pick };
+                  Symbol, MatchProp, LayPick, SteelBeam, SteelSec, Pick, PipeDraw };
 
 class Viewport : public QOpenGLWidget {
     Q_OBJECT
@@ -89,6 +89,8 @@ public:
     void setSymbol(const QString& key, double scale, double rotDeg) { symKey_ = key; symScale_ = scale; symRot_ = rotDeg; }
     void setLayerPickCommand(const QString& canon) { layCmd_ = canon; }
     void setSteelProfile(const QString& name) { steel_ = name; }
+    void setPipeArgs(const QString& args) { pipeArgs_ = args; }   // PIPEDRAW buyrug'i: tarmoq nomi va sozlamalari
+    const QString& pipeArgs() const { return pipeArgs_; }
     // nuqta(lar) olish (oynalar uchun): n ta nuqta — pointsPicked; Esc — pickCancelled. prompts — har nuqta uchun i18n kalit
     void startPick(int n, const QStringList& prompts);  // LAYMCUR, LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO, LAYMATCH  // joriy masshtabda o'qiladigan "chiroyli" balandlik
     // Tutqichlar: tanlangan obyektning tutqichi ustida bo'lsa (id, indeks)
@@ -210,7 +212,7 @@ private:
     }
     double chamferD_ = 1.0;
     int polySides_ = 6;
-    QString symKey_ = "TREE", layCmd_ = "LAYMCUR", steel_ = "I20";
+    QString symKey_ = "TREE", layCmd_ = "LAYMCUR", steel_ = "I20", pipeArgs_ = "K1";
     double symScale_ = 1.0, symRot_ = 0.0;
     // Ekran apertura bilan obyekt tanlash; nuqta obyekt ustiga tushiriladi (buyruq satri aperturasi kichik bo'lsa ham)
     EntityId pickAt(const Vec3& p, Vec3* onCurve, bool editableCurvesOnly = true) const;

@@ -640,11 +640,13 @@ std::vector<std::unique_ptr<IEntity>> drawWaterway3D(const WwModel& m, const WwP
                 ring.push_back(world(t, sec.d / 2 * std::cos(a), t.bottom + sec.d / 2 + sec.d / 2 * std::sin(a)));
             }
             put(ring, "SUV_3D_KESIM", true);
+            out.back()->xset("st", std::to_string(&t - m.st.data()));
         }
         put(inv, "SUV_3D_TUB");
         put(crown, "SUV_3D_QIRGOQ");
         put(axis, "SUV_3D_OQ");
         put(water, sec.type == WwType::PressurePipe ? "SUV_3D_PYEZOMETR" : "SUV_3D_SUV");
+        for (auto& e : out) e->xset("ww", "main");
         return out;
     }
     const auto shape = innerShape(sec);
@@ -658,6 +660,7 @@ std::vector<std::unique_ptr<IEntity>> drawWaterway3D(const WwModel& m, const WwP
             lines[k].push_back(w);
         }
         put(cs, "SUV_3D_KESIM");
+        out.back()->xset("st", std::to_string(&t - m.st.data()));
         if (t.depthN > 0) {
             const double T = wwTopWidth(sec, t.depthN);
             wl.push_back(world(t, -T / 2, t.water));
@@ -670,6 +673,7 @@ std::vector<std::unique_ptr<IEntity>> drawWaterway3D(const WwModel& m, const WwP
         put(wl, "SUV_3D_SUV");
         put(wr, "SUV_3D_SUV");
     }
+    for (auto& e : out) e->xset("ww", "main");
     return out;
 }
 

@@ -545,7 +545,8 @@ std::vector<std::unique_ptr<IEntity>> drawRoad3D(const RoadModel& m) {
     auto world = [](const RoadStation& s, double o, double z) { return Vec3{s.x - s.dy * o, s.y + s.dx * o, z}; };
     const std::size_t n = m.st.front().section.size();
     std::vector<std::vector<Vec3>> lines(n);
-    for (const auto& s : m.st) {
+    for (std::size_t i = 0; i < m.st.size(); ++i) {
+        const auto& s = m.st[i];
         std::vector<Vec3> sec;
         for (std::size_t k = 0; k < s.section.size(); ++k) {
             const Vec3 w = world(s, s.section[k].first, s.section[k].second);
@@ -553,11 +554,13 @@ std::vector<std::unique_ptr<IEntity>> drawRoad3D(const RoadModel& m) {
             if (k < n) lines[k].push_back(w);
         }
         put(sec, "YOL_3D_KESIM");
+        out.back()->xset("st", std::to_string(i));  // tuzatish paneli: shu piket
     }
     for (std::size_t k = 0; k < n; ++k) {
         const char* layer = k == n / 2 ? "YOL_3D_OQ" : (k == 0 || k + 1 == n) ? "YOL_3D_QIYALIK" : (k == 1 || k + 2 == n) ? "YOL_3D_YOQA" : "YOL_3D_QATNOV";
         put(lines[k], layer);
     }
+    for (auto& e : out) e->xset("road", "main");
     return out;
 }
 

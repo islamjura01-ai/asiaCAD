@@ -301,7 +301,7 @@ void Viewport::cancelTool() {
         emit pickCancelled();
         return;
     }
-    if ((tool_ == Tool::Pline || tool_ == Tool::Spline || tool_ == Tool::Leader || tool_ == Tool::SteelBeam) && pts_.size() >= 2) { finishTool(); return; }
+    if ((tool_ == Tool::Pline || tool_ == Tool::Spline || tool_ == Tool::Leader || tool_ == Tool::SteelBeam || tool_ == Tool::PipeDraw) && pts_.size() >= 2) { finishTool(); return; }
     tool_ = Tool::Select;
     pts_.clear();
     snap_.reset();
@@ -328,6 +328,11 @@ void Viewport::finishTool() {
     }
     if (tool_ == Tool::SteelBeam && pts_.size() >= 2) {
         QStringList parts{QStringLiteral("STEELBEAM"), steel_};
+        for (const auto& p : pts_) parts << fmtPoint(p);
+        emit runCommand(parts.join(' '));
+    }
+    if (tool_ == Tool::PipeDraw && pts_.size() >= 2) {
+        QStringList parts{QStringLiteral("PIPEDRAW"), pipeArgs_};
         for (const auto& p : pts_) parts << fmtPoint(p);
         emit runCommand(parts.join(' '));
     }
@@ -358,6 +363,7 @@ void Viewport::emitPrompt() {
     switch (tool_) {
     case Tool::Select: key = "gui.prompt.idle"; break;
     case Tool::Line: case Tool::Pline: key = pts_.empty() ? "gui.prompt.first" : "gui.prompt.next"; break;
+    case Tool::PipeDraw: key = pts_.empty() ? "gui.prompt.pipe1" : "gui.prompt.pipen"; break;
     case Tool::Circle: key = pts_.empty() ? "gui.prompt.center" : "gui.prompt.radius"; break;
     case Tool::Arc: key = pts_.empty() ? "gui.prompt.first" : (pts_.size() == 1 ? "gui.prompt.arc2" : "gui.prompt.arc3"); break;
     case Tool::Point: key = "gui.prompt.point"; break;
@@ -434,6 +440,7 @@ void Viewport::clickPoint(const Vec3& p) {
             pts_.push_back(p);
         }
         break;
+    case Tool::PipeDraw: pts_.push_back(p); break;  // quduqlar: oqim yo'nalishida
     case Tool::Circle:
         if (pts_.empty()) { pts_.push_back(p); break; }
         if (const double r = pts_[0].distanceTo(p); r > 0) emit runCommand("CIRCLE " + fmtPoint(pts_[0]) + " " + num(r));
@@ -1423,6 +1430,7 @@ void Viewport::drawOverlay(QPainter& p) {
                 } catch (...) {}
                 break;
             case Tool::Leader:
+            case Tool::PipeDraw:
             case Tool::SteelBeam:
             case Tool::Pick:
             case Tool::Scale:

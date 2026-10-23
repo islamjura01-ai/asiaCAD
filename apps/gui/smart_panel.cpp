@@ -1,7 +1,10 @@
 #include "smart_panel.h"
 
 #include <asiacad/civil/pipe_catalog.h>
+#include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
+#include <asiacad/civil/utility.h>
+#include <asiacad/civil/waterway.h>
 #include <asiacad/core/props.h>
 #include <asiacad/i18n/json.h>
 
@@ -110,6 +113,13 @@ void SmartPanel::rebuild(const std::vector<EntityId>& sel) {
                     same = false;
             if (same) done = buildSewer(sel.front());
         }
+        if (!done && sel.size() == 1) {
+            if (const IEntity* e = doc_.find(sel.front())) {
+                if (!e->xget("util").empty()) done = buildUtil(sel.front());
+                else if (!e->xget("road").empty()) done = buildRoad(sel.front());
+                else if (!e->xget("ww").empty()) done = buildWw(sel.front());
+            }
+        }
         if (!done) buildGeneric(sel);
         if (sel.size() == 1) buildLink(sel.front());
     }
@@ -211,6 +221,144 @@ bool SmartPanel::buildSewer(EntityId id) {
         if (is.manhole == k) addInfo(QStringLiteral("⚠"), QString::fromStdString(loc_.tr(is.key, is.args)), issueColor(is.level));
     nav(k > 0 ? QStringLiteral("sewer:%1:seg:%2").arg(net).arg(k - 1) : QString(),
         k + 1 < static_cast<int>(n.manholes.size()) ? QStringLiteral("sewer:%1:seg:%2").arg(net).arg(k) : QString(), "gui.pp.pipein", "gui.pp.pipeout");
+    return true;
+}
+
+void SmartPanel::navRow(const QString& prevTag, const QString& nextTag, const char* prevKey, const char* nextKey) {
+    auto* h = new QHBoxLayout;
+    for (const auto& [tag, key] : {std::pair{prevTag, prevKey}, std::pair{nextTag, nextKey}}) {
+        if (tag.isEmpty()) continue;
+        auto* b = new QPushButton(t(key), body_);
+        b->setObjectName(QString::fromLatin1(key).section('.', -1));
+        connect(b, &QPushButton::clicked, this, [this, tag] { emit select(tag); });
+        h->addWidget(b);
+    }
+    lay_->addLayout(h);
+}
+
+bool SmartPanel::buildUtil(EntityId id) {
+    const IEntity* e = doc_.find(id);
+    const std::string js = doc_.dictGet("util:main");
+    if (js.empty()) return false;
+    civil::UtilModel m;
+    auto p = civil::defaultUtilParams();
+    try { civil::utilFromJson(js, m, p); } catch (...) { return false; }
+    civil::checkUtilities(m, p);
+    const QString lineS = QString::fromStdString(e->xget("line")), nodeS = QString::fromStdString(e->xget("node"));
+    const QColor red(232, 80, 80), amber(230, 160, 40);
+    if (!lineS.isEmpty()) {
+        const int i = lineS.toInt();
+        if (i < 0 || i >= static_cast<int>(m.lines.size())) return false;
+        const auto& ln = m.lines[static_cast<std::size_t>(i)];
+        const QString kind = QString::fromStdString(loc_.tr(std::string("util.kind.") + civil::utilKey(ln.kind)));
+        const QString cmd = QStringLiteral("OBJEDIT UTIL LINE=%1 ").arg(i + 1), tag = QStringLiteral("util:main:line:%1").arg(i);
+        auto run = [this, cmd, tag](const QString& kv) { emit edit(cmd + kv, tag); };
+        addSection(t("gui.pp.uline", {kind, QString::number(i + 1)}));
+        addField("DN", t("gui.pp.dn"), fmt(ln.dn, 0), true, [run](const QString& v) { run("DN=" + v); });
+        addField("ZUP", t("gui.pp.zup"), fmt(ln.v.front().z, 3), true, [run](const QString& v) { run("ZUP=" + v); });
+        addField("ZDOWN", t("gui.pp.zdown"), fmt(ln.v.back().z, 3), true, [run](const QString& v) { run("ZDOWN=" + v); });
+        double cover = 1e9, l2 = 0;
+        for (std::size_t k = 0; k < ln.v.size(); ++k) {
+            cover = std::min(cover, ln.v[k].ground - ln.v[k].z - ln.dn / 2000.0);
+            if (k) l2 += std::hypot(ln.v[k].x - ln.v[k - 1].x, ln.v[k].y - ln.v[k - 1].y);
+        }
+        addField("DEPTH", t("gui.pp.ucover"), fmt(cover, 2), true, [run](const QString& v) { run("DEPTH=" + v); });
+        addSection(t("gui.pp.calc"));
+        addInfo(t("gui.pp.ukind"), kind + " · " + QString::fromStdString(ln.layer));
+        addInfo(t("gui.pp.len"), fmt(l2, 2) + " m (3D " + fmt(ln.length(), 2) + ")");
+        addInfo(t("gui.pp.uground"), fmt(ln.v.front().ground, 2) + " → " + fmt(ln.v.back().ground, 2));
+        const double minCover = p.minCover.count(ln.kind) ? p.minCover.at(ln.kind) : 0;
+        addInfo(t("gui.pp.cover"), fmt(cover, 2) + " m (≥ " + fmt(minCover, 2) + ")", cover + 1e-9 < minCover ? red : QColor());
+        if (l2 > 0) addInfo(t("gui.pp.slopepm"), fmt((ln.v.front().z - ln.v.back().z) / l2 * 1000, 2) + " ‰",
+                            civil::isGravity(ln.kind) && ln.v.back().z > ln.v.front().z ? red : QColor());
+        for (const auto& c : m.crossings) {
+            if (c.a != i && c.b != i) continue;
+            const auto& o = m.lines[static_cast<std::size_t>(c.a == i ? c.b : c.a)];
+            addInfo(t("gui.pp.ucross", {QString::fromStdString(loc_.tr(std::string("util.kind.") + civil::utilKey(o.kind)))}),
+                    fmt(c.clear, 2) + " m (≥ " + fmt(c.required, 2) + ")", c.clear + 1e-9 < c.required ? red : QColor());
+        }
+        for (const auto& is : m.issues)
+            if (is.line == i) addInfo(QStringLiteral("⚠"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? red : amber);
+        navRow(i > 0 ? QStringLiteral("util:main:line:%1").arg(i - 1) : QString(),
+               i + 1 < static_cast<int>(m.lines.size()) ? QStringLiteral("util:main:line:%1").arg(i + 1) : QString(), "gui.pp.prevobj", "gui.pp.nextobj");
+        return true;
+    }
+    if (nodeS.isEmpty()) return false;
+    const int k = nodeS.toInt();
+    if (k < 0 || k >= static_cast<int>(m.nodes.size())) return false;
+    const auto& n = m.nodes[static_cast<std::size_t>(k)];
+    const QString cmd = QStringLiteral("OBJEDIT UTIL NODE=%1 ").arg(k + 1), tag = QStringLiteral("util:main:node:%1").arg(k);
+    auto run = [this, cmd, tag](const QString& kv) { emit edit(cmd + kv, tag); };
+    addSection(t("gui.pp.unode", {n.name.empty() ? QString::number(k + 1) : QString::fromStdString(n.name)}));
+    addField("NAME", t("gui.pp.name"), QString::fromStdString(n.name), true, [run](const QString& v) { run("\"NAME=" + v + "\""); });
+    addField("GROUND", t("gui.pp.rim"), fmt(n.ground, 3), true, [run](const QString& v) { run("GROUND=" + v); });
+    addField("BOTTOM", t("gui.pp.ubottom"), fmt(n.bottom, 3), true, [run](const QString& v) { run("BOTTOM=" + v); });
+    addSection(t("gui.pp.calc"));
+    addInfo(t("gui.pp.mhdepth"), fmt(n.ground - n.bottom, 2) + " m");
+    if (n.estimated) addInfo(QStringLiteral("⚠"), t("gui.pp.uestimated"), amber);
+    QStringList inv;
+    for (double v : n.inverts) inv << fmt(v, 3);
+    if (!inv.isEmpty()) addInfo(t("gui.pp.uinverts"), inv.join(", "));
+    navRow(k > 0 ? QStringLiteral("util:main:node:%1").arg(k - 1) : QString(),
+           k + 1 < static_cast<int>(m.nodes.size()) ? QStringLiteral("util:main:node:%1").arg(k + 1) : QString(), "gui.pp.prevobj", "gui.pp.nextobj");
+    return true;
+}
+
+bool SmartPanel::buildRoad(EntityId id) {
+    const IEntity* e = doc_.find(id);
+    const std::string js = doc_.dictGet("road:main");
+    if (js.empty() || e->xget("st").empty()) return false;
+    civil::RoadModel m;
+    auto p = civil::defaultRoadParams();
+    try { civil::roadFromJson(js, m, p); } catch (...) { return false; }
+    const int i = QString::fromStdString(e->xget("st")).toInt();
+    if (i < 0 || i >= static_cast<int>(m.st.size())) return false;
+    const auto& s = m.st[static_cast<std::size_t>(i)];
+    const QString cmd = QStringLiteral("OBJEDIT ROAD ST=%1 ").arg(i + 1), tag = QStringLiteral("road:main:st:%1").arg(i);
+    auto run = [this, cmd, tag](const QString& kv) { emit edit(cmd + kv, tag); };
+    addSection(t("gui.pp.rst", {QString::fromStdString(civil::pk(s.s))}));
+    addField("DESIGN", t("gui.pp.design"), fmt(s.design, 3), true, [run](const QString& v) { run("DESIGN=" + v); });
+    addSection(t("gui.pp.calc"));
+    addInfo(t("gui.pp.ground"), fmt(s.ground, 3));
+    const double w = s.design - s.ground;
+    addInfo(t("gui.pp.work"), (w >= 0 ? "+" : "") + fmt(w, 2) + " m", w >= 0 ? QColor(220, 90, 70) : QColor(70, 140, 220));
+    addInfo(t("gui.pp.grade"), fmt(s.grade * 1000, 1) + " ‰", std::abs(s.grade) > p.cat.maxGrade + 1e-9 ? QColor(232, 80, 80) : QColor());
+    addInfo(t("gui.pp.cutfill"), fmt(s.cutArea, 2) + " / " + fmt(s.fillArea, 2) + " m²");
+    addInfo(t("gui.pp.control"), QString::fromStdString(loc_.keywordName(s.control ? "ON" : "OFF")));
+    for (const auto& is : m.issues)
+        if (std::abs(is.s - s.s) < 1e-6) addInfo(QStringLiteral("⚠"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? QColor(232, 80, 80) : QColor(230, 160, 40));
+    navRow(i > 0 ? QStringLiteral("road:main:st:%1").arg(i - 1) : QString(),
+           i + 1 < static_cast<int>(m.st.size()) ? QStringLiteral("road:main:st:%1").arg(i + 1) : QString(), "gui.pp.prevpk", "gui.pp.nextpk");
+    return true;
+}
+
+bool SmartPanel::buildWw(EntityId id) {
+    const IEntity* e = doc_.find(id);
+    const std::string js = doc_.dictGet("ww:main");
+    if (js.empty() || e->xget("st").empty()) return false;
+    civil::WwModel m;
+    auto p = civil::defaultWwParams();
+    try { civil::wwFromJson(js, m, p); } catch (...) { return false; }
+    const int i = QString::fromStdString(e->xget("st")).toInt();
+    if (i < 0 || i >= static_cast<int>(m.st.size())) return false;
+    const auto& s = m.st[static_cast<std::size_t>(i)];
+    const QString cmd = QStringLiteral("OBJEDIT WW ST=%1 ").arg(i + 1), tag = QStringLiteral("ww:main:st:%1").arg(i);
+    auto run = [this, cmd, tag](const QString& kv) { emit edit(cmd + kv, tag); };
+    addSection(t("gui.pp.wst", {QString::fromStdString(civil::pk(s.s)), QString::fromStdString(p.sec.name)}));
+    addField("BOTTOM", t("gui.pp.wbottom"), fmt(s.bottom, 3), true, [run](const QString& v) { run("BOTTOM=" + v); });
+    addSection(t("gui.pp.calc"));
+    addInfo(t("gui.pp.ground"), fmt(s.ground, 3));
+    addInfo(t("gui.pp.wdepth"), fmt(s.ground - s.bottom, 2) + " m");
+    addInfo(t("gui.pp.slopepm"), fmt(s.slope * 1000, 2) + " ‰", s.slope <= 0 && !civil::wwOpen(p.sec.type) ? QColor(232, 80, 80) : QColor());
+    if (s.depthN > 0) addInfo(t("gui.pp.wnormal"), fmt(s.depthN, 3) + " m");
+    addInfo(t("gui.pp.wwater"), fmt(s.water, 3));
+    addInfo(t("gui.pp.wvel"), fmt(s.v, 2) + " m/s · Fr " + fmt(s.fr, 2),
+            (s.v > 0 && (s.v < p.sec.vmin || s.v > p.sec.vmax)) ? QColor(230, 160, 40) : QColor());
+    addInfo(t("gui.pp.cutfill"), fmt(s.cut, 2) + " / " + fmt(s.fill, 2) + " m²");
+    for (const auto& is : m.issues)
+        if (std::abs(is.s - s.s) < 1e-6) addInfo(QStringLiteral("⚠"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? QColor(232, 80, 80) : QColor(230, 160, 40));
+    navRow(i > 0 ? QStringLiteral("ww:main:st:%1").arg(i - 1) : QString(),
+           i + 1 < static_cast<int>(m.st.size()) ? QStringLiteral("ww:main:st:%1").arg(i + 1) : QString(), "gui.pp.prevpk", "gui.pp.nextpk");
     return true;
 }
 

@@ -23,6 +23,7 @@
 #include "icons.h"
 
 #include <asiacad/civil/drive.h>
+#include <asiacad/civil/pipe_catalog.h>
 #include <asiacad/core/entities.h>
 
 #include <functional>
@@ -96,6 +97,7 @@ const ActDef kActs[] = {
     {"offset", "offset", "gui.act.offset", true},  {"trim", "trim", "gui.act.trim", true},
     {"extend", "extend", "gui.act.extend", true},  {"fillet", "fillet", "gui.act.fillet", true},
     {"sewer", "pipes", "gui.act.sewer", false},
+    {"pipedraw", "pipedraw", "gui.act.pipedraw", false},
     {"building", "bim", "gui.act.building", false},
     {"rebar", "rebar", "gui.act.rebar", false},
     {"util", "util", "gui.act.util", false},
@@ -202,6 +204,7 @@ QString toolKey(Tool t) {
     case Tool::MatchProp: return "matchprop";
     case Tool::Leader: return "leader";
     case Tool::DimAngular: return "dimangular";
+    case Tool::PipeDraw: return "pipedraw";
     case Tool::Symbol:
     case Tool::LayPick:
     case Tool::SteelBeam:
@@ -334,7 +337,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.26"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.27"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -356,7 +359,7 @@ QIcon MainWindow::icon(const QString& name) const {
         static const QHash<QString, QString> tint = {
             {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
             {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
+            {"pipes", "#1F7BE0"}, {"pipedraw", "#1F7BE0"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
             {"rect", "#1C8C6E"}, {"polygon", "#1C8C6E"}, {"ellipse", "#1C8C6E"}, {"spline", "#1C8C6E"}, {"hatch", "#1C8C6E"}, {"symbols", "#3E9B3A"}, {"steel", "#4F6D8A"},
             {"steelframe", "#4F6D8A"}, {"stairtpl", "#D9466A"}, {"ramptpl", "#E7881B"}, {"rwalltpl", "#8A7B5C"}, {"geoplace", "#0E9F8E"},
             {"ptimport", "#0E9F8E"}, {"ptexport", "#0E9F8E"}, {"devplan", "#0E9F8E"}, {"devvert", "#0E9F8E"}, {"devheight", "#0E9F8E"},
@@ -419,6 +422,7 @@ void MainWindow::buildActions() {
     connect(act_["grid"], &QAction::toggled, this, [this](bool on) { view_->setGridVisible(on); });
     connect(act_["palette"], &QAction::triggered, this, [this] { palette_->open(view_); });
     connect(act_["sewer"], &QAction::triggered, this, [this] { openSewer(); });
+    connect(act_["pipedraw"], &QAction::triggered, this, [this] { pipeDrawDialog(); });
     connect(act_["building"], &QAction::triggered, this, [this] { openBuilding(); });
     connect(act_["rebar"], &QAction::triggered, this, [this] { openRebar(); });
     connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
@@ -560,7 +564,7 @@ void MainWindow::buildRibbon() {
         auto* ic = new QLabel(brand);
         ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
         auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.26</span>"),
+                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.27</span>"),
                               brand);
         nm->setObjectName("brandName");
         nm->setTextFormat(Qt::RichText);
@@ -580,7 +584,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}, {"leader", "text"}},
                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
+        {"gui.grp.utilities", {{"gui.grp.utilities", {"pipedraw", "sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
         {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}}, {"gui.grp.earth", {"ewtin", "ewprofile", "ewsections", "ewcarto", "ewvolume"}},
                             {"gui.grp.deviation", {"devplan", "devvert", "devheight", "devaxis", "devpoint"}},
                             {"gui.grp.clean", {"devclear"}}, {"gui.grp.geo", {"geoplace"}}, {"gui.grp.history", {"undo", "redo"}}}},
@@ -1252,6 +1256,13 @@ bool MainWindow::selectTag(const QString& tag) {
     if (tag.startsWith("ids:")) {
         for (const QString& p : tag.mid(4).split(',', Qt::SkipEmptyParts))
             if (doc_.contains(p.toULongLong())) ids.push_back(p.toULongLong());
+    } else if (tag.startsWith("util:") || tag.startsWith("road:") || tag.startsWith("ww:")) {
+        const QStringList p = tag.split(':');  // util:main:line|node:i, road:main:st:i, ww:main:st:i
+        if (p.size() != 4) return false;
+        const std::string kind = p[0].toStdString(), name = p[1].toStdString(), key = p[2].toStdString(), idx = p[3].toStdString();
+        doc_.forEach([&](const IEntity& e) {
+            if (ids.empty() && e.xget(kind) == name && e.xget(key) == idx) ids.push_back(e.id());
+        });
     } else if (tag.startsWith("sewer:")) {
         const QStringList p = tag.split(':');  // sewer:NET:seg|mh:i
         if (p.size() != 4) return false;
@@ -1525,6 +1536,67 @@ void MainWindow::show3D(bool on) {
     }
     raise();
     activateWindow();
+}
+
+// ---------------------------------------------------------------- Quvur chizish (Civil 3D "Pipe Network" kabi)
+QString MainWindow::nextNetName(const QString& prefix) const {
+    for (int i = 1;; ++i) {
+        const QString n = prefix + QString::number(i);
+        if (doc_.dictGet("sewer:" + n.toStdString()).empty()) return n;
+    }
+}
+
+void MainWindow::startPipeDraw(const QString& args) {
+    show3D(false);
+    view_->setPipeArgs(args);
+    view_->setTool(Tool::PipeDraw);
+    view_->setFocus();
+}
+
+void MainWindow::pipeDrawDialog() {
+    QDialog dlg(this);
+    dlg.setWindowTitle(t("gui.act.pipedraw"));
+    auto* f = new QFormLayout(&dlg);
+    auto* sys = new QComboBox(&dlg);
+    sys->addItem(t("gui.pd.k1"), "K1");
+    sys->addItem(t("gui.pd.k2"), "K2");
+    auto* name = new QLineEdit(nextNetName("K1-"), &dlg);
+    connect(sys, &QComboBox::currentIndexChanged, &dlg, [this, sys, name](int) { name->setText(nextNetName(sys->currentData().toString() + "-")); });
+    auto* spec = new QComboBox(&dlg);
+    for (const auto& p : civil::PipeCatalog::builtin().specs()) spec->addItem(QString::fromStdString(p.label()), QString::fromStdString(p.id));
+    spec->setCurrentIndex(std::max(0, spec->findData(QStringLiteral("PVC-SN8-200"))));
+    auto* slope = new QDoubleSpinBox(&dlg);
+    slope->setRange(0, 200);
+    slope->setDecimals(1);
+    slope->setSpecialValueText(t("gui.pd.auto"));
+    slope->setSuffix(QStringLiteral(" ‰"));
+    auto* depth = new QDoubleSpinBox(&dlg);
+    depth->setRange(0.3, 15);
+    depth->setDecimals(2);
+    depth->setValue(1.8);
+    depth->setSuffix(QStringLiteral(" m"));
+    auto* rim = new QLineEdit(&dlg);
+    rim->setPlaceholderText(t("gui.pd.rimauto"));
+    f->addRow(t("gui.pd.sys"), sys);
+    f->addRow(t("gui.pd.name"), name);
+    f->addRow(t("gui.pp.spec"), spec);
+    f->addRow(t("gui.pp.slope"), slope);
+    f->addRow(t("gui.pd.depth"), depth);
+    f->addRow(t("gui.pd.rim"), rim);
+    auto* hint = new QLabel(t("gui.pd.hint"), &dlg);
+    hint->setWordWrap(true);
+    hint->setObjectName("muted");
+    f->addRow(hint);
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    f->addRow(bb);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted || name->text().trimmed().isEmpty()) return;
+    QString args = QStringLiteral("\"%1\" SYS=%2 SPEC=%3 DEPTH=%4").arg(name->text().trimmed(), sys->currentData().toString(), spec->currentData().toString())
+                       .arg(depth->value());
+    if (slope->value() > 0) args += QStringLiteral(" SLOPE=%1").arg(slope->value());
+    if (!rim->text().trimmed().isEmpty()) args += " RIM=" + rim->text().trimmed();
+    startPipeDraw(args);
 }
 
 // ---------------------------------------------------------------- Listlar (Revit Sheets)

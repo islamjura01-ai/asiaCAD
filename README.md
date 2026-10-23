@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.26: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.27: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,19 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Tuzatish paneli hamma modulda + quvurni sichqoncha bilan chizish (v0.27) — `OBJEDIT`, `PIPEDRAW`
+- **Yer osti tarmoqlari** (3D chizilgandan keyin chiziqni bosing): diametr, o'q belgisi boshi/oxiri (o'z oqimli tarmoqda oraliq uchlar chiziqli),
+  ko'mish (hamma uchlarda); turi, uzunlik, yer belgilari, eng kam ko'mish (normadan kam — qizil), nishablik (teskari — qizil),
+  **har bir kesishma va undagi vertikal masofa** (yetmasa — qizil), xatolar. Quduq: nomi, yer va tub belgisi, chuqurlik, yozuvdagi lotoklar.
+- **Yo'l** (3D ko'ndalang kesimni bosing): piketdagi loyiha belgisi (nazorat nuqtasi bo'ladi, qolganlari qayta hisoblanadi); yer, ishchi belgi
+  (+ to'kma / − kesma), bo'ylama nishablik (me'yordan oshsa — qizil), kesma/to'kma maydoni; ◀/▶ piketlar. Profil ham qayta chiziladi.
+- **Suv yo'li** (kesimni bosing): tub belgisi; yer, chuqurlik, nishablik, normal chuqurlik, suv sathi, tezlik va Fr, maydonlar.
+- **Quvur chizish** (Tarmoqlar → «Quvur chizish»): tizim (K1/K2), nom, material/Ø, nishablik (avto — normadan), boshlang'ich chuqurlik, yer belgisi
+  (bo'sh — chizmadagi syomka nuqtalaridan TIN). Chizmada quduqlarni oqim yo'nalishida bosing, Enter / o'ng tugma — tayyor: plan, profil, hisob.
+  Oxirgi quduqni mavjud tarmoq qudug'iga bossangiz — **ulanadi**: perepad sm da yoziladi, yangi quvur pastroq bo'lsa ogohlantirish.
+- Buyruq satri: `QUVURCHIZ K1-2 30,50 45,40 40,12 [SPEC=PVC-SN8-200] [SLOPE=7] [DEPTH=1.8] [RIM=..]`,
+  `OBYEKTTAHRIR UTIL LINE=3 DN=315 DEPTH=1.5`, `OBYEKTTAHRIR ROAD ST=5 DESIGN=101.2`, `OBYEKTTAHRIR WW ST=4 BOTTOM=480`.
 
 ## Tuzatish paneli — aqlli obyektlar (v0.26) — `core/props`, `apps/gui/smart_panel`, `SETPROP`, `PIPEEDIT`
 - **Xossalar** panelida tanlangan obyekt turiga qarab tahrirlanadigan maydonlar chiqadi; qiymatni yozib Enter — darhol chizmada (undo bilan).

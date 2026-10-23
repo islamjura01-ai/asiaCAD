@@ -29,6 +29,7 @@
 #include <QCheckBox>
 #include "smart_panel.h"
 #include <QLineEdit>
+#include <asiacad/civil/road.h>
 #include <asiacad/civil/sewer.h>
 #include <QMenu>
 #include <QKeyEvent>
@@ -1221,6 +1222,59 @@ int main(int argc, char** argv) {
         const auto* ln = static_cast<const LineEntity*>(w.document().find(lid));
         CHECK(ln && std::abs(ln->endPoint().x - 30) < 1e-9);
         CHECK(w.viewport()->selection().size() == 1);
+    }
+
+    // 33. Tuzatish paneli: yo'l piketi va yer osti chizig'i; quvurni sichqoncha bilan chizish (ulanish bilan)
+    {
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        SmartPanel* sp = w.smartPanel();
+        w.runLine(QStringLiteral("OPEN \"%1/yol.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
+        w.runLine("ROAD + 0,-80");
+        CHECK(w.selectTag("road:main:st:2"));
+        QLineEdit* des = sp->field("DESIGN");
+        CHECK(des && sp->title().contains("PK0+40"));
+        des->setText(QString::number(des->text().toDouble() + 1.0, 'f', 3));
+        const QString want = des->text();
+        emit des->editingFinished();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        CHECK(sp->field("DESIGN") && sp->field("DESIGN")->text() == want);   // o'sha piket qayta tanlangan
+        auto* nextPk = sp->findChild<QPushButton*>("nextpk");
+        CHECK(nextPk);
+        nextPk->click();
+        CHECK(sp->title().contains("PK0+60"));
+        w.runLine(QStringLiteral("OPEN \"%1/yer_osti.acad\" !").arg(ASIACAD_EXAMPLES_DIR));
+        w.runLine("UTIL +");
+        CHECK(w.selectTag("util:main:line:0") && sp->field("DN") && sp->field("DEPTH") && sp->field("ZUP"));
+        QLineEdit* dn = sp->field("DN");
+        dn->setText("315");
+        emit dn->editingFinished();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        CHECK(sp->field("DN") && sp->field("DN")->text() == "315");
+        // quvur chizish asbobi: 3 quduq, Enter; keyin shoxobcha — mavjud quduqqa ulanadi
+        w.runLine("NEW !");
+        w.runLine(QStringLiteral("PTIMPORT \"%1/geodeziya/yer_syomka.txt\"").arg(ASIACAD_EXAMPLES_DIR));
+        CHECK(w.nextNetName("K1-") == "K1-1");
+        w.startPipeDraw("K1-1 SYS=K1 SPEC=PVC-SN8-200 DEPTH=1.8");
+        Viewport* v = w.viewport();
+        CHECK(v->tool() == Tool::PipeDraw);
+        v->feedPoint({10, 10, 0});
+        v->feedPoint({40, 12, 0});
+        v->feedPoint({80, 15, 0});
+        v->finishTool();
+        CHECK(v->tool() == Tool::Select && !w.document().dictGet("sewer:K1-1").empty());
+        CHECK(w.nextNetName("K1-") == "K1-2");
+        w.startPipeDraw("K1-2 SYS=K1");
+        v->feedPoint({30, 50, 0});
+        v->feedPoint({40, 12, 0});
+        v->cancelTool();   // Esc ham 2+ nuqtada yakunlaydi
+        auto br = asiacad::civil::fromJson(w.document().dictGet("sewer:K1-2"));
+        CHECK(br.manholes.size() == 2 && br.manholes.back().name == "K1-1-2");
+        CHECK(w.selectTag("sewer:K1-2:seg:0") && sp->title().contains("K1-1-2"));
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

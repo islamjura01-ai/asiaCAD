@@ -1028,20 +1028,30 @@ std::vector<std::unique_ptr<IEntity>> drawUtilities3D(const UtilModel& m, double
         e->setLayer(layer);
         out.push_back(std::move(e));
     };
-    for (const auto& ln : m.lines) {
+    // aqlli obyekt bog'i (tuzatish paneli): util=main, line=i / node=k
+    auto tag = [&](std::size_t from, const char* k, std::size_t i) {
+        for (std::size_t j = from; j < out.size(); ++j) { out[j]->xset("util", "main"); out[j]->xset(k, std::to_string(i)); }
+    };
+    for (std::size_t i = 0; i < m.lines.size(); ++i) {
+        const auto& ln = m.lines[i];
         std::vector<Vec3> pts;
         for (const auto& v : ln.v) pts.push_back({v.x, v.y, v.z});
         put(std::make_unique<PolylineEntity>(pts, false), std::string("3D_") + utilKey(ln.kind));
+        tag(out.size() - 1, "line", i);
     }
-    for (const auto& n : m.nodes) {
+    for (std::size_t k = 0; k < m.nodes.size(); ++k) {
+        const auto& n = m.nodes[k];
+        const std::size_t first = out.size();
         put(std::make_unique<CircleEntity>(Vec3{n.x, n.y, n.ground}, n.r), std::string("3D_") + utilKey(n.kind));
         put(std::make_unique<LineEntity>(Vec3{n.x, n.y, n.bottom}, Vec3{n.x, n.y, n.ground}), std::string("3D_") + utilKey(n.kind));
+        tag(first, "node", k);
     }
     for (const auto& c : m.crossings) {
         if (c.clear + 1e-9 >= c.required) continue;
         put(std::make_unique<CircleEntity>(Vec3{c.x, c.y, 0}, h * 0.8), "3D_KESISHMA");
         put(std::make_unique<TextEntity>(Vec3{c.x + h, c.y + h, 0}, h, std::format("{} m < {} m", f2(c.clear), f2(c.required))), "3D_KESISHMA");
     }
+    for (auto& e : out) e->xset("util", "main");
     return out;
 }
 

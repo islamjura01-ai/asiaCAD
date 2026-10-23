@@ -45,6 +45,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPlainTextEdit>
@@ -322,7 +323,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.22"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.23"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -547,7 +548,7 @@ void MainWindow::buildRibbon() {
         auto* ic = new QLabel(brand);
         ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
         auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.22</span>"),
+                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.22<nbsp;0.23</span>"),
                               brand);
         nm->setObjectName("brandName");
         nm->setTextFormat(Qt::RichText);
@@ -886,51 +887,173 @@ void MainWindow::buildDocks() {
 }
 
 void MainWindow::buildStatusBar() {
+    // AutoCAD holat satri: MODEL | koordinata ... TO'R QADAM ORTO QUTB OSNAP OTRACK DYN | 1:100 | ⚙
     auto* sb = statusBar();
+    modelLbl_ = new QLabel(sb);
+    modelLbl_->setObjectName("modelTab");
+    modelLbl_->setStyleSheet(QStringLiteral("QLabel#modelTab{font-weight:700;padding:1px 8px;border:1px solid palette(mid);border-radius:3px;}"));
+    sb->addWidget(modelLbl_);
     coords_ = new QLabel(sb);
-    coords_->setMinimumWidth(260);
+    coords_->setMinimumWidth(240);
+    coords_->setFont(QFont(QStringLiteral("DejaVu Sans Mono"), 9));
     sb->addWidget(coords_);
-    for (const auto& s : kSnaps) {
-        auto* b = new QToolButton(sb);
-        b->setCheckable(true);
-        b->setChecked(view_->snapModes() & s.mode);
-        const unsigned m = s.mode;
-        connect(b, &QToolButton::toggled, this, [this, m](bool on) {
-            view_->setSnapModes(on ? (view_->snapModes() | m) : (view_->snapModes() & ~m));
-        });
-        snapBtns_.insert(s.mode, b);
-        sb->addPermanentWidget(b);
-    }
-    auto addToggle = [&](QToolButton*& b, Qt::Key key, auto setter) {
+
+    auto addToggle = [&](QToolButton*& b, const char* name, Qt::Key key, auto setter, bool on) {
         b = new QToolButton(sb);
+        b->setObjectName(QString::fromLatin1(name));
         b->setCheckable(true);
+        b->setChecked(on);
+        b->setAutoRaise(true);
         sb->addPermanentWidget(b);
         auto* a = new QAction(this);
         a->setShortcut(QKeySequence(key));
         a->setShortcutContext(Qt::ApplicationShortcut);
         addAction(a);
         connect(a, &QAction::triggered, b, &QToolButton::toggle);
-        connect(b, &QToolButton::toggled, this, [this, setter](bool on) {
-            if (!updatingUi_) (view_->*setter)(on);
-        });
+        if (setter)
+            connect(b, &QToolButton::toggled, this, [this, setter](bool v) {
+                if (!updatingUi_) (view_->*setter)(v);
+            });
     };
+    // TO'R (F7) — mavjud "grid" amali bilan bir xil holatda
+    gridBtn_ = new QToolButton(sb);
+    gridBtn_->setObjectName("grid");
+    gridBtn_->setCheckable(true);
+    gridBtn_->setAutoRaise(true);
+    gridBtn_->setChecked(view_->gridVisible());
+    sb->addPermanentWidget(gridBtn_);
+    connect(gridBtn_, &QToolButton::toggled, act_["grid"], &QAction::setChecked);
+    connect(act_["grid"], &QAction::toggled, gridBtn_, &QToolButton::setChecked);
+    // QADAM (F9) + qadam menyusi
+    addToggle(snapBtn_, "snap", Qt::Key_F9, &Viewport::setGridSnap, view_->gridSnap());
+    stepMenu_ = new QMenu(snapBtn_);
+    auto* stepGrp = new QActionGroup(stepMenu_);
+    for (double st : {0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0}) {
+        auto* a = stepMenu_->addAction(QString::number(st));
+        a->setCheckable(true);
+        a->setChecked(std::abs(st - view_->snapUnit()) < 1e-12);
+        stepGrp->addAction(a);
+        connect(a, &QAction::triggered, this, [this, st] {
+            view_->setSnapUnit(st);
+            if (!snapBtn_->isChecked()) snapBtn_->setChecked(true);
+            retranslateStatus();
+        });
+    }
+    snapBtn_->setMenu(stepMenu_);
+    snapBtn_->setPopupMode(QToolButton::MenuButtonPopup);
     auto* sep = new QFrame(sb);
     sep->setFrameShape(QFrame::VLine);
     sb->addPermanentWidget(sep);
-    addToggle(orthoBtn_, Qt::Key_F8, &Viewport::setOrtho);
-    addToggle(polarBtn_, Qt::Key_F10, &Viewport::setPolar);
+    // ORTO (F8, 90°) va QUTB (F10) + burchak menyusi
+    addToggle(orthoBtn_, "ortho", Qt::Key_F8, &Viewport::setOrtho, view_->ortho());
+    addToggle(polarBtn_, "polar", Qt::Key_F10, &Viewport::setPolar, view_->polar());
+    polarMenu_ = new QMenu(polarBtn_);
+    auto* angGrp = new QActionGroup(polarMenu_);
+    for (double ang : {90.0, 45.0, 30.0, 22.5, 18.0, 15.0, 10.0, 5.0}) {
+        auto* a = polarMenu_->addAction(QStringLiteral("%1°").arg(ang));
+        a->setCheckable(true);
+        a->setChecked(std::abs(ang - view_->polarStep()) < 1e-9);
+        angGrp->addAction(a);
+        connect(a, &QAction::triggered, this, [this, ang] {
+            view_->setPolarStep(ang);
+            if (!polarBtn_->isChecked()) polarBtn_->setChecked(true);
+            retranslateStatus();
+        });
+    }
+    polarBtn_->setMenu(polarMenu_);
+    polarBtn_->setPopupMode(QToolButton::MenuButtonPopup);
     connect(view_, &Viewport::orthoPolarChanged, this, [this](bool o, bool p) {
         updatingUi_ = true;
         orthoBtn_->setChecked(o);
         polarBtn_->setChecked(p);
         updatingUi_ = false;
     });
+    // OSNAP (F3) — umumiy kalit, menyuda rejimlar (magnitlar)
+    addToggle(osnapBtn_, "osnap", Qt::Key_F3, &Viewport::setOsnap, view_->osnap());
+    osnapMenu_ = new QMenu(osnapBtn_);
+    for (const auto& sn : kSnaps) {
+        auto* a = osnapMenu_->addAction(QString());
+        a->setCheckable(true);
+        a->setChecked(view_->snapModes() & sn.mode);
+        const unsigned m = sn.mode;
+        connect(a, &QAction::toggled, this, [this, m](bool on) {
+            view_->setSnapModes(on ? (view_->snapModes() | m) : (view_->snapModes() & ~m));
+            if (on && !osnapBtn_->isChecked()) osnapBtn_->setChecked(true);
+        });
+        snapActs_.insert(sn.mode, a);
+    }
+    osnapBtn_->setMenu(osnapMenu_);
+    osnapBtn_->setPopupMode(QToolButton::MenuButtonPopup);
+    addToggle(otrackBtn_, "otrack", Qt::Key_F11, &Viewport::setOtrack, view_->otrack());
+    addToggle(dynBtn_, "dyn", Qt::Key_F12, &Viewport::setDyn, view_->dyn());
+    auto* sep2 = new QFrame(sb);
+    sep2->setFrameShape(QFrame::VLine);
+    sb->addPermanentWidget(sep2);
+    // Izoh masshtabi: o'lcham/matn balandligi = 2,5 mm × masshtab
+    annoBox_ = new QComboBox(sb);
+    annoBox_->setObjectName("annoScale");
+    annoBox_->addItem(QString(), 0.0);
+    for (int d : {1, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000}) annoBox_->addItem(QStringLiteral("1:%1").arg(d), double(d));
+    sb->addPermanentWidget(annoBox_);
+    connect(annoBox_, &QComboBox::activated, this, [this](int i) { view_->setAnnoScale(annoBox_->itemData(i).toDouble()); });
+    // ⚙ sozlamalar: nishon o'lchami
+    gearBtn_ = new QToolButton(sb);
+    gearBtn_->setObjectName("gear");
+    gearBtn_->setAutoRaise(true);
+    gearBtn_->setText(QStringLiteral("⚙"));
+    gearBtn_->setPopupMode(QToolButton::InstantPopup);
+    gearMenu_ = new QMenu(gearBtn_);
+    gearBtn_->setMenu(gearMenu_);
+    sb->addPermanentWidget(gearBtn_);
+    connect(gearMenu_, &QMenu::aboutToShow, this, [this] {
+        gearMenu_->clear();
+        auto* cm = gearMenu_->addMenu(t("gui.status.cursor"));
+        auto* g = new QActionGroup(cm);
+        for (int pct : {3, 5, 10, 25, 50, 100}) {
+            auto* a = cm->addAction(QStringLiteral("%1%").arg(pct));
+            a->setCheckable(true);
+            a->setChecked(view_->crosshairSize() == pct);
+            g->addAction(a);
+            connect(a, &QAction::triggered, this, [this, pct] { view_->setCrosshairSize(pct); });
+        }
+        gearMenu_->addAction(t("gui.act.view3d"), this, [this] { show3D(true); });
+    });
+
     modeBox_ = new QComboBox(sb);
     langBox_ = new QComboBox(sb);
     sb->addPermanentWidget(modeBox_);
     sb->addPermanentWidget(langBox_);
     connect(modeBox_, &QComboBox::activated, this, [this](int i) { setMode(static_cast<UiMode>(modeBox_->itemData(i).toInt())); });
     connect(langBox_, &QComboBox::activated, this, [this](int i) { setLanguage(langBox_->itemData(i).toString()); });
+    connect(view_, &Viewport::request3D, this, [this] { show3D(true); });
+    connect(view_, &Viewport::repeatRequested, this, [this] {
+        if (cmdHistory_.isEmpty()) return;  // oxirgi buyruq satrga qo'yiladi — Enter bilan bajariladi
+        cmdEdit_->setText(cmdHistory_.last());
+        cmdEdit_->setFocus();
+    });
+}
+
+QToolButton* MainWindow::statusButton(const char* name) const {
+    return statusBar()->findChild<QToolButton*>(QString::fromLatin1(name));
+}
+
+void MainWindow::retranslateStatus() {
+    auto set = [this](QToolButton* b, const char* key, const QString& keyName, const QString& extra = {}) {
+        b->setText(t(key));
+        b->setToolTip(t(key) + " (" + keyName + ")" + extra);
+    };
+    modelLbl_->setText(t("gui.status.model"));
+    set(gridBtn_, "gui.status.grid", "F7");
+    set(snapBtn_, "gui.status.snap", "F9", QStringLiteral(" — %1").arg(view_->snapUnit()));
+    set(orthoBtn_, "gui.status.ortho", "F8", QStringLiteral(" — 90°"));
+    set(polarBtn_, "gui.status.polar", "F10", QStringLiteral(" — %1°").arg(view_->polarStep()));
+    set(osnapBtn_, "gui.status.osnap", "F3");
+    set(otrackBtn_, "gui.status.otrack", "F11");
+    set(dynBtn_, "gui.status.dyn", "F12");
+    for (const auto& s : kSnaps) snapActs_[s.mode]->setText(QString::fromStdString(loc_.keywordName(s.name)));
+    annoBox_->setItemText(0, t("gui.status.annoauto"));
+    annoBox_->setToolTip(t("gui.status.anno"));
+    gearBtn_->setToolTip(t("gui.status.settings"));
 }
 
 void MainWindow::setMode(UiMode m) {
@@ -993,16 +1116,7 @@ void MainWindow::retranslate() {
     if (symPal_) symPal_->retranslate();
     propsDock_->setWindowTitle(t("gui.panel.props"));
     cmdDock_->setWindowTitle(t("gui.panel.command"));
-    for (const auto& s : kSnaps) {
-        // tor holat bayrog'i: uzun nomlar (ТОЧКАВСТАВКИ) 5 harfgacha, to'liq nomi — maslahatda
-        const QString full = QString::fromStdString(loc_.keywordName(s.name));
-        snapBtns_[s.mode]->setText(full.size() > 6 ? full.left(5) + "." : full);
-        snapBtns_[s.mode]->setToolTip(full);
-    }
-    orthoBtn_->setText(t("gui.status.ortho"));
-    orthoBtn_->setToolTip(t("gui.status.ortho") + " (F8)");
-    polarBtn_->setText(t("gui.status.polar"));
-    polarBtn_->setToolTip(t("gui.status.polar") + QStringLiteral(" (F10) — %1°").arg(view_->polarStep()));
+    retranslateStatus();
     modeBox_->clear();
     modeBox_->addItem(t("gui.mode.classic"), static_cast<int>(UiMode::Classic));
     modeBox_->addItem(t("gui.mode.module"), static_cast<int>(UiMode::Module));
@@ -1892,7 +2006,11 @@ void MainWindow::startCommand(const QString& canonical) {
 void MainWindow::submitCommandLine() {
     const QString text = cmdEdit_->text().trimmed();
     cmdEdit_->clear();
-    if (text.isEmpty()) { view_->finishTool(); view_->setFocus(); return; }
+    if (text.isEmpty()) {  // bo'sh Enter: asbob faol — yakunlash, aks holda oxirgisini takrorlash (AutoCAD)
+        if (view_->tool() != Tool::Select) view_->finishTool(); else view_->repeatLast();
+        view_->setFocus();
+        return;
+    }
     cmdHistory_ << text;
     cmdHistoryPos_ = cmdHistory_.size();
     // Asbob faol bo'lsa: "x,y" yoki "@dx,dy" — nuqta sifatida

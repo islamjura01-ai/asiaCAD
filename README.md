@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.22: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.23: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,17 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## AutoCAD uslubidagi sichqoncha va yordamchilar (v0.23) — `apps/gui/viewport`
+- **UCS belgisi** pastki chap burchakda: X (qizil) va Y (yashil) o'qlar harflari bilan, kvadrat — WCS.
+- **Kompas (2D ViewCube)** yuqori o'ngda: N/E/S/W (ru: С/В/Ю/З), markazda TEPA; bosish — hammasini ko'rsatish, ikki marta — 3D model.
+- **Sichqoncha**: g'ildirak — kursor atrofida zoom; o'rta tugma — siljitish; o'rta tugmani **ikki marta** — Hammasi (ZOOM E);
+  o'ng tugma — buyruqda Enter, bo'sh holatda kontekst menyu (Ko'chirish, Nusxa, Burish, Masshtab, Ko'zgu, O'chirish / Takrorlash, Bekor, Qaytarish, Hammasini tanlash);
+  **Shift+o'ng** — bir martalik bog'lanish (END, MID, CEN, …); bo'sh joyni bosish — ramka, ikkinchi bosish yakunlaydi (chapdan o'ngga WINDOW, o'ngdan chapga CROSSING).
+- **Klaviatura**: Space/Enter — buyruqni yakunlash yoki oxirgisini takrorlash; Space ushlab sudrash — siljitish; Shift ushlansa ORTO vaqtincha teskari.
+- **Holat satri**: MODEL · koordinata · TO'R (F7) · QADAM (F9, qadam menyusi 0,01…10) · ORTO (F8, 90°) · QUTB (F10, 90/45/30/22,5/18/15/10/5°) ·
+  OSNAP (F3, menyuda magnit rejimlari) · OTRACK (F11 — bog'lanish nuqtasida 0,35 s turing, yashil "+" chiqadi; undan gorizontal/vertikal nurlar) ·
+  DYN (F12 — kursor yonida X/Y, keyin uzunlik < burchak) · izoh masshtabi (1:100 → o'lcham matni 0,25 m) · ⚙ nishon o'lchami (3…100 %).
 
 ## Bino fasadi va 3D boshqaruv (v0.22)
 

@@ -29,6 +29,7 @@ class QPlainTextEdit;
 class QTabWidget;
 class QToolBar;
 class QToolButton;
+class QMenu;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QWidget;
@@ -104,6 +105,7 @@ private:
     void buildDocks();
     void buildStatusBar();
     void retranslate();
+    void retranslateStatus();
     void applyTheme();
     void refreshLayers();
     void refreshProperties();
@@ -172,9 +174,25 @@ private:
     QLabel* coords_ = nullptr;
     QComboBox* modeBox_ = nullptr;
     QComboBox* langBox_ = nullptr;
-    QHash<unsigned, QToolButton*> snapBtns_;
+    // AutoCAD uslubidagi holat satri
+    QLabel* modelLbl_ = nullptr;
+    QHash<unsigned, QAction*> snapActs_;
+    QToolButton* gridBtn_ = nullptr;
+    QToolButton* snapBtn_ = nullptr;
     QToolButton* orthoBtn_ = nullptr;
     QToolButton* polarBtn_ = nullptr;
+    QToolButton* osnapBtn_ = nullptr;
+    QToolButton* otrackBtn_ = nullptr;
+    QToolButton* dynBtn_ = nullptr;
+    QToolButton* gearBtn_ = nullptr;
+    QComboBox* annoBox_ = nullptr;
+    QMenu* stepMenu_ = nullptr;
+    QMenu* polarMenu_ = nullptr;
+    QMenu* osnapMenu_ = nullptr;
+    QMenu* gearMenu_ = nullptr;
+public:
+    QToolButton* statusButton(const char* name) const;  // sinov uchun: "grid","snap","ortho","polar","osnap","otrack","dyn"
+private:
     QStringList cmdHistory_;
     int cmdHistoryPos_ = 0;
     bool updatingUi_ = false;

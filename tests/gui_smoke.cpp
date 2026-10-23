@@ -24,6 +24,8 @@
 #include <QPushButton>
 #include <QListWidget>
 #include <QToolButton>
+#include <QMenu>
+#include <QKeyEvent>
 #include <QTabWidget>
 #include <QTableWidget>
 
@@ -1011,6 +1013,86 @@ int main(int argc, char** argv) {
         ed->close();
     }
 
+
+    // 30. AutoCAD uslubi: holat satri, QADAM, OTRACK, bosish-bosish ramkasi, g'ildirak 2× — Extents, kompas, takrorlash
+    {
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        Viewport* v = w.viewport();
+        Document& doc = w.document();
+        for (const char* n : {"grid", "snap", "ortho", "polar", "osnap", "otrack", "dyn"}) CHECK(w.statusButton(n) != nullptr);
+        CHECK(w.statusButton("osnap")->isChecked() && v->osnap() && v->otrack() && v->dyn() && !v->gridSnap());
+        CHECK(w.statusButton("osnap")->menu() && w.statusButton("osnap")->menu()->actions().size() == 10);
+        w.statusButton("osnap")->toggle();
+        CHECK(!v->osnap());
+        w.statusButton("snap")->toggle();
+        CHECK(v->gridSnap());
+        v->setView({100, 200, 0}, 20);
+        // QADAM: 1 m to'rga tortiladi
+        w.activateTool("line");
+        click(v, {100.3, 200.4, 0});
+        click(v, {105.6, 200.2, 0});
+        v->finishTool();
+        const LineEntity* gl = lastLine(doc);
+        CHECK(gl && std::abs(gl->startPoint().x - 100) < 1e-9 && std::abs(gl->startPoint().y - 200) < 1e-9 && std::abs(gl->endPoint().x - 106) < 1e-9);
+        w.statusButton("snap")->toggle();
+        // OTRACK: olingan nuqta (110,190) — kursor x≈110 bo'lsa vertikal nurga tushadi
+        w.activateTool("line");
+        click(v, {100, 205, 0});
+        v->addTrackPoint({110, 190, 0});
+        CHECK(v->trackPoints().size() == 1);
+        click(v, {110.15, 208.37, 0});
+        v->finishTool();
+        gl = lastLine(doc);
+        CHECK(gl && std::abs(gl->endPoint().x - 110) < 1e-9 && std::abs(gl->endPoint().y - 208.37) < 0.06);
+        CHECK(v->trackPoints().empty());
+        w.statusButton("osnap")->toggle();
+        CHECK(v->osnap());
+        // takrorlash: bo'sh holatda Enter — oxirgi asbob
+        CHECK(v->tool() == Tool::Select && v->lastTool() == Tool::Line);
+        QKeyEvent ret(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(v, &ret);
+        CHECK(v->tool() == Tool::Line);
+        v->cancelTool();
+        // bosish-bosish ramkasi (PICKDRAG=0): bo'sh joy — ramka boshlanadi, ikkinchi bosish yakunlaydi
+        v->setSelection({});
+        click(v, {98, 210, 0});
+        CHECK(v->windowPending() && v->selection().empty());
+        click(v, {112, 199, 0});
+        CHECK(!v->windowPending() && v->selection().size() == 2);
+        // kontekst menyu: tanlov bilan — tahrir amallari
+        QMenu* cm = v->contextMenu(nullptr);
+        CHECK(cm->actions().size() >= 8);
+        delete cm;
+        v->setSelection({});
+        cm = v->contextMenu(nullptr);
+        CHECK(cm->actions().size() >= 5);
+        delete cm;
+        // g'ildirakni ikki marta bosish — ZOOM Extents
+        v->setView({5000, 5000, 0}, 0.5);
+        const QPointF mid(v->width() / 2.0, v->height() / 2.0);
+        QMouseEvent dbl(QEvent::MouseButtonDblClick, mid, v->mapToGlobal(mid), Qt::MiddleButton, Qt::MiddleButton, Qt::NoModifier);
+        QApplication::sendEvent(v, &dbl);
+        const BBox ext = doc.extents(true);
+        CHECK(QLineF(v->toScreen({(ext.min.x + ext.max.x) / 2, (ext.min.y + ext.max.y) / 2, 0}), mid).length() < 2);
+        // kompas: TOP ikki marta — 3D
+        const QPointF tc = v->compassTopRect().center();
+        QMouseEvent dbl2(QEvent::MouseButtonDblClick, tc, v->mapToGlobal(tc), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(v, &dbl2);
+        CHECK(w.is3D());
+        w.show3D(false);
+        // izoh masshtabi 1:100 — o'lcham matni 0,25 m
+        auto* ab = w.findChild<QComboBox*>("annoScale");
+        CHECK(ab && ab->itemText(0) == QString::fromStdString(loc.tr("gui.status.annoauto")));
+        v->setAnnoScale(100);
+        CHECK(std::abs(v->dimTextHeight() - 0.25) < 1e-12);
+        v->setAnnoScale(0);
+        v->setCrosshairSize(100);
+        CHECK(v->crosshairSize() == 100);
+        v->setCrosshairSize(5);
+    }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

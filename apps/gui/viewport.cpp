@@ -8,6 +8,8 @@
 
 #include <QFontMetricsF>
 #include <QKeyEvent>
+#include <QMenu>
+#include <QTimer>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -21,6 +23,11 @@ namespace asiacad::gui {
 namespace {
 constexpr double kMinScale = 1e-6, kMaxScale = 1e6;
 constexpr std::size_t kMaxGripObjects = 200;  // AutoCAD GRIPOBJLIMIT kabi
+constexpr double kCompassR = 38.0;              // kompas halqasi radiusi (px)
+const struct { unsigned mode; const char* name; } kSnapNames[] = {
+    {SnapEnd, "END"}, {SnapMid, "MID"}, {SnapCen, "CEN"}, {SnapQua, "QUA"}, {SnapInt, "INT"},
+    {SnapPer, "PER"}, {SnapTan, "TAN"}, {SnapNea, "NEA"}, {SnapNod, "NOD"}, {SnapIns, "INS"},
+};
 
 QString num(double v) {
     QString s = QString::number(v, 'f', 6);
@@ -35,6 +42,95 @@ Viewport::Viewport(Document& doc, const i18n::Localizer& loc, QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::BlankCursor);
     setMinimumSize(320, 240);
+    // OTRACK: kursor bog'lanish nuqtasida ~0,35 s tursa nuqta "olinadi" (yashil +), yana tursa — olib tashlanadi
+    hoverTimer_ = new QTimer(this);
+    hoverTimer_->setSingleShot(true);
+    hoverTimer_->setInterval(350);
+    connect(hoverTimer_, &QTimer::timeout, this, [this] {
+        if (otrack_ && hoverSnap_ && tool_ != Tool::Select && !isModifyTool()) addTrackPoint(*hoverSnap_);
+    });
+}
+
+void Viewport::addTrackPoint(const Vec3& p) {
+    auto it = std::find_if(tracked_.begin(), tracked_.end(), [&](const Vec3& q) { return q.distanceTo(p) < 1e-9; });
+    if (it != tracked_.end()) tracked_.erase(it);
+    else {
+        tracked_.push_back(p);
+        if (tracked_.size() > 7) tracked_.erase(tracked_.begin());  // AutoCAD: 7 tagacha
+    }
+    updateSnap(mouse_);
+    update();
+}
+
+bool Viewport::repeatLast() {
+    if (tool_ != Tool::Select) return false;
+    if (lastTool_ == Tool::Select) { emit repeatRequested(); return false; }
+    setTool(lastTool_);
+    return tool_ == lastTool_;
+}
+
+QPointF Viewport::compassCenter() const { return {width() - kCompassR - 26.0, kCompassR + 22.0}; }
+
+QRectF Viewport::compassTopRect() const {
+    const QPointF c = compassCenter();
+    return {c.x() - 19, c.y() - 15, 38, 30};
+}
+
+bool Viewport::overCompass(const QPointF& s) const {
+    const QPointF c = compassCenter();
+    if (QLineF(c, s).length() <= kCompassR + 12) return true;
+    return QRectF(c.x() - 30, c.y() + kCompassR + 8, 60, 20).contains(s);  // WCS yozuvi
+}
+
+QMenu* Viewport::snapMenu(QWidget* parent) {
+    auto* m = new QMenu(parent);
+    m->setAttribute(Qt::WA_DeleteOnClose);
+    m->setObjectName("snapMenu");
+    for (const auto& sn : kSnapNames) {
+        const unsigned mode = sn.mode;
+        m->addAction(QString::fromStdString(loc_.keywordName(sn.name)), this, [this, mode] { setSnapOverride(mode); });
+    }
+    m->addSeparator();
+    m->addAction(QString::fromStdString(loc_.tr("gui.ctx.nosnap")), this, [this] { setSnapOverride(0); osnapOn_ = false; updateSnap(mouse_); update(); });
+    return m;
+}
+
+QMenu* Viewport::contextMenu(QWidget* parent) {
+    auto* m = new QMenu(parent);
+    m->setAttribute(Qt::WA_DeleteOnClose);
+    m->setObjectName("viewContext");
+    auto tr = [this](const char* k) { return QString::fromStdString(loc_.tr(k)); };
+    if (tool_ != Tool::Select) {
+        m->addAction(tr("gui.ctx.enter"), this, [this] { finishTool(); });
+        m->addAction(tr("gui.ctx.cancel"), this, [this] { cancelTool(); });
+        m->addSeparator();
+        m->addMenu(snapMenu(m))->setText(tr("gui.ctx.snapover"));
+        return m;
+    }
+    if (!sel_.empty()) {
+        const struct { const char* key; Tool t; } tools[] = {{"gui.act.move", Tool::Move}, {"gui.act.copy", Tool::Copy}, {"gui.act.rotate", Tool::Rotate},
+                                                            {"gui.act.scale", Tool::Scale}, {"gui.act.mirror", Tool::Mirror}};
+        for (const auto& t : tools) {
+            const Tool tt = t.t;
+            m->addAction(tr(t.key), this, [this, tt] { setTool(tt); });
+        }
+        m->addAction(tr("gui.act.erase"), this, [this] { emit runCommand("ERASE " + selArg()); });
+        m->addSeparator();
+        m->addAction(tr("gui.ctx.deselect"), this, [this] { setSelection({}); });
+    } else {
+        if (lastTool_ != Tool::Select) m->addAction(tr("gui.ctx.repeat"), this, [this] { repeatLast(); });
+        m->addAction(tr("gui.act.undo"), this, [this] { emit runCommand("UNDO"); });
+        m->addAction(tr("gui.act.redo"), this, [this] { emit runCommand("REDO"); });
+        m->addSeparator();
+        m->addAction(tr("gui.ctx.selall"), this, [this] {
+            std::vector<EntityId> ids;
+            for (EntityId id : doc_.ids()) if (doc_.isEditable(id)) ids.push_back(id);
+            setSelection(ids);
+        });
+    }
+    m->addSeparator();
+    m->addAction(tr("gui.act.extents"), this, [this] { zoomExtents(); });
+    return m;
 }
 
 void Viewport::setTheme(const Theme& t) {
@@ -84,9 +180,13 @@ void Viewport::setTool(Tool t) {
         return;
     }
     tool_ = t;
+    if (t != Tool::Select && t != Tool::Grip && t != Tool::Pick) lastTool_ = t;
     pts_.clear();
     snap_.reset();
     track_.reset();
+    tracked_.clear();
+    snapOverride_ = 0;
+    boxPending_ = boxing_ = false;
     dimTarget_ = kInvalidId;
     modTarget_ = kInvalidId;
     dimH_ = 0;
@@ -119,6 +219,7 @@ void Viewport::setPolar(bool on) {
 
 double Viewport::dimTextHeight() const {
     if (dimH_ > 0) return dimH_;  // chizmadagi mavjud o'lchamlar bilan bir xil
+    if (annoScale_ > 0) return 2.5 * annoScale_ / 1000.0;  // izoh masshtabi: qog'ozda 2,5 mm
     // ekranda ~13 px; 1-2-2.5-5·10^k qatoridan
     const double raw = 13.0 / scale_;
     const double e = std::pow(10.0, std::floor(std::log10(raw)));
@@ -203,6 +304,8 @@ void Viewport::cancelTool() {
     pts_.clear();
     snap_.reset();
     track_.reset();
+    tracked_.clear();
+    snapOverride_ = 0;
     gripDrag_ = false;
     dimTarget_ = kInvalidId;
     modTarget_ = kInvalidId;
@@ -234,6 +337,8 @@ void Viewport::finishTool() {
     tool_ = Tool::Select;
     pts_.clear();
     track_.reset();
+    tracked_.clear();
+    snapOverride_ = 0;
     gripDrag_ = false;
     dimTarget_ = kInvalidId;
     emitPrompt();
@@ -306,6 +411,9 @@ bool Viewport::feedPoint(const Vec3& w) {
 }
 
 void Viewport::clickPoint(const Vec3& p) {
+    tracked_.clear();  // AutoCAD: nuqta olingach kuzatuv nuqtalari tozalanadi
+    otHit_.reset();
+    snapOverride_ = 0;
     switch (tool_) {
     case Tool::Select: return;
     case Tool::Line:
@@ -561,23 +669,64 @@ void Viewport::simulateCursor(const Vec3& w) {
 void Viewport::updateSnap(const QPointF& s) {
     snap_.reset();
     track_.reset();
-    const Vec3 c = toWorld(s);
+    otHit_.reset();
+    Vec3 c = toWorld(s);
     acquired_ = c;
-    if (tool_ == Tool::Select || isModifyTool()) return;  // tahrir asboblari obyekt tanlaydi — bog'lanishsiz
-    if (snapModes_ != 0) {
+    if (tool_ == Tool::Select || isModifyTool()) { hoverSnap_.reset(); return; }  // tahrir asboblari obyekt tanlaydi — bog'lanishsiz
+    // 1) OSNAP (yoki Shift+o'ng bilan tanlangan bir martalik rejim)
+    const unsigned modes = snapOverride_ ? snapOverride_ : (osnapOn_ ? snapModes_ : 0u);
+    if (modes != 0) {
         const Vec3* from = pts_.empty() ? nullptr : &pts_.back();
-        const auto res = findSnaps(doc_, c, aperture(), snapModes_, from);
+        const auto res = findSnaps(doc_, c, aperture(), modes, from);
         if (!res.empty()) {
             snap_ = res.front();
             acquired_ = snap_->point;
+            if (!hoverSnap_ || hoverSnap_->distanceTo(snap_->point) > 1e-9) {
+                hoverSnap_ = snap_->point;
+                if (otrack_ && hoverTimer_) hoverTimer_->start();
+            }
             return;  // OSNAP ustun
         }
     }
+    hoverSnap_.reset();
+    if (hoverTimer_) hoverTimer_->stop();
+    if (snapOverride_) return;
     const auto base = trackBase();
-    if (!base || (!ortho_ && !polar_)) return;
+    const bool orth = ortho_ != shiftHeld_;  // Shift — ORTO vaqtincha teskari
+    // 2) OTRACK: olingan nuqtalardan gorizontal/vertikal tekislash (ekranda 8 px ichida)
+    if (otrack_ && !tracked_.empty()) {
+        const double tol = 8.0 / scale_;
+        const Vec3* bx = nullptr;  // x bo'yicha tekis (vertikal nur)
+        const Vec3* by = nullptr;  // y bo'yicha tekis (gorizontal nur)
+        for (const auto& t : tracked_) {
+            if (std::abs(c.x - t.x) < tol && (!bx || std::abs(c.x - t.x) < std::abs(c.x - bx->x))) bx = &t;
+            if (std::abs(c.y - t.y) < tol && (!by || std::abs(c.y - t.y) < std::abs(c.y - by->y))) by = &t;
+        }
+        // oxirgi nuqtadan orto nuri bilan kesishish
+        if (base && (bx != nullptr) != (by != nullptr)) {
+            if (bx && std::abs(c.y - base->y) < tol) by = &*base;
+            else if (by && std::abs(c.x - base->x) < tol) bx = &*base;
+        }
+        if (bx || by) {
+            OtrackHit h{c, {}};
+            if (bx) { h.pt.x = bx->x; h.from.push_back(*bx); }
+            if (by) { h.pt.y = by->y; h.from.push_back(*by); }
+            acquired_ = h.pt;
+            otHit_ = h;
+            return;
+        }
+    }
+    // 3) QADAM (F9): to'r tugunlariga tortish
+    if (gridSnap_ && snapUnit_ > 0) {
+        c.x = std::round(c.x / snapUnit_) * snapUnit_;
+        c.y = std::round(c.y / snapUnit_) * snapUnit_;
+        acquired_ = c;
+    }
+    // 4) ORTO / QUTB
+    if (!base || (!orth && !polar_)) return;
     const Vec3 v = c - *base;
     if (v.length2d() * scale_ < 2) return;
-    if (ortho_) {
+    if (orth) {
         const bool horiz = std::abs(v.x) >= std::abs(v.y);
         acquired_ = horiz ? Vec3{c.x, base->y, 0} : Vec3{base->x, c.y, 0};
         const double ang = horiz ? (v.x >= 0 ? 0.0 : 180.0) : (v.y >= 0 ? 90.0 : 270.0);
@@ -606,17 +755,33 @@ void Viewport::mousePressEvent(QMouseEvent* e) {
     mouse_ = e->position();
     if (e->button() == Qt::MiddleButton || (e->button() == Qt::LeftButton && spaceDown_)) {
         panning_ = true;
+        if (spaceDown_) spacePanned_ = true;
         panStart_ = e->position();
         panCenter_ = center_;
         return;
     }
-    if (e->button() == Qt::RightButton) {  // AutoCAD odati: o'ng tugma — Enter
-        if (tool_ != Tool::Select) finishTool();
+    if (overCompass(e->position()) && e->button() == Qt::LeftButton) {  // kompas: TOP — hammasini ko'rsatish
+        if (compassTopRect().contains(e->position())) zoomExtents();
+        return;
+    }
+    if (e->button() == Qt::RightButton) {
+        const QPoint gp = e->globalPosition().toPoint();
+        if (e->modifiers() & Qt::ShiftModifier) {  // Shift+o'ng — bir martalik bog'lanish menyusi
+            snapMenu(this)->popup(gp);
+            return;
+        }
+        if (tool_ != Tool::Select) { finishTool(); return; }  // AutoCAD odati: o'ng tugma — Enter
+        if (boxPending_) { boxPending_ = boxing_ = false; update(); return; }
+        contextMenu(this)->popup(gp);
         return;
     }
     if (e->button() != Qt::LeftButton) return;
     if (tool_ != Tool::Select) {
         clickPoint(acquirePoint());
+        return;
+    }
+    if (boxPending_) {  // bosish-bosish ramkasining ikkinchi burchagi
+        finishBox(e->position(), e->modifiers() & Qt::ShiftModifier);
         return;
     }
     if (const auto g = gripAt(e->position())) {  // tutqich: bosish-bosish yoki sudrash
@@ -629,9 +794,25 @@ void Viewport::mousePressEvent(QMouseEvent* e) {
     boxStart_ = e->position();
 }
 
+void Viewport::mouseDoubleClickEvent(QMouseEvent* e) {
+    if (e->button() == Qt::MiddleButton) {  // AutoCAD: g'ildirakni ikki marta bosish — ZOOM Extents
+        panning_ = false;
+        zoomExtents();
+        return;
+    }
+    if (e->button() == Qt::LeftButton && compassTopRect().contains(e->position())) {
+        emit request3D();
+        return;
+    }
+    mousePressEvent(e);
+}
+
 void Viewport::mouseMoveEvent(QMouseEvent* e) {
     mouse_ = e->position();
     mouseInside_ = true;
+    shiftHeld_ = tool_ != Tool::Select && (e->modifiers() & Qt::ShiftModifier);
+    const bool oc = overCompass(mouse_);
+    if (oc != (cursor().shape() == Qt::ArrowCursor)) setCursor(oc ? Qt::ArrowCursor : Qt::BlankCursor);
     if (panning_) {
         const QPointF d = e->position() - panStart_;
         center_ = {panCenter_.x - d.x() / scale_, panCenter_.y + d.y() / scale_, 0};
@@ -645,28 +826,17 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
     update();
 }
 
-void Viewport::mouseReleaseEvent(QMouseEvent* e) {
-    if (panning_ && (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
-        panning_ = false;
-        return;
-    }
-    if (e->button() == Qt::LeftButton && gripDrag_) {
-        gripDrag_ = false;
-        if (tool_ == Tool::Grip && QLineF(gripPress_, e->position()).length() > 6) clickPoint(acquirePoint());
-        return;
-    }
-    if (e->button() != Qt::LeftButton || !boxing_) return;
-    boxing_ = false;
-    const bool additive = e->modifiers() & Qt::ShiftModifier;
+void Viewport::finishBox(const QPointF& end, bool additive) {
+    boxing_ = boxPending_ = false;
     std::vector<EntityId> hit;
-    if (QLineF(boxStart_, e->position()).length() < 4) {
-        const EntityId id = pickEntity(doc_, toWorld(e->position()), aperture());
+    if (QLineF(boxStart_, end).length() < 4) {
+        const EntityId id = pickEntity(doc_, toWorld(end), aperture());
         if (id != kInvalidId) hit.push_back(id);
     } else {
         BBox b;
         b.expand(toWorld(boxStart_));
-        b.expand(toWorld(e->position()));
-        hit = selectWindow(doc_, b, e->position().x() < boxStart_.x());
+        b.expand(toWorld(end));
+        hit = selectWindow(doc_, b, end.x() < boxStart_.x());
     }
     if (!additive) {
         sel_ = hit;
@@ -678,6 +848,25 @@ void Viewport::mouseReleaseEvent(QMouseEvent* e) {
     }
     emit selectionChanged();
     update();
+}
+
+void Viewport::mouseReleaseEvent(QMouseEvent* e) {
+    if (panning_ && (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
+        panning_ = false;
+        return;
+    }
+    if (e->button() == Qt::LeftButton && gripDrag_) {
+        gripDrag_ = false;
+        if (tool_ == Tool::Grip && QLineF(gripPress_, e->position()).length() > 6) clickPoint(acquirePoint());
+        return;
+    }
+    if (e->button() != Qt::LeftButton || !boxing_ || boxPending_) return;
+    if (QLineF(boxStart_, e->position()).length() < 4 && pickEntity(doc_, toWorld(e->position()), aperture()) == kInvalidId) {
+        boxPending_ = true;  // bo'sh joyni bosish — ramka boshlandi, ikkinchi bosish yakunlaydi (AutoCAD)
+        update();
+        return;
+    }
+    finishBox(e->position(), e->modifiers() & Qt::ShiftModifier);
 }
 
 void Viewport::wheelEvent(QWheelEvent* e) {
@@ -692,23 +881,43 @@ void Viewport::wheelEvent(QWheelEvent* e) {
 void Viewport::keyPressEvent(QKeyEvent* e) {
     switch (e->key()) {
     case Qt::Key_Escape:
+        if (boxPending_) { boxPending_ = boxing_ = false; update(); return; }
         if (tool_ != Tool::Select) cancelTool();
         else if (!sel_.empty()) setSelection({});
         return;
     case Qt::Key_Return:
-    case Qt::Key_Enter: finishTool(); return;
+    case Qt::Key_Enter:
+        if (tool_ != Tool::Select) finishTool(); else repeatLast();  // bo'sh holatda — oxirgi buyruqni takrorlash
+        return;
     case Qt::Key_Delete:
         if (!sel_.empty()) emit runCommand("ERASE " + selArg());
         return;
     case Qt::Key_Space:
-        if (!e->isAutoRepeat()) spaceDown_ = true;
+        if (!e->isAutoRepeat()) { spaceDown_ = true; spacePanned_ = false; }
+        return;
+    case Qt::Key_Shift:
+        shiftHeld_ = tool_ != Tool::Select;
+        updateSnap(mouse_);
+        update();
         return;
     default: QOpenGLWidget::keyPressEvent(e);
     }
 }
 
 void Viewport::keyReleaseEvent(QKeyEvent* e) {
-    if (e->key() == Qt::Key_Space && !e->isAutoRepeat()) spaceDown_ = false;
+    if (e->key() == Qt::Key_Space && !e->isAutoRepeat()) {
+        spaceDown_ = false;
+        if (!spacePanned_) {  // Space = Enter (AutoCAD); ushlab sudralgan bo'lsa — faqat siljitish
+            if (tool_ != Tool::Select) finishTool(); else repeatLast();
+        }
+        spacePanned_ = false;
+        return;
+    }
+    if (e->key() == Qt::Key_Shift) {
+        shiftHeld_ = false;
+        updateSnap(mouse_);
+        update();
+    }
     QOpenGLWidget::keyReleaseEvent(e);
 }
 
@@ -1072,7 +1281,7 @@ void Viewport::drawTracking(QPainter& p) {
         tip(p, toScreen(cur), QStringLiteral("%1: %2 < %3°").arg(name, QString::number(len, 'f', 3),
                                                               QString::number(track_->angleDeg, 'f', 0)),
             theme_.snapMarker);
-    } else if (!snap_ && len > 0) {
+    } else if (!snap_ && !otHit_ && len > 0 && dyn_) {
         double ang = rad2deg(std::atan2(cur.y - base->y, cur.x - base->x));
         if (ang < 0) ang += 360.0;
         QColor bg = theme_.crosshair;
@@ -1267,7 +1476,9 @@ void Viewport::drawOverlay(QPainter& p) {
                 previewColor_ = QColor();
             }
         }
+        drawOtrack(p);
         drawTracking(p);
+        drawDyn(p);
     }
     if (tool_ == Tool::Select || tool_ == Tool::Grip) drawGrips(p);
     // tanlash ramkasi
@@ -1281,17 +1492,142 @@ void Viewport::drawOverlay(QPainter& p) {
         p.drawRect(QRectF(boxStart_, mouse_).normalized());
     }
     if (snap_) drawSnapMarker(p, *snap_);
-    // kursor: nishon + qidiruv kvadrati
-    if (mouseInside_ && !panning_) {
+    drawUcsIcon(p);
+    drawCompass(p);
+    // kursor: nishon + qidiruv kvadrati (o'lchami — ekranning foizi, AutoCAD CURSORSIZE)
+    if (mouseInside_ && !panning_ && !overCompass(mouse_)) {
         QPen cp(theme_.crosshair, 1);
         p.setPen(cp);
         p.setBrush(Qt::NoBrush);
         const QPointF m = mouse_;
-        const double arm = tool_ == Tool::Select ? 22 : 40;
+        const double arm = cursorPct_ >= 100 ? (width() + height()) * 1.0 : cursorPct_ / 100.0 * std::max(width(), height()) / 2.0;
         p.drawLine(QPointF(m.x() - arm, m.y()), QPointF(m.x() + arm, m.y()));
         p.drawLine(QPointF(m.x(), m.y() - arm), QPointF(m.x(), m.y() + arm));
         if (tool_ == Tool::Select) p.drawRect(QRectF(m.x() - 5, m.y() - 5, 10, 10));
     }
+}
+
+// ---------------------------------------------------------------- AutoCAD yordamchilari
+
+void Viewport::drawUcsIcon(QPainter& p) {
+    // Pastki chap burchakda UCS belgisi: X (qizil) va Y (yashil) o'qlar harflari bilan, kvadrat — WCS
+    const QPointF o(30, height() - 30);
+    const double L = 48;
+    auto arrow = [&](const QPointF& a, const QPointF& b, const QColor& col, const QString& label, const QPointF& lblOff) {
+        QPen pen(col, 2.2);
+        pen.setCapStyle(Qt::FlatCap);
+        p.setPen(pen);
+        p.drawLine(a, b);
+        const QPointF d = (b - a) / QLineF(a, b).length();
+        const QPointF n(-d.y(), d.x());
+        QPolygonF head;
+        head << b + d * 9 << b + n * 4.5 << b - n * 4.5;
+        p.setPen(Qt::NoPen);
+        p.setBrush(col);
+        p.drawPolygon(head);
+        QFont f = font();
+        f.setPixelSize(13);
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(col);
+        p.drawText(QRectF(b + lblOff - QPointF(9, 9), QSizeF(18, 18)), Qt::AlignCenter, label);
+    };
+    arrow(o, o + QPointF(L, 0), theme_.axisX, QStringLiteral("X"), QPointF(18, 0));
+    arrow(o, o + QPointF(0, -L), theme_.axisY, QStringLiteral("Y"), QPointF(0, -18));
+    p.setPen(QPen(theme_.crosshair, 1.2));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(QRectF(o.x() - 4, o.y() - 4, 8, 8));  // WCS kvadrati
+}
+
+void Viewport::drawCompass(QPainter& p) {
+    // Yuqori o'ng burchakda 2D ViewCube: halqa (Sh/Shq/J/G'), markazda "TOP" kvadrati, ostida "WCS"
+    const QPointF c = compassCenter();
+    const bool hover = mouseInside_ && overCompass(mouse_);
+    QColor ink = theme_.crosshair;
+    ink.setAlpha(hover ? 235 : 150);
+    QColor ring = ink;
+    ring.setAlpha(hover ? 70 : 40);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(ring, 9));
+    p.drawEllipse(c, kCompassR, kCompassR);
+    p.setPen(QPen(ink, 1));
+    p.drawEllipse(c, kCompassR + 4.5, kCompassR + 4.5);
+    p.drawEllipse(c, kCompassR - 4.5, kCompassR - 4.5);
+    QFont f = font();
+    f.setPixelSize(11);
+    f.setBold(true);
+    p.setFont(f);
+    const char* keys[] = {"gui.vc.n", "gui.vc.e", "gui.vc.s", "gui.vc.w"};
+    const QPointF dirs[] = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+    for (int i = 0; i < 4; ++i) {
+        const QPointF q = c + dirs[i] * kCompassR;
+        QColor bg = theme_.canvasBg;
+        p.setPen(Qt::NoPen);
+        p.setBrush(bg);
+        p.drawEllipse(q, 8, 8);
+        p.setPen(i == 0 ? QColor(220, 60, 60, ink.alpha()) : ink);
+        p.drawText(QRectF(q.x() - 9, q.y() - 9, 18, 18), Qt::AlignCenter, QString::fromStdString(loc_.tr(keys[i])));
+    }
+    const QRectF top = compassTopRect();
+    const bool hotTop = mouseInside_ && top.contains(mouse_);
+    QColor face = hotTop ? QColor(90, 160, 230, 200) : QColor(theme_.canvasBg.lightness() > 128 ? 225 : 70, theme_.canvasBg.lightness() > 128 ? 230 : 78,
+                                                             theme_.canvasBg.lightness() > 128 ? 238 : 92, 220);
+    p.setPen(QPen(ink, 1));
+    p.setBrush(face);
+    p.drawRect(top);
+    f.setPixelSize(10);
+    p.setFont(f);
+    p.setPen(hotTop ? QColor(255, 255, 255) : ink);
+    p.drawText(top, Qt::AlignCenter, QString::fromStdString(loc_.tr("gui.vc.top")));
+    f.setBold(false);
+    p.setFont(f);
+    p.setPen(ink);
+    p.drawText(QRectF(c.x() - 30, c.y() + kCompassR + 8, 60, 16), Qt::AlignCenter, QString::fromStdString(loc_.tr("gui.vc.wcs")) + QStringLiteral(" ▾"));
+}
+
+void Viewport::drawOtrack(QPainter& p) {
+    if (!otrack_) return;
+    const QColor green(60, 200, 90);
+    p.setPen(QPen(green, 1.6));
+    for (const auto& t : tracked_) {  // olingan nuqtalar — kichik yashil "+"
+        const QPointF q = toScreen(t);
+        p.drawLine(q - QPointF(5, 0), q + QPointF(5, 0));
+        p.drawLine(q - QPointF(0, 5), q + QPointF(0, 5));
+    }
+    if (!otHit_) return;
+    const QPointF h = toScreen(otHit_->pt);
+    QPen dp(green, 1.0, Qt::DotLine);
+    dp.setCosmetic(true);
+    p.setPen(dp);
+    const double far = (width() + height()) * 2.0;
+    for (const auto& f : otHit_->from) {  // nuqtadan kursor orqali ekran chetigacha
+        const QPointF a = toScreen(f);
+        QPointF d = h - a;
+        const double l = std::hypot(d.x(), d.y());
+        if (l < 1) continue;
+        d /= l;
+        p.drawLine(a, a + d * far);
+    }
+    p.setPen(QPen(green, 1.6));
+    p.drawLine(h - QPointF(5, 5), h + QPointF(5, 5));
+    p.drawLine(h - QPointF(-5, 5), h + QPointF(-5, 5));
+    const Vec3 f0 = otHit_->from.front();
+    double ang = rad2deg(std::atan2(otHit_->pt.y - f0.y, otHit_->pt.x - f0.x));
+    if (ang < 0) ang += 360.0;
+    QColor bg = green;
+    bg.setAlpha(230);
+    tip(p, h, QStringLiteral("%1: %2 < %3°").arg(QString::fromStdString(loc_.tr("gui.status.otrack")),
+                                                 QString::number(otHit_->pt.distanceTo(f0), 'f', 3), QString::number(ang, 'f', 0)),
+        bg);
+}
+
+void Viewport::drawDyn(QPainter& p) {
+    // DYN: birinchi nuqtagacha kursor yonida X / Y (ikkinchi nuqtadan — uzunlik < burchak, drawTracking)
+    if (!dyn_ || !pts_.empty() || snap_ || otHit_ || track_) return;
+    const Vec3 c = acquirePoint();
+    QColor bg = theme_.crosshair;
+    bg.setAlpha(210);
+    tip(p, mouse_, QStringLiteral("X %1   Y %2").arg(QString::number(c.x, 'f', 3), QString::number(c.y, 'f', 3)), bg);
 }
 
 } // namespace asiacad::gui

@@ -14,11 +14,14 @@
 #include <QOpenGLWidget>
 #include <QPointF>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <vector>
 
 class QPainter;
+class QMenu;
+class QTimer;
 
 namespace asiacad::gui {
 
@@ -45,6 +48,34 @@ public:
     bool polar() const { return polar_; }
     void setPolarStep(double deg) { polarStepDeg_ = deg > 0 ? deg : 15.0; }
     double polarStep() const { return polarStepDeg_; }
+    // AutoCAD holat satri yordamchilari: OSNAP (F3) — umumiy kalit, QADAM (F9) — to'r qadamiga tortish,
+    // OTRACK (F11) — bog'lanish nuqtasidan gorizontal/vertikal kuzatuv, DYN (F12) — kursor yonida koordinata
+    void setOsnap(bool on) { osnapOn_ = on; updateSnap(mouse_); update(); }
+    bool osnap() const { return osnapOn_; }
+    void setGridSnap(bool on) { gridSnap_ = on; updateSnap(mouse_); update(); }
+    bool gridSnap() const { return gridSnap_; }
+    void setSnapUnit(double u) { if (u > 0) snapUnit_ = u; }
+    double snapUnit() const { return snapUnit_; }
+    void setOtrack(bool on) { otrack_ = on; if (!on) tracked_.clear(); update(); }
+    bool otrack() const { return otrack_; }
+    void addTrackPoint(const Vec3& p);  // OTRACK nuqtasi (sinov uchun; odatda kursor 0,35 s turganda)
+    const std::vector<Vec3>& trackPoints() const { return tracked_; }
+    void setDyn(bool on) { dyn_ = on; update(); }
+    bool dyn() const { return dyn_; }
+    void setCrosshairSize(int pct) { cursorPct_ = std::clamp(pct, 1, 100); update(); }
+    int crosshairSize() const { return cursorPct_; }
+    void setAnnoScale(double denom) { annoScale_ = denom > 0 ? denom : 0; }  // 0 — avtomatik
+    double annoScale() const { return annoScale_; }
+    void setSnapOverride(unsigned mode) { snapOverride_ = mode; updateSnap(mouse_); update(); }  // bir martalik (Shift+o'ng)
+    unsigned snapOverride() const { return snapOverride_; }
+    Tool lastTool() const { return lastTool_; }
+    bool repeatLast();                         // bo'sh holatda Enter/Space — oxirgi asbob
+    QMenu* contextMenu(QWidget* parent);        // o'ng tugma menyusi (holatga qarab)
+    QMenu* snapMenu(QWidget* parent);           // Shift+o'ng: bir martalik bog'lanish
+    bool windowPending() const { return boxPending_; }
+    // Kompas / UCS belgisi geometriyasi (ekran)
+    QRectF compassTopRect() const;
+    QPointF compassCenter() const;
     // To'g'ridan-to'g'ri masofa: kuzatuv yo'nalishi (yoki kursor tomoni) bo'yicha d masofadagi nuqta
     bool feedDistance(double d);
     double dimTextHeight() const;
@@ -95,7 +126,9 @@ signals:
     void textRequested(const Vec3& at);  // matn asbobi: oyna dialog ochadi
     void leaderRequested(const QString& points);
     void pointsPicked(const std::vector<Vec3>& pts);
-    void pickCancelled();  // vynoska: nuqtalar tayyor — matn so'raladi
+    void pickCancelled();
+    void request3D();                       // kompas TOP — ikki marta bosish
+    void repeatRequested();                 // oxirgi asbob yo'q — oxirgi buyruq satrini takrorlash  // vynoska: nuqtalar tayyor — matn so'raladi
 
 protected:
     void paintGL() override;
@@ -103,6 +136,7 @@ protected:
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
     void wheelEvent(QWheelEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void keyReleaseEvent(QKeyEvent* e) override;
@@ -119,6 +153,12 @@ private:
     std::optional<Vec3> trackBase() const;
     void drawGrips(QPainter& p);
     void drawTracking(QPainter& p);
+    void drawUcsIcon(QPainter& p);
+    void drawCompass(QPainter& p);
+    void drawOtrack(QPainter& p);
+    void drawDyn(QPainter& p);
+    bool overCompass(const QPointF& s) const;
+    void finishBox(const QPointF& end, bool additive);
     void drawPreviewEntity(QPainter& p, const IEntity& e);
     std::unique_ptr<IEntity> previewEntity(const Vec3& cur) const;
     void tip(QPainter& p, const QPointF& at, const QString& text, const QColor& bg);
@@ -171,7 +211,19 @@ private:
     // Ekran apertura bilan obyekt tanlash; nuqta obyekt ustiga tushiriladi (buyruq satri aperturasi kichik bo'lsa ham)
     EntityId pickAt(const Vec3& p, Vec3* onCurve, bool editableCurvesOnly = true) const;
     std::vector<geom::Prim> edgesAround(EntityId self, bool everything) const;
-    bool panning_ = false, spaceDown_ = false;
+    bool panning_ = false, spaceDown_ = false, spacePanned_ = false;
+    bool osnapOn_ = true, gridSnap_ = false, otrack_ = true, dyn_ = true;
+    double snapUnit_ = 1.0, annoScale_ = 0;
+    int cursorPct_ = 5;
+    unsigned snapOverride_ = 0;
+    Tool lastTool_ = Tool::Select;
+    bool boxPending_ = false;           // bosish-bosish ramkasi: birinchi burchak olingan
+    std::vector<Vec3> tracked_;         // OTRACK olingan nuqtalar
+    struct OtrackHit { Vec3 pt; std::vector<Vec3> from; };
+    std::optional<OtrackHit> otHit_;
+    QTimer* hoverTimer_ = nullptr;
+    std::optional<Vec3> hoverSnap_;
+    bool shiftHeld_ = false;            // Shift — ORTO vaqtincha teskari (AutoCAD)
     QPointF panStart_;
     Vec3 panCenter_;
     bool boxing_ = false;

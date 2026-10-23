@@ -53,6 +53,7 @@ class SurveyDialog;
 class EarthworkDialog;
 class Model3DView;
 class SheetCanvas;
+class SmartPanel;
 class GeoPlaceDialog;
 class DriveDialog;
 class SymbolPalette;
@@ -93,6 +94,8 @@ public:
     void showSheets();
     bool isSheets() const;
     SheetCanvas* sheetView() const { return sheetView_; }
+    SmartPanel* smartPanel() const { return smart_; }
+    bool selectTag(const QString& tag);   // "sewer:K1:seg:2" | "sewer:K1:mh:0" | "ids:1,2"
     bool newSheet(const QString& name, const QString& size, bool portrait);
     enum SheetSource { SrcScreen = 0, SrcAll = 1, SrcPick = 2 };
     bool addSheetView(int source, double scale, const QString& title);   // SrcPick — chizmada 2 nuqta so'raladi
@@ -186,6 +189,7 @@ private:
     QComboBox* ribbonLayer_ = nullptr;
     QComboBox* propsColor_ = nullptr;
     QPlainTextEdit* propsList_ = nullptr;
+    SmartPanel* smart_ = nullptr;
     QPlainTextEdit* history_ = nullptr;
     QLineEdit* cmdEdit_ = nullptr;
     QLabel* prompt_ = nullptr;

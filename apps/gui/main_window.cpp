@@ -14,6 +14,7 @@
 #include "earthwork_dialog.h"
 #include "model3d_view.h"
 #include "sheet_view.h"
+#include "smart_panel.h"
 #include <QStackedWidget>
 #include <QTabBar>
 #include <asiacad/civil/terrain.h>
@@ -54,6 +55,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
 #include <QShortcut>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -302,7 +304,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
             if (const IEntity* e = doc_.find(sel.front())) curve = dynamic_cast<const ICurve*>(e) && !dynamic_cast<const CircleEntity*>(e);
         driveCtx_->setText(t("gui.drv.ctx"));
         driveCtx_->adjustSize();
-        driveCtx_->move(view_->width() - driveCtx_->width() - 14, 12);
+        driveCtx_->move(view_->width() - driveCtx_->width() - 140, 12);  // kompasdan chapda
         driveCtx_->setVisible(curve);
         if (curve) driveCtx_->raise();
     });
@@ -332,7 +334,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.25"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.26"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -558,7 +560,7 @@ void MainWindow::buildRibbon() {
         auto* ic = new QLabel(brand);
         ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
         auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.22<nbsp;0.23</span>"),
+                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.26</span>"),
                               brand);
         nm->setObjectName("brandName");
         nm->setTextFormat(Qt::RichText);
@@ -802,9 +804,25 @@ void MainWindow::buildDocks() {
     form->addRow(l1, propsLayer_);
     form->addRow(l2, propsColor_);
     pv->addLayout(form);
+    // Tuzatish paneli: obyekt turiga qarab (quvur, quduq, chiziq, aylana, matn ...) tahrirlanadigan maydonlar
+    auto* scroll = new QScrollArea(propsBox_);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setStyleSheet(QStringLiteral("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }"));
+    smart_ = new SmartPanel(doc_, loc_, scroll);
+    smart_->setObjectName("smartPanel");
+    scroll->setWidget(smart_);
+    pv->addWidget(scroll, 3);
+    connect(smart_, &SmartPanel::edit, this, [this](const QString& line, const QString& tag) {
+        runLine(line);
+        if (!tag.isEmpty()) selectTag(tag);
+    });
+    connect(smart_, &SmartPanel::select, this, [this](const QString& tag) { selectTag(tag); });
     propsList_ = new QPlainTextEdit(propsBox_);
     propsList_->setReadOnly(true);
     propsList_->setFont(QFont(QStringLiteral("DejaVu Sans Mono"), 9));
+    propsList_->setMaximumHeight(110);
     pv->addWidget(propsList_, 1);
     propsDock_->setWidget(propsBox_);
     propsDock_->setMinimumWidth(270);
@@ -1191,6 +1209,8 @@ void MainWindow::refreshProperties() {
     propsLayer_->clear();
     propsColor_->clear();
     propsList_->clear();
+    smart_->rebuild(sel);
+    propsList_->setVisible(smart_->title().isEmpty());  // tuzatish paneli bo'lsa — oddiy ro'yxat yashiriladi
     if (sel.empty()) {
         propsCount_->setText(t("gui.props.none"));
         propsLayer_->setEnabled(false);
@@ -1225,6 +1245,29 @@ void MainWindow::refreshProperties() {
     }
     propsList_->setPlainText(lines.join('\n'));
     updatingUi_ = false;
+}
+
+bool MainWindow::selectTag(const QString& tag) {
+    std::vector<EntityId> ids;
+    if (tag.startsWith("ids:")) {
+        for (const QString& p : tag.mid(4).split(',', Qt::SkipEmptyParts))
+            if (doc_.contains(p.toULongLong())) ids.push_back(p.toULongLong());
+    } else if (tag.startsWith("sewer:")) {
+        const QStringList p = tag.split(':');  // sewer:NET:seg|mh:i
+        if (p.size() != 4) return false;
+        const std::string net = p[1].toStdString(), kind = p[2].toStdString(), idx = p[3].toStdString();
+        EntityId best = kInvalidId;
+        doc_.forEach([&](const IEntity& e) {
+            if (e.xget("sewer") != net || e.xget(kind) != idx) return;
+            const bool main = (kind == "seg" && e.type() == EntityType::Line) || (kind == "mh" && e.type() == EntityType::Circle);
+            if (best == kInvalidId || main) best = e.id();
+        });
+        if (best != kInvalidId) ids.push_back(best);
+    }
+    if (ids.empty()) return false;
+    view_->setSelection(ids);
+    refreshProperties();
+    return true;
 }
 
 void MainWindow::refreshTitle() {

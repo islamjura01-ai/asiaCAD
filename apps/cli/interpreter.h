@@ -1,6 +1,7 @@
 #pragma once
 // AsiaCAD CLI — matnli buyruq interpretatori (AutoCAD command line uslubida).
 // Buyruq nomlari, kalit so'zlar va barcha xabarlar Localizer orqali (i18n/*.json).
+#include <asiacad/civil/sewer.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/i18n/localizer.h>
@@ -30,6 +31,9 @@ private:
     bool dispatchSheet(const std::string& canon, const Args& a);   // interpreter_sheet.cpp: listlar (qog'oz, shtamp, ko'rinishlar)
     // interpreter_links.cpp: dinamik bog'lanishlar (Civil 3D kabi) — LINKS buyrug'i va avtomatik yangilash
     bool dispatchLinks(const std::string& canon, const Args& a);
+    // interpreter_pipes.cpp: aqlli obyektlar — SETPROP (har qanday obyekt xossasi), PIPEEDIT (kanalizatsiya quvuri/qudug'i)
+    bool dispatchProps(const std::string& canon, const Args& a);
+    std::size_t sewerDraw(const civil::SewerNetwork& net, const std::string& at, const std::string& cmdName);
     void makeLink(const std::string& canon, const Args& a, const std::vector<std::string>& extra, const std::vector<EntityId>& prevLast);
     std::vector<EntityId> linkSources(const std::string& line, const std::vector<EntityId>* extraExclude = nullptr) const;
     std::string fingerprint(const std::vector<EntityId>& ids) const;

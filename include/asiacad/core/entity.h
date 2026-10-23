@@ -3,6 +3,7 @@
 #include <asiacad/core/math.h>
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -39,6 +40,11 @@ public:
     void setLayer(std::string l) { layer_ = std::move(l); }
     int color() const { return color_; }
     void setColor(int c) { color_ = c; }
+    // Kengaytirilgan ma'lumot (AutoCAD XDATA / Civil 3D "aqlli obyekt" bog'i): masalan net=K1, seg=3.
+    // Nusxalanganda saqlanadi, .acad faylida "x":{...}
+    const std::map<std::string, std::string>& xdata() const { return x_; }
+    std::string xget(const std::string& k) const { auto it = x_.find(k); return it == x_.end() ? std::string() : it->second; }
+    void xset(const std::string& k, std::string v) { if (v.empty()) x_.erase(k); else x_[k] = std::move(v); }
 
 protected:
     IEntity() = default;
@@ -50,6 +56,7 @@ private:
     EntityId id_ = kInvalidId;
     std::string layer_ = "0";
     int color_ = kColorByLayer;
+    std::map<std::string, std::string> x_;
 };
 
 // Egri chiziqlar uchun umumiy interfeys (SRS: ICurve)

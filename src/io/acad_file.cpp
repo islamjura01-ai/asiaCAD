@@ -101,6 +101,19 @@ void writeEntity(std::ostream& os, const IEntity& e, bool withId = true) {
     writeStr(os, e.layer());
     key(os, "color");
     os << e.color();
+    if (!e.xdata().empty()) {
+        key(os, "x");
+        os << '{';
+        bool f = true;
+        for (const auto& [k, v] : e.xdata()) {
+            if (!f) os << ',';
+            f = false;
+            writeStr(os, k);
+            os << ':';
+            writeStr(os, v);
+        }
+        os << '}';
+    }
     switch (e.type()) {
         case EntityType::Point:
             key(os, "p"); writeVec(os, static_cast<const PointEntity&>(e).position());
@@ -271,6 +284,9 @@ void applyProps(IEntity& e, const EntityReader& r) {
     int color = static_cast<int>(r.num("color", kColorByLayer));
     if (color < 0 || color > 256) color = kColorByLayer;
     e.setColor(color);
+    if (const json::Value* x = r.raw().find("x"); x && x->isObject())
+        for (const auto& [k, v] : x->obj())
+            if (v.isString()) e.xset(k, v.str());
 }
 
 std::unique_ptr<IEntity> makeEntity(const std::string& type, const EntityReader& r, const BlockMap& blocks);
@@ -450,6 +466,18 @@ void writeAcad(const Document& doc, std::ostream& os) {
         }
         os << "\n]";
     }
+    if (!doc.dict().empty()) {  // nomlangan obyektlar (tarmoq modellari va h.k.)
+        os << ",\n\"dict\":{";
+        bool f = true;
+        for (const auto& [k, v] : doc.dict()) {
+            os << (f ? "\n" : ",\n");
+            f = false;
+            writeStr(os, k);
+            os << ':';
+            writeStr(os, v);
+        }
+        os << "\n}";
+    }
     if (!doc.links().empty()) {  // dinamik bog'lanishlar
         os << ",\n\"links\":[";
         for (std::size_t i = 0; i < doc.links().size(); ++i) {
@@ -626,6 +654,12 @@ AcadLoadResult readAcad(std::string_view text) {
             sheets.push_back(std::move(sh));
         }
         res.doc.setSheets(std::move(sheets));
+    }
+    if (const json::Value* dv = root.find("dict"); dv && dv->isObject()) {
+        std::map<std::string, std::string> d;
+        for (const auto& [k, v] : dv->obj())
+            if (v.isString()) d[k] = v.str();
+        res.doc.setDict(std::move(d));
     }
     if (const json::Value* lv = root.find("links"); lv && lv->isArray()) {
         std::vector<DynLink> links;

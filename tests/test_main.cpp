@@ -20,6 +20,7 @@
 #include <asiacad/core/draft.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
+#include <asiacad/core/props.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/core/grips.h>
 #include <asiacad/core/modify.h>
@@ -352,7 +353,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 104);
+    CHECK(loc.canonicalCommands().size() == 106);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3531,6 +3532,77 @@ TEST(dynamic_links) {
     CHECK(doc.links().size() == 2);
     in.run("LINKS DEL 1");
     CHECK(doc.links().size() == 1 && doc.links()[0].id == 2);
+}
+
+
+// ---------- Tuzatish paneli: xossalar (SETPROP) va aqlli quvur/quduq (PIPEEDIT) ----------
+TEST(props_and_pipe_edit) {
+    LineEntity l({0, 0, 0}, {3, 4, 0});
+    l.setLayer("A");
+    l.xset("k", "v");
+    const auto f = entityProps(l);
+    CHECK(f.size() == 11 && f[6].key == "LENGTH" && std::abs(f[6].value - 5) < 1e-12);
+    auto l2 = withProp(l, "LENGTH", "10");
+    CHECK(l2 && l2->layer() == "A" && l2->xget("k") == "v");
+    CHECK(std::abs(static_cast<LineEntity&>(*l2).endPoint().x - 6) < 1e-12);
+    auto l3 = withProp(l, "ANGLE", "90");
+    CHECK(std::abs(static_cast<LineEntity&>(*l3).endPoint().y - 5) < 1e-12);
+    CHECK(!withProp(l, "R", "2"));
+    CHECK_THROWS(withProp(l, "X1", "abc"));
+    CircleEntity c({1, 1, 0}, 2);
+    CHECK(std::abs(static_cast<CircleEntity&>(*withProp(c, "D", "10")).radius() - 5) < 1e-12);
+    TextEntity t({0, 0, 0}, 2.5, "A");
+    CHECK(static_cast<TextEntity&>(*withProp(t, "TEXT", "Q-1")).text() == "Q-1");
+
+    auto loc = loadedLocalizer();
+    loc.setLanguage("uz");
+    Document doc;
+    CommandStack st(doc);
+    std::ostringstream out;
+    cli::Interpreter in(doc, st, loc, out);
+    in.run(std::string("KANALIZATSIYA \"") + ASIACAD_EXAMPLES_DIR + "/k1_kocha.kan.json\"");
+    CHECK(!doc.dictGet("sewer:K1").empty());
+    std::size_t pipes = 0, mhs = 0;
+    EntityId pipe2 = kInvalidId;
+    doc.forEach([&](const IEntity& e) {
+        if (e.xget("sewer") != "K1") return;
+        if (e.type() == EntityType::Line && !e.xget("seg").empty()) { ++pipes; if (e.xget("seg") == "1") pipe2 = e.id(); }
+        if (e.type() == EntityType::Circle && !e.xget("mh").empty()) ++mhs;
+    });
+    CHECK(pipes == 4 && mhs == 5 && pipe2 != kInvalidId);
+    const auto r0 = civil::compute(civil::fromJson(doc.dictGet("sewer:K1")));
+    const std::size_t n0 = doc.size();
+    in.run("QUVURTAHRIR K1 SEG=2 SLOPE=12 INSUP=5 INSDOWN=7");
+    auto net = civil::fromJson(doc.dictGet("sewer:K1"));
+    CHECK(std::abs(net.segments[1].slope - 0.012) < 1e-12 && std::abs(net.segments[1].insUp - 0.05) < 1e-12);
+    const auto r1 = civil::compute(net);
+    CHECK(std::abs(r1.segments[1].pipeLength - (r0.segments[1].pipeLength + 0.12)) < 1e-9);
+    CHECK(std::abs(r1.segments[1].invDown - (r1.segments[1].invUp - 0.012 * r1.segments[1].length)) < 1e-9);
+    CHECK(doc.size() == n0);                     // qayta chizildi, ko'paymadi
+    CHECK(!doc.contains(pipe2));
+    in.run("QUVURTAHRIR K1 SEG=2 INVDOWN=" + std::format("{:.4f}", r1.segments[1].invUp - 0.5));
+    net = civil::fromJson(doc.dictGet("sewer:K1"));
+    CHECK(std::abs(net.segments[1].slope - 0.5 / r1.segments[1].length) < 1e-6);
+    in.run("QUVURTAHRIR K1 MH=3 RIM=250 \"NAME=Q-3\"");
+    net = civil::fromJson(doc.dictGet("sewer:K1"));
+    CHECK(net.manholes[2].rim == 250 && net.manholes[2].name == "Q-3");
+    in.run("UNDO");
+    in.run("UNDO");
+    in.run("UNDO");
+    net = civil::fromJson(doc.dictGet("sewer:K1"));
+    CHECK(std::abs(net.segments[1].slope - 0.007) < 1e-12 || net.segments[1].slope == r0.segments[1].slope);
+    CHECK(doc.contains(pipe2));
+    in.run("QUVURTAHRIR K9 SEG=1 SLOPE=5");
+    CHECK(out.str().find("K9") != std::string::npos);
+    in.run("LINE 0,0 10,0");
+    in.run("XOSSA OXIRGI LENGTH=25 Z2=3");
+    const auto* ln = static_cast<const LineEntity*>(doc.find(doc.ids().back()));
+    CHECK(ln && std::abs(ln->endPoint().x - 25) < 1e-12 && ln->endPoint().z == 3);
+    // .acad: xdata va lug'at saqlanadi
+    std::ostringstream os;
+    writeAcad(doc, os);
+    auto rr = readAcad(os.str());
+    CHECK(rr.doc.dictGet("sewer:K1") == doc.dictGet("sewer:K1") && rr.doc.find(pipe2) && rr.doc.find(pipe2)->xget("seg") == "1");
 }
 
 // GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak

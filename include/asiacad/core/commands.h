@@ -31,6 +31,30 @@ private:
     std::string name_;
 };
 
+// Lug'at yozuvini o'rnatish (bo'sh qiymat — o'chirish)
+class DictCommand final : public ICommand {
+public:
+    DictCommand(std::string key, std::string value, std::string name) : key_(std::move(key)), value_(std::move(value)), name_(std::move(name)) {}
+    void execute(Document& doc) override {
+        auto d = doc.dict();
+        auto it = d.find(key_);
+        had_ = it != d.end();
+        if (had_) old_ = it->second;
+        if (value_.empty()) d.erase(key_); else d[key_] = value_;
+        doc.setDict(std::move(d));
+    }
+    void undo(Document& doc) override {
+        auto d = doc.dict();
+        if (had_) d[key_] = old_; else d.erase(key_);
+        doc.setDict(std::move(d));
+    }
+    std::string name() const override { return name_; }
+
+private:
+    std::string key_, value_, name_, old_;
+    bool had_ = false;
+};
+
 class LinksCommand final : public ICommand {
 public:
     LinksCommand(std::vector<DynLink> after, std::string name) : after_(std::move(after)), name_(std::move(name)) {}

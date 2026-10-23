@@ -27,6 +27,9 @@
 #include <QImage>
 #include "sheet_view.h"
 #include <QCheckBox>
+#include "smart_panel.h"
+#include <QLineEdit>
+#include <asiacad/civil/sewer.h>
 #include <QMenu>
 #include <QKeyEvent>
 #include <QTabWidget>
@@ -1159,6 +1162,65 @@ int main(int argc, char** argv) {
         // undo — ro'yxat yangilanadi
         w.runLine("UNDO");
         CHECK(w.document().sheets().size() == 1 && box->count() == 1);
+    }
+
+    // 32. Tuzatish paneli: quvur/quduq (aqlli obyekt) va oddiy obyekt xossalari
+    {
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        w.runLine(QStringLiteral("SEWER \"%1/k1_kocha.kan.json\"").arg(ASIACAD_EXAMPLES_DIR));
+        SmartPanel* sp = w.smartPanel();
+        CHECK(sp && w.selectTag("sewer:K1:seg:1"));
+        CHECK(sp->title().contains("K1-2") && sp->title().contains("K1-3"));
+        QLineEdit* slope = sp->field("SLOPE");
+        CHECK(slope && !slope->isReadOnly() && sp->field("INSUP") && sp->field("INVDOWN"));
+        slope->setText("15");
+        emit slope->editingFinished();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        auto net = asiacad::civil::fromJson(w.document().dictGet("sewer:K1"));
+        CHECK(std::abs(net.segments[1].slope - 0.015) < 1e-12);
+        CHECK(w.viewport()->selection().size() == 1 && w.document().find(w.viewport()->selection()[0])->xget("seg") == "1");  // o'sha quvur tanlangan qoladi
+        CHECK(sp->field("SLOPE") && sp->field("SLOPE")->text() == "15.00");
+        QLineEdit* ins = sp->field("INSDOWN");
+        ins->setText("6");
+        emit ins->editingFinished();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        net = asiacad::civil::fromJson(w.document().dictGet("sewer:K1"));
+        CHECK(std::abs(net.segments[1].insDown - 0.06) < 1e-12);
+        // navigatsiya: pastki quduq
+        auto* down = sp->findChild<QPushButton*>("mhdown");
+        CHECK(down);
+        down->click();
+        QApplication::processEvents();
+        CHECK(sp->title().contains("K1-3") && sp->field("RIM") && sp->field("D"));
+        QLineEdit* rim = sp->field("RIM");
+        rim->setText("245.5");
+        emit rim->editingFinished();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        net = asiacad::civil::fromJson(w.document().dictGet("sewer:K1"));
+        CHECK(net.manholes[2].rim == 245.5);
+        w.runLine("UNDO");
+        net = asiacad::civil::fromJson(w.document().dictGet("sewer:K1"));
+        CHECK(net.manholes[2].rim != 245.5);
+        // oddiy chiziq: uzunlik
+        w.runLine("LINE 0,0 10,0");
+        const EntityId lid = w.document().ids().back();
+        w.viewport()->setSelection({lid});
+        QApplication::processEvents();
+        QLineEdit* len = sp->field("LENGTH");
+        CHECK(len && len->text() == "10.000");
+        len->setText("30");
+        emit len->editingFinished();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        const auto* ln = static_cast<const LineEntity*>(w.document().find(lid));
+        CHECK(ln && std::abs(ln->endPoint().x - 30) < 1e-9);
+        CHECK(w.viewport()->selection().size() == 1);
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

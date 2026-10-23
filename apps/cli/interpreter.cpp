@@ -169,6 +169,8 @@ const char* commandSyntax(const std::string& c) {
         {"XSECTIONS", "path EG=sel FG=sel|Z=z [STEP=20] [L=20] [R=20] [SAMPLE=0.5] [SCALE=200] [COLS=4] [PK0=m] [AT=x,y] [NOMARKS] [XLSX=f]"},
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
+        {"SETPROP", "sel KEY=value [KEY=value ...]"},
+        {"PIPEEDIT", "net SEG=n|MH=n KEY=value ..."},
         {"LINKS", "[ON n | OFF n | DEL n | UPDATE [n]]"},
         {"SHEET", "[NEW name [A0..A4] [PORTRAIT]] | VIEW name p1 p2 [SCALE=n] [TITLE=t] | STAMP name KEY=t… | SIZE name A0..A4 [PORTRAIT] | RENAME name new | DEL name [n]"},
         {"DIMLINEAR", "p1 p2 p [h] [0..6]"},
@@ -376,6 +378,7 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchTerrain(cmd, a)) return;
     if (dispatchSheet(cmd, a)) return;
     if (dispatchLinks(cmd, a)) return;
+    if (dispatchProps(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;
@@ -1174,42 +1177,20 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             out_ << "  " << loc_.tr(lv) << ": " << msg
                  << (is.ref.empty() || msg.find('(') != std::string::npos ? std::string() : "  [" + is.ref + "]") << '\n';
         }
-        // chizish: plan + (ixtiyoriy) profil
-        std::vector<std::unique_ptr<IEntity>> es = civil::drawPlan(net, res);
+        // chizish: plan + (ixtiyoriy) profil. Tarmoq hujjat lug'atida saqlanadi — keyin PIPEEDIT / tuzatish paneli bilan o'zgartiriladi
+        std::string at = "-";
         if (a.size() < 2 || a[1] != "-") {
             Vec3 o;
             if (a.size() > 1) o = parsePoint(a[1]);
+            else if (const std::string prev = doc_.dictGet("sewer:" + net.name + ":at"); !prev.empty() && prev != "-") o = parseRawPoint(prev);
             else {
                 BBox b = doc_.extents(true);
-                for (const auto& e : es) b.expand(e->bbox());
+                for (const auto& e : civil::drawPlan(net, res)) b.expand(e->bbox());
                 o = {b.max.x + 20 * net.textHeight + 26 * net.textHeight, b.min.y, 0};
             }
-            civil::ProfileLabels lb{loc_.tr("sewer.prof.ground"), loc_.tr("sewer.prof.invert"), loc_.tr("sewer.prof.depth"),
-                                    loc_.tr("sewer.prof.slope"), loc_.tr("sewer.prof.distance"), loc_.tr("sewer.prof.pipe"),
-                                    loc_.tr("sewer.prof.manhole"), loc_.tr("sewer.prof.datum")};
-            auto pr = civil::drawProfile(net, res, o, lb);
-            for (auto& e : pr) es.push_back(std::move(e));
+            at = std::format("{},{}", o.x, o.y);
         }
-        auto comp = std::make_unique<CompositeCommand>(cmd);
-        const int colors[] = {30, 7, 7, 8};
-        int li = 0;
-        for (const auto& ln : civil::sewerLayers(net)) {
-            if (!doc_.layer(ln)) {
-                Layer l{ln};
-                l.color = colors[li];
-                comp->add(std::make_unique<SetLayerCommand>(l));
-            }
-            ++li;
-        }
-        std::vector<AddEntityCommand*> adds;
-        for (auto& e : es) {
-            auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
-            adds.push_back(c.get());
-            comp->add(std::move(c));
-        }
-        stack_.execute(std::move(comp));
-        last_.clear();
-        for (auto* c : adds) last_.push_back(c->entityId());
+        sewerDraw(net, at, cmd);
         say("sewer.msg.summary", {net.name, std::to_string(net.manholes.size()), f4(res.totalLength), std::to_string(res.errors()),
                                   std::to_string(res.warnings()), std::to_string(last_.size())});
     } else if (cmd == "DIMLINEAR" || cmd == "DIMALIGNED") {

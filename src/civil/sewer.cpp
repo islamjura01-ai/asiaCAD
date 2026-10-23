@@ -358,6 +358,11 @@ SewerResult compute(const SewerNetwork& n, const PipeCatalog& cat) {
         r.manholeCount[mr.diameter] += 1;
     }
     for (auto& [id, q] : qty) r.pipes.push_back(q);
+    for (std::size_t i = 0; i < r.segments.size() && i + 1 < r.manholes.size(); ++i) {
+        auto& sg = r.segments[i];
+        if (!sg.spec) continue;
+        sg.pipeLength = std::max(0.0, sg.length - r.manholes[i].diameter / 2 - r.manholes[i + 1].diameter / 2 + n.segments[i].insUp + n.segments[i].insDown);
+    }
     return r;
 }
 
@@ -376,7 +381,15 @@ std::vector<std::unique_ptr<IEntity>> drawPlan(const SewerNetwork& n, const Sewe
         out.push_back(std::move(e));
     };
     const std::size_t nm = n.manholes.size();
+    // aqlli obyekt bog'i: tanlanganda tuzatish paneli tarmoq elementini taniydi
+    auto tag = [&](std::size_t from, const char* k, std::size_t idx) {
+        for (std::size_t j = from; j < out.size(); ++j) {
+            out[j]->xset("sewer", n.name);
+            out[j]->xset(k, std::to_string(idx));
+        }
+    };
     for (std::size_t k = 0; k < nm; ++k) {
+        const std::size_t first = out.size();
         const auto& m = n.manholes[k];
         const double rad = (k < r.manholes.size() ? r.manholes[k].diameter : 1.0) / 2;
         const Vec3 c{m.x, m.y, 0};
@@ -388,10 +401,12 @@ std::vector<std::unique_ptr<IEntity>> drawPlan(const SewerNetwork& n, const Sewe
                                              TextHAlign::Left, TextVAlign::Top),
                 2);
         }
+        tag(first, "mh", k);
     }
     for (std::size_t i = 0; i + 1 < nm && i < r.segments.size(); ++i) {
         const auto& s = r.segments[i];
         if (!s.spec) continue;
+        const std::size_t first = out.size();
         const Vec3 a{n.manholes[i].x, n.manholes[i].y, 0}, b{n.manholes[i + 1].x, n.manholes[i + 1].y, 0};
         const Vec3 u = unit(b - a);
         const double ra = r.manholes[i].diameter / 2, rb = r.manholes[i + 1].diameter / 2;
@@ -413,6 +428,7 @@ std::vector<std::unique_ptr<IEntity>> drawPlan(const SewerNetwork& n, const Sewe
         const std::string geo = n.pressure ? "L=" + num(s.length) : "i=" + num(s.slope, 4) + "  L=" + num(s.length);
         put(std::make_unique<TextEntity>(mid + up * (h * 0.5), h * 0.8, lbl, ang, TextHAlign::Center, TextVAlign::Bottom), 2);
         put(std::make_unique<TextEntity>(mid - up * (h * 0.5), h * 0.7, geo, ang, TextHAlign::Center, TextVAlign::Top), 2);
+        tag(first, "seg", i);
     }
     return out;
 }
@@ -519,6 +535,7 @@ std::vector<std::unique_ptr<IEntity>> drawProfile(const SewerNetwork& n, const S
         text({x, Y(n.manholes[i].rim) + h * 0.8, 0}, h * 0.8, n.manholes[i].name, 0, TextHAlign::Center, TextVAlign::Bottom);
     }
     (void)maxEl;
+    for (auto& e : out) { e->xset("sewer", n.name); e->xset("part", "profile"); }
     return out;
 }
 
@@ -556,8 +573,9 @@ std::string toJson(const SewerNetwork& n) {
     os << "  ],\n  \"segments\": [\n";
     for (std::size_t i = 0; i < n.segments.size(); ++i) {
         const auto& s = n.segments[i];
-        os << std::format("    {{\"spec\": \"{}\", \"slope\": {}, \"flow\": {}}}{}\n", esc(s.specId), s.slope, s.flowLs,
-                          i + 1 < n.segments.size() ? "," : "");
+        os << std::format("    {{\"spec\": \"{}\", \"slope\": {}, \"flow\": {}", esc(s.specId), s.slope, s.flowLs);
+        if (s.insUp != 0 || s.insDown != 0) os << std::format(", \"insUp\": {}, \"insDown\": {}", s.insUp, s.insDown);
+        os << (i + 1 < n.segments.size() ? "},\n" : "}\n");
     }
     os << "  ]\n}\n";
     return os.str();
@@ -619,7 +637,7 @@ SewerNetwork fromJson(const std::string& text) {
     if (const json::Value* ss = root.find("segments"); ss && ss->isArray()) {
         for (const auto& v : ss->arr()) {
             if (!v.isObject()) throw Error("sewer.err.format", {"segments"});
-            n.segments.push_back({str(v, "spec", ""), numv(v, "slope", 0), numv(v, "flow", 0)});
+            n.segments.push_back({str(v, "spec", ""), numv(v, "slope", 0), numv(v, "flow", 0), numv(v, "insUp", 0), numv(v, "insDown", 0)});
         }
     }
     return n;

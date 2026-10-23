@@ -46,6 +46,7 @@ struct Segment {
     std::string specId;
     double slope = 0;                     // 0 — tarmoqning standart nishabligi
     double flowLs = 0;                    // hisobiy sarf, l/s (0 — faqat to'liq kesim sig'imi)
+    double insUp = 0, insDown = 0;        // quvur quduq ichki devoridan ichkariga kirishi, m (yuqori / pastki quduq)
 };
 
 struct SewerNetwork {
@@ -64,7 +65,8 @@ struct SewerNetwork {
 };
 
 struct SegmentResult {
-    double length = 0, slope = 0;
+    double length = 0, slope = 0;         // length — quduq markazlari orasida (gorizontal)
+    double pipeLength = 0;                // haqiqiy quvur: markazlar orasi − quduq radiuslari + quduqqa kirishlar
     double invUp = 0, invDown = 0;        // quvur tubi belgilari
     double depthUp = 0, depthDown = 0;    // yer sathidan quvur tubigacha
     double coverMin = 0;                  // quvur ustigacha eng kam qatlam

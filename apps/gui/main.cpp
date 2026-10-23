@@ -170,7 +170,8 @@ int main(int argc, char** argv) {
             w.viewport()->zoomExtents();
             if (const auto v = viewArg.split(','); v.size() == 3) w.viewport()->setView({v[0].toDouble(), v[1].toDouble(), 0}, v[2].toDouble());
             if (selectAll) w.viewport()->setSelection(w.document().ids());
-            if (!select.isEmpty()) {
+            if (select.contains(':')) w.selectTag(select);  // masalan: sewer:K1:seg:1
+            else if (!select.isEmpty()) {
                 std::vector<asiacad::EntityId> ids;
                 for (const auto& t : select.split(',')) ids.push_back(t.toULongLong());
                 w.viewport()->setSelection(ids);

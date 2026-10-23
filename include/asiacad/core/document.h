@@ -92,6 +92,11 @@ public:
     void setSheets(std::vector<Sheet> s) { sheets_ = std::move(s); }
     const Sheet* sheet(const std::string& name) const;
 
+    // ---- Nomlangan obyektlar lug'ati (AutoCAD NOD kabi): "sewer:K1" -> tarmoq JSON — DictCommand orqali (undo)
+    const std::map<std::string, std::string>& dict() const { return dict_; }
+    void setDict(std::map<std::string, std::string> d) { dict_ = std::move(d); }
+    std::string dictGet(const std::string& k) const { auto it = dict_.find(k); return it == dict_.end() ? std::string() : it->second; }
+
     // ---- Dinamik bog'lanishlar — LinksCommand orqali (undo) ----
     const std::vector<DynLink>& links() const { return links_; }
     void setLinks(std::vector<DynLink> l) { links_ = std::move(l); }
@@ -104,6 +109,7 @@ private:
     EntityId nextId_ = 1;
     std::vector<Sheet> sheets_;
     std::vector<DynLink> links_;
+    std::map<std::string, std::string> dict_;
 
     // Indeks: qurilgan daraxt + undan keyin o'zgarganlar (stale_ — daraxtdagi eskirgan yozuvlar,
     // dirty_ — ularning hozirgi qutilari). O'zgarishlar ko'payganda daraxt qayta quriladi.

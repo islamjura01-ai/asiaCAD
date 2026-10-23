@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.25: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.26: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,19 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## Tuzatish paneli — aqlli obyektlar (v0.26) — `core/props`, `apps/gui/smart_panel`, `SETPROP`, `PIPEEDIT`
+- **Xossalar** panelida tanlangan obyekt turiga qarab tahrirlanadigan maydonlar chiqadi; qiymatni yozib Enter — darhol chizmada (undo bilan).
+- **Kanalizatsiya quvuri** (planda bosing): material/Ø, nishablik ‰, lotok boshi va oxiri (oxiri o'zgarsa nishablik qayta hisoblanadi),
+  **quduqqa kirishi, sm** (yuqori va pastki quduq), sarf; hisob: markazlar orasidagi va **haqiqiy quvur uzunligi**, quvur usti belgilari,
+  chuqurlik, eng kam ko'mish (muzlashdan sayoz bo'lsa sariq), to'liq kesim Q·V, to'lish/tezlik, normadagi eng kam nishablik, shu quvur xatolari.
+  ↑/↓ quduq, ◀/▶ qo'shni quvur tugmalari.
+- **Quduq**: nomi, X/Y, yer (lyuk) belgisi, chiqish lotogi (bo'sh — avto), diametr; kirish/chiqish lotogi, **perepad (sm)**, chuqurlik, normadagi diametr.
+- Tarmoq chizmada saqlanadi (`.acad` lug'ati); o'zgarishdan keyin plan va profil o'zi qayta chiziladi.
+- **Har qanday obyekt**: chiziq (boshi/oxiri XYZ, uzunlik, burchak, balandlik farqi, nishablik ‰), aylana (markaz, R, D, maydon), yoy,
+  poliliniya (yopiq, balandlik, uzunlik, maydon), matn (matn, balandlik, burilish), nuqta (XYZ). Bir turdagi bir nechta obyekt — hammasiga birdan.
+- **Dinamik bog'lanish natijasi** tanlansa — qaysi buyruq, holati va «↻ Hozir yangilash».
+- Buyruq satri: `XOSSA 12 LENGTH=25 Z2=3` (en `SETPROP`), `QUVURTAHRIR K1 SEG=2 SLOPE=12 INSUP=5` / `MH=3 RIM=245.5 "NAME=Q-3"` (en `PIPEEDIT`).
 
 ## Dinamik bog'lanishlar — Civil 3D "dynamic model" (v0.25) — `LINKS`, `apps/cli/interpreter_links.cpp`
 - `TIN`, `CONTOUR`, `PROFILE`, `XSECTIONS`, `CARTOGRAM` natijasi o'z manbasiga bog'lanadi: nuqtalar (EG/FG), o'q, chegara.

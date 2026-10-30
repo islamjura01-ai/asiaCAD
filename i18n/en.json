@@ -525,7 +525,7 @@
     "gui.unsaved.title": "Unsaved changes",
     "gui.unsaved.text": "The drawing has unsaved changes. Save them?",
     "gui.untitled": "Untitled",
-    "gui.filter.drawings": "Drawings (*.acad *.dxf)",
+    "gui.filter.drawings": "Drawings (*.acad *.dxf *.dwg)",
     "gui.lang": "Language",
     "gui.mode": "Mode",
     "gui.module.drawing": "Drawing",
@@ -2258,6 +2258,11 @@
     "xl.c.backfill": "Backfill, m³",
     "pipe.msg.branch": "Branch matched to manhole {0} / {1} by pipe crowns: slope {2} ‰, start depth {3} m",
     "prop.RECTW": "Width (side 1)",
-    "prop.RECTH": "Length (side 2)"
+    "prop.RECTH": "Length (side 2)",
+    "dwg.err.noconv": "No DWG converter found. Install the free \"ODA File Converter\" (opendesign.com) or LibreDWG (dwg2dxf). The path can be set with ASIACAD_DWG_CONVERTER",
+    "dwg.err.convert": "Could not convert DWG: {0}",
+    "dwg.msg.converted": "{0} — converted to DXF via {1}",
+    "dwg.msg.saved": "DWG saved: {0} ({1}, {2})",
+    "gui.ab.axis": "Pipe axis"
   }
 }

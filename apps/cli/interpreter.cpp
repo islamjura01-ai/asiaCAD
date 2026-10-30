@@ -24,11 +24,13 @@
 #include <asiacad/io/acad_file.h>
 #include <asiacad/io/dxf_reader.h>
 #include <asiacad/io/dxf_writer.h>
+#include <asiacad/io/dwg_bridge.h>
 
 #include <format>
 #include <fstream>
 #include <map>
 #include <optional>
+#include <filesystem>
 #include <set>
 #include <sstream>
 
@@ -170,7 +172,7 @@ const char* commandSyntax(const std::string& c) {
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
-        {"ASBUILT", "net|ROAD pts [REF=INV|TOP] [TOL=cm] [TOLP=cm] [MAXD=m] [XLSX=f] [NODRAW]"},
+        {"ASBUILT", "net|ROAD|UTIL pts [REF=INV|TOP|AXIS] [TOL=cm] [TOLP=cm] [MAXD=m] [XLSX=f] [NODRAW]"},
         {"PIPEDRAW", "name p1 p2 [p…] [SYS=K1|K2] [SPEC=id] [SLOPE=‰] [DEPTH=m] [RIM=m]"},
         {"OBJEDIT", "UTIL LINE=n [DN=mm] [ZUP=m] [ZDOWN=m] [DEPTH=m] [KIND=k] | UTIL NODE=n [GROUND=m] [BOTTOM=m] [NAME=t] | ROAD ST=n DESIGN=m | WW ST=n BOTTOM=m"},
         {"PIPEEDIT", "net SEG=n|MH=n KEY=value ..."},
@@ -1319,6 +1321,17 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             say("msg.exported", {path});
             return;
         }
+        if (ext == "dwg") {  // DWG: DXF yoziladi va tashqi konverter bilan aylantiriladi
+            const auto tmp = std::filesystem::temp_directory_path() / (std::filesystem::path(path).stem().string() + ".dxf");
+            if (!saveDxf(doc_, tmp.string())) throw Error("err.write_failed", {tmp.string()});
+            std::string ver = "ACAD2018";
+            if (a.size() > 1) ver = utf8::toUpper(a[1]);
+            dwg::fromDxf(tmp.string(), path, ver);
+            std::error_code ec;
+            std::filesystem::remove(tmp, ec);
+            say("dwg.msg.saved", {path, ver, dwg::converterName(dwg::find())});
+            return;
+        }
         if (ext.empty()) path += ".acad";
         saveAcad(doc_, path);
         currentFile_ = path;
@@ -1469,9 +1482,13 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     } else if (cmd == "OPEN") {
         need(a, 1, cmd);
         if (stack_.isDirty() && !forced(a)) throw Error("err.unsaved", {loc_.commandName(cmd)});
-        const std::string& path = a[0];
+        std::string path = a[0];
         std::vector<Message> warnings;
         Document loaded;
+        if (extOf(path) == "dwg") {
+            path = dwg::toDxf(path);
+            say("dwg.msg.converted", {a[0], dwg::converterName(dwg::find())});
+        }
         if (extOf(path) == "dxf") {  // DXF — yangi chizma sifatida (joriy fayl nomi berilmaydi)
             DxfImportResult res = readDxfFile(path);
             for (const auto& l : res.layers)
@@ -1490,11 +1507,16 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         if (!doc_.layer(layer_)) layer_ = "0";
         color_ = kColorByLayer;
         last_.clear();
-        say("msg.opened", {path, std::to_string(doc_.size()), std::to_string(doc_.layers().size())});
+        say("msg.opened", {a[0], std::to_string(doc_.size()), std::to_string(doc_.layers().size())});
         for (const auto& w : warnings) out_ << "  ! " << loc_.tr(w.key, w.args) << '\n';
     } else if (cmd == "IMPORT") {
         need(a, 1, cmd);
-        DxfImportResult res = readDxfFile(a[0]);
+        std::string src = a[0];
+        if (extOf(src) == "dwg") {
+            src = dwg::toDxf(src);
+            say("dwg.msg.converted", {a[0], dwg::converterName(dwg::find())});
+        }
+        DxfImportResult res = readDxfFile(src);
         const std::size_t n = res.entities.size();
         std::size_t newLayers = 0;
         stack_.execute(makeImportCommand(doc_, res, &newLayers));

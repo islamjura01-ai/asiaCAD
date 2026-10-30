@@ -525,7 +525,7 @@
     "gui.unsaved.title": "Несохранённые изменения",
     "gui.unsaved.text": "В чертеже есть несохранённые изменения. Сохранить?",
     "gui.untitled": "Без имени",
-    "gui.filter.drawings": "Чертежи (*.acad *.dxf)",
+    "gui.filter.drawings": "Чертежи (*.acad *.dxf *.dwg)",
     "gui.lang": "Язык",
     "gui.mode": "Режим",
     "gui.module.drawing": "Черчение",
@@ -2258,6 +2258,11 @@
     "xl.c.backfill": "Засыпка, м³",
     "pipe.msg.branch": "Ответвление подогнано к колодцу {0} / {1} по шелыгам: уклон {2} ‰, глубина в начале {3} м",
     "prop.RECTW": "Ширина (1-я сторона)",
-    "prop.RECTH": "Длина (2-я сторона)"
+    "prop.RECTH": "Длина (2-я сторона)",
+    "dwg.err.noconv": "Конвертер DWG не найден. Установите бесплатный «ODA File Converter» (opendesign.com) или LibreDWG (dwg2dxf). Путь можно указать в ASIACAD_DWG_CONVERTER",
+    "dwg.err.convert": "Не удалось преобразовать DWG: {0}",
+    "dwg.msg.converted": "{0} — преобразован в DXF через {1}",
+    "dwg.msg.saved": "DWG сохранён: {0} ({1}, {2})",
+    "gui.ab.axis": "Ось трубы"
   }
 }

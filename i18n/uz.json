@@ -525,7 +525,7 @@
     "gui.unsaved.title": "Saqlanmagan oʻzgarishlar",
     "gui.unsaved.text": "Chizmada saqlanmagan oʻzgarishlar bor. Saqlaysizmi?",
     "gui.untitled": "Nomsiz",
-    "gui.filter.drawings": "Chizmalar (*.acad *.dxf)",
+    "gui.filter.drawings": "Chizmalar (*.acad *.dxf *.dwg)",
     "gui.lang": "Til",
     "gui.mode": "Rejim",
     "gui.module.drawing": "Chizma",
@@ -2258,6 +2258,11 @@
     "xl.c.backfill": "Koʻmish, m³",
     "pipe.msg.branch": "Shoxobcha {0} / {1} qudugʻiga quvur ustlari boʻyicha moslandi: nishablik {2} ‰, boshlanishda chuqurlik {3} m",
     "prop.RECTW": "Kenglik (1-tomon)",
-    "prop.RECTH": "Uzunlik (2-tomon)"
+    "prop.RECTH": "Uzunlik (2-tomon)",
+    "dwg.err.noconv": "DWG konverter topilmadi. Bepul «ODA File Converter» ni oʻrnating (opendesign.com) yoki LibreDWG (dwg2dxf). Yoʻlni ASIACAD_DWG_CONVERTER bilan koʻrsatish mumkin",
+    "dwg.err.convert": "DWG ni aylantirib boʻlmadi: {0}",
+    "dwg.msg.converted": "{0} — {1} orqali DXF ga aylantirildi",
+    "dwg.msg.saved": "DWG saqlandi: {0} ({1}, {2})",
+    "gui.ab.axis": "Quvur oʻqi"
   }
 }

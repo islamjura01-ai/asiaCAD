@@ -338,7 +338,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.28"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.29"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -566,7 +566,7 @@ void MainWindow::buildRibbon() {
         auto* ic = new QLabel(brand);
         ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
         auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.28</span>"),
+                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.29</span>"),
                               brand);
         nm->setObjectName("brandName");
         nm->setTextFormat(Qt::RichText);
@@ -1559,8 +1559,8 @@ void MainWindow::asBuiltDialog() {
     QStringList objs;
     for (const auto& [k, v] : doc_.dict())
         if (k.rfind("sewer:", 0) == 0 && k.find(":at") == std::string::npos) objs << QString::fromStdString(k.substr(6));
-    const bool road = !doc_.dictGet("road:main").empty();
-    if (objs.isEmpty() && !road) {
+    const bool road = !doc_.dictGet("road:main").empty(), util = !doc_.dictGet("util:main").empty();
+    if (objs.isEmpty() && !road && !util) {
         QMessageBox::information(this, t("gui.act.asbuilt"), t("gui.ab.none"));
         return;
     }
@@ -1570,12 +1570,14 @@ void MainWindow::asBuiltDialog() {
     auto* obj = new QComboBox(&dlg);
     for (const auto& o : objs) obj->addItem(o, o);
     if (road) obj->addItem(t("gui.ab.road"), QStringLiteral("ROAD"));
+    if (util) obj->addItem(t("obj.kind.util"), QStringLiteral("UTIL"));
     auto* layer = new QComboBox(&dlg);
     for (const auto& [name, l] : doc_.layers()) layer->addItem(QString::fromStdString(name));
     layer->setCurrentText(QStringLiteral("SYOMKA"));
     auto* ref = new QComboBox(&dlg);
     ref->addItem(t("gui.ab.inv"), "INV");
     ref->addItem(t("gui.ab.top"), "TOP");
+    ref->addItem(t("gui.ab.axis"), "AXIS");
     auto* tol = new QDoubleSpinBox(&dlg);
     tol->setRange(0.1, 100);
     tol->setValue(5);
@@ -2479,14 +2481,15 @@ void MainWindow::saveFile(bool saveAs) {
 }
 
 void MainWindow::importDxf() {
-    const QString f = QFileDialog::getOpenFileName(this, t("gui.act.import"), {}, QStringLiteral("DXF (*.dxf)"));
+    const QString f = QFileDialog::getOpenFileName(this, t("gui.act.import"), {}, QStringLiteral("DXF / DWG (*.dxf *.dwg);;DXF (*.dxf);;DWG (*.dwg)"));
     if (!f.isEmpty()) runLine(QStringLiteral("IMPORT \"%1\"").arg(f));
 }
 
 void MainWindow::exportDxf() {
-    QString f = QFileDialog::getSaveFileName(this, t("gui.act.export"), {}, QStringLiteral("DXF (*.dxf)"));
+    QString sel;
+    QString f = QFileDialog::getSaveFileName(this, t("gui.act.export"), {}, QStringLiteral("DXF (*.dxf);;DWG — AutoCAD 2018 (*.dwg)"), &sel);
     if (f.isEmpty()) return;
-    if (!f.endsWith(".dxf", Qt::CaseInsensitive)) f += ".dxf";
+    if (!f.endsWith(".dxf", Qt::CaseInsensitive) && !f.endsWith(".dwg", Qt::CaseInsensitive)) f += sel.contains("dwg") ? ".dwg" : ".dxf";
     runLine(QStringLiteral("SAVE \"%1\"").arg(f));
 }
 

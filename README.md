@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.28: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.29: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,13 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## DWG ochish va saqlash; yer osti tarmog'i ijro syomkasi (v0.29) — `io/dwg_bridge`
+- **DWG**: Fayl → Ochish / Import / Eksport `.dwg` ni qabul qiladi. DWG yopiq format, shuning uchun (FreeCAD, QGIS kabi) bepul tashqi konverter
+  ishlatiladi: **ODA File Converter** (opendesign.com, bepul) yoki **LibreDWG** (`dwg2dxf`/`dxf2dwg`). AsiaCAD uni o'zi topadi
+  (Windows: `C:\Program Files\ODA\ODAFileConverter*`, PATH), yoki yo'lni `ASIACAD_DWG_CONVERTER` bilan bering.
+  Saqlashda versiya: `SAVE fayl.dwg ACAD2013` (sukut ACAD2018). Konverter bo'lmasa — qayerdan olish haqida xabar.
+- **Ijro syomkasi — yer osti tarmoqlari**: `IJRO UTIL QATLAM:SYOMKA REF=AXIS|INV|TOP` — nuqta eng yaqin 3D o'qqa, loyiha o'q / lotok / quvur usti.
 
 ## Ijro syomkasi, shoxobcha lotogi, bino elementi, smeta (v0.28) — `ASBUILT`
 - **Ijro syomkasi** (Geodeziya → «Ijro syomkasi»): syomka nuqtalari loyiha bilan solishtiriladi —

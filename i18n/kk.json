@@ -525,7 +525,7 @@
     "gui.unsaved.title": "Сақталмаған өзгерістер",
     "gui.unsaved.text": "Сызбада сақталмаған өзгерістер бар. Сақтайсыз ба?",
     "gui.untitled": "Атаусыз",
-    "gui.filter.drawings": "Сызбалар (*.acad *.dxf)",
+    "gui.filter.drawings": "Сызбалар (*.acad *.dxf *.dwg)",
     "gui.lang": "Тіл",
     "gui.mode": "Режим",
     "gui.module.drawing": "Сызба",
@@ -2258,6 +2258,11 @@
     "xl.c.backfill": "Көму, м³",
     "pipe.msg.branch": "Тармақ {0} / {1} құдығына құбыр үстері бойынша сәйкестендірілді: еңіс {2} ‰, бастағы тереңдік {3} м",
     "prop.RECTW": "Ені (1-жақ)",
-    "prop.RECTH": "Ұзындығы (2-жақ)"
+    "prop.RECTH": "Ұзындығы (2-жақ)",
+    "dwg.err.noconv": "DWG түрлендіргіші табылмады. Тегін «ODA File Converter» (opendesign.com) не LibreDWG (dwg2dxf) орнатыңыз. Жолды ASIACAD_DWG_CONVERTER арқылы беруге болады",
+    "dwg.err.convert": "DWG түрлендірілмеді: {0}",
+    "dwg.msg.converted": "{0} — {1} арқылы DXF-ке түрлендірілді",
+    "dwg.msg.saved": "DWG сақталды: {0} ({1}, {2})",
+    "gui.ab.axis": "Құбыр осі"
   }
 }

@@ -31,6 +31,7 @@ add_library(asiacad_core
   src/core/props.cpp
   src/io/dxf_writer.cpp
   src/io/xlsx.cpp
+  src/io/dwg_bridge.cpp
 )
 target_include_directories(asiacad_core PUBLIC include)
 

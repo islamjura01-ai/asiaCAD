@@ -18,6 +18,7 @@
 #include <asiacad/civil/drive.h>
 #include <asiacad/civil/symbols.h>
 #include <asiacad/core/draft.h>
+#include <asiacad/io/dwg_bridge.h>
 #include <asiacad/io/xlsx.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/props.h>
@@ -3734,6 +3735,72 @@ TEST(branch_rect_estimate_asbuilt) {
     in.run("ASBUILT K1-1 LAYER:IJRO_TEST NODRAW");
     in.run("ASBUILT ROAD LAYER:IJRO_TEST");
     CHECK(out.str().find("No ROAD model") != std::string::npos);
+}
+
+
+// ---------- DWG tashqi konverter orqali (ODA File Converter interfeysi soxta skript bilan) va UTIL ijro syomkasi ----------
+TEST(dwg_bridge_and_util_asbuilt) {
+#ifndef _WIN32
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "asiacad_dwg_fake";
+    fs::create_directories(dir);
+    const fs::path conv = dir / "ODAFileConverter";
+    {
+        std::ofstream f(conv);
+        f << "#!/bin/sh\nin=\"$1\"; out=\"$2\"; t=\"$4\"\n"
+             "for f in \"$in\"/*; do b=$(basename \"$f\"); n=\"${b%.*}\"; if [ \"$t\" = DXF ]; then cp \"$f\" \"$out/$n.dxf\"; else cp \"$f\" \"$out/$n.dwg\"; fi; done\n";
+    }
+    fs::permissions(conv, fs::perms::owner_all);
+    setenv("ASIACAD_DWG_CONVERTER", conv.c_str(), 1);
+    CHECK(dwg::find().kind == dwg::Converter::Oda);
+    auto loc = loadedLocalizer();
+    loc.setLanguage("en");
+    {
+        Document doc;
+        CommandStack st(doc);
+        std::ostringstream out;
+        cli::Interpreter in(doc, st, loc, out);
+        in.run("LINE 0,0 10,0 10,10");
+        in.run("CIRCLE 5,5 2");
+        const std::string dwgFile = (dir / "test.dwg").string();
+        in.run("SAVE \"" + dwgFile + "\"");
+        CHECK(out.str().find("DWG saved") != std::string::npos && fs::exists(dwgFile));
+        in.run("OPEN \"" + dwgFile + "\" !");
+        CHECK(out.str().find("converted to DXF via ODA File Converter") != std::string::npos);
+        CHECK(doc.size() == 3);
+        in.run("IMPORT \"" + dwgFile + "\"");
+        CHECK(doc.size() == 6);
+    }
+    setenv("ASIACAD_DWG_CONVERTER", (dir / "missing").c_str(), 1);
+    if (dwg::find().kind == dwg::Converter::None) {
+        Document doc;
+        CommandStack st(doc);
+        std::ostringstream out;
+        cli::Interpreter in(doc, st, loc, out);
+        in.run("OPEN \"" + (dir / "test.dwg").string() + "\" !");
+        CHECK(out.str().find("No DWG converter found") != std::string::npos);
+    }
+    unsetenv("ASIACAD_DWG_CONVERTER");
+    fs::remove_all(dir);
+#endif
+    // yer osti tarmog'i: o'q belgisi bo'yicha (AXIS) — o'q ustidagi nuqta 0 sm
+    auto loc2 = loadedLocalizer();
+    loc2.setLanguage("en");
+    Document doc;
+    CommandStack st(doc);
+    std::ostringstream out;
+    cli::Interpreter in(doc, st, loc2, out);
+    in.run(std::string("OPEN \"") + ASIACAD_EXAMPLES_DIR + "/yer_osti.acad\"");
+    in.run("UTIL +");
+    civil::UtilModel m;
+    auto p = civil::defaultUtilParams();
+    civil::utilFromJson(doc.dictGet("util:main"), m, p);
+    const auto& v = m.lines[0].v;
+    const Vec3 mid{(v[0].x + v[1].x) / 2, (v[0].y + v[1].y) / 2, (v[0].z + v[1].z) / 2 + 0.03};
+    in.run("CLAYER IJRO");
+    in.run(std::format("POINT {},{},{}", mid.x, mid.y, mid.z));
+    in.run("ASBUILT UTIL LAYER:IJRO REF=AXIS TOL=5");
+    CHECK(out.str().find("As-built — Underground utilities: 1 points, within tolerance (±5 cm) 1") != std::string::npos);
 }
 
 // GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak

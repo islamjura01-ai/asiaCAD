@@ -525,7 +525,7 @@
     "gui.unsaved.title": "Kaydedilmemiş değişiklikler",
     "gui.unsaved.text": "Çizimde kaydedilmemiş değişiklikler var. Kaydedilsin mi?",
     "gui.untitled": "Adsız",
-    "gui.filter.drawings": "Çizimler (*.acad *.dxf)",
+    "gui.filter.drawings": "Çizimler (*.acad *.dxf *.dwg)",
     "gui.lang": "Dil",
     "gui.mode": "Mod",
     "gui.module.drawing": "Çizim",
@@ -2258,6 +2258,11 @@
     "xl.c.backfill": "Geri dolgu, m³",
     "pipe.msg.branch": "Bağlantı {0} / {1} bacasına boru üstlerine göre uyarlandı: eğim {2} ‰, başlangıç derinliği {3} m",
     "prop.RECTW": "Genişlik (1. kenar)",
-    "prop.RECTH": "Uzunluk (2. kenar)"
+    "prop.RECTH": "Uzunluk (2. kenar)",
+    "dwg.err.noconv": "DWG dönüştürücü bulunamadı. Ücretsiz \"ODA File Converter\" (opendesign.com) veya LibreDWG (dwg2dxf) kurun. Yol ASIACAD_DWG_CONVERTER ile verilebilir",
+    "dwg.err.convert": "DWG dönüştürülemedi: {0}",
+    "dwg.msg.converted": "{0} — {1} ile DXF'e dönüştürüldü",
+    "dwg.msg.saved": "DWG kaydedildi: {0} ({1}, {2})",
+    "gui.ab.axis": "Boru ekseni"
   }
 }

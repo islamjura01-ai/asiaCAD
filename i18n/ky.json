@@ -525,7 +525,7 @@
     "gui.unsaved.title": "Сакталбаган өзгөрүүлөр",
     "gui.unsaved.text": "Чиймеде сакталбаган өзгөрүүлөр бар. Сактайсызбы?",
     "gui.untitled": "Аталышсыз",
-    "gui.filter.drawings": "Чиймелер (*.acad *.dxf)",
+    "gui.filter.drawings": "Чиймелер (*.acad *.dxf *.dwg)",
     "gui.lang": "Тил",
     "gui.mode": "Режим",
     "gui.module.drawing": "Чийме",
@@ -2258,6 +2258,11 @@
     "xl.c.backfill": "Көмүү, м³",
     "pipe.msg.branch": "Бутак {0} / {1} кудугуна түтүк үстүлөрү боюнча ылайыкташтырылды: эңкейиш {2} ‰, баштагы тереңдик {3} м",
     "prop.RECTW": "Кеңдиги (1-тарап)",
-    "prop.RECTH": "Узундугу (2-тарап)"
+    "prop.RECTH": "Узундугу (2-тарап)",
+    "dwg.err.noconv": "DWG өзгөрткүч табылган жок. Акысыз «ODA File Converter» (opendesign.com) же LibreDWG (dwg2dxf) орнотуңуз. Жолду ASIACAD_DWG_CONVERTER аркылуу берсе болот",
+    "dwg.err.convert": "DWG өзгөртүлгөн жок: {0}",
+    "dwg.msg.converted": "{0} — {1} аркылуу DXF'ке өзгөртүлдү",
+    "dwg.msg.saved": "DWG сакталды: {0} ({1}, {2})",
+    "gui.ab.axis": "Түтүк огу"
   }
 }

@@ -6,6 +6,7 @@
 #include "interpreter.h"
 
 #include <asiacad/civil/road.h>
+#include <asiacad/civil/utility.h>
 #include <asiacad/core/entities.h>
 #include <asiacad/core/error.h>
 #include <asiacad/i18n/utf8.h>
@@ -44,7 +45,8 @@ bool Interpreter::dispatchAsBuilt(const std::string& cmd, const Args& a) {
     if (a.size() < 2) throw usage();
     const std::string obj = a[0];
     std::vector<EntityId> sel = parseSelection(a[1]);
-    bool top = false, draw = true;
+    std::string ref = "INV";
+    bool draw = true;
     double tol = 5, tolP = 10, maxD = 2.0;
     std::string xl;
     for (std::size_t i = 2; i < a.size(); ++i) {
@@ -53,7 +55,7 @@ bool Interpreter::dispatchAsBuilt(const std::string& cmd, const Args& a) {
         const auto eq = a[i].find('=');
         if (eq == std::string::npos) throw usage();
         const std::string k = utf8::toUpper(a[i].substr(0, eq)), v = a[i].substr(eq + 1);
-        if (k == "REF") top = utf8::toUpper(v) == "TOP";
+        if (k == "REF") ref = utf8::toUpper(v);
         else if (k == "TOL") tol = parseNumber(v);
         else if (k == "TOLP") tolP = parseNumber(v);
         else if (k == "MAXD") maxD = parseNumber(v);
@@ -78,7 +80,53 @@ bool Interpreter::dispatchAsBuilt(const std::string& cmd, const Args& a) {
 
     std::vector<AbRow> rows;
     std::string objLabel;
-    if (utf8::toUpper(obj) == "ROAD" || loc_.resolveCommand(obj) == "ROAD") {
+    if (utf8::toUpper(obj) == "UTIL" || loc_.resolveCommand(obj) == "UTIL") {
+        // yer osti tarmoqlari: eng yaqin 3D o'q; loyiha — lotok (INV), quvur usti (TOP) yoki o'q (AXIS)
+        const std::string js = doc_.dictGet("util:main");
+        if (js.empty()) throw Error("obj.err.none", {"UTIL"});
+        civil::UtilModel m;
+        auto p = civil::defaultUtilParams();
+        civil::utilFromJson(js, m, p);
+        objLabel = loc_.tr("obj.kind.util");
+        for (const auto& [q, id] : pts) {
+            double bestD = 1e300, bt = 0, bo = 0, along = 0;
+            int bl = -1;
+            std::size_t bk = 0;
+            for (std::size_t li = 0; li < m.lines.size(); ++li) {
+                const auto& v = m.lines[li].v;
+                double acc = 0;
+                for (std::size_t k = 0; k + 1 < v.size(); ++k) {
+                    const double vx = v[k + 1].x - v[k].x, vy = v[k + 1].y - v[k].y, L2 = vx * vx + vy * vy;
+                    if (L2 < 1e-12) continue;
+                    const double t = std::clamp(((q.x - v[k].x) * vx + (q.y - v[k].y) * vy) / L2, 0.0, 1.0);
+                    const double d = std::hypot(q.x - (v[k].x + vx * t), q.y - (v[k].y + vy * t));
+                    if (d < bestD) {
+                        bestD = d;
+                        bl = static_cast<int>(li);
+                        bk = k;
+                        bt = t;
+                        bo = ((q.x - v[k].x) * -vy + (q.y - v[k].y) * vx) / std::sqrt(L2);
+                        along = acc + std::sqrt(L2) * t;
+                    }
+                    acc += std::sqrt(L2);
+                }
+            }
+            if (bl < 0 || bestD > maxD) continue;
+            const auto& ln = m.lines[static_cast<std::size_t>(bl)];
+            const double axis = ln.v[bk].z + (ln.v[bk + 1].z - ln.v[bk].z) * bt;
+            const double half = ln.dn / 2000.0;
+            AbRow r;
+            r.p = q;
+            r.name = nameOf(q, id);
+            r.elem = loc_.tr(std::string("util.kind.") + civil::utilKey(ln.kind)) + " #" + std::to_string(bl + 1);
+            r.pk = along;
+            r.design = axis + (ref == "TOP" ? half : ref == "AXIS" ? 0.0 : -half);
+            r.dz = q.z - r.design;
+            r.off = bo;
+            r.ok = std::abs(r.dz) * 100 <= tol + 1e-9 && std::abs(r.off) * 100 <= tolP + 1e-9;
+            rows.push_back(r);
+        }
+    } else if (utf8::toUpper(obj) == "ROAD" || loc_.resolveCommand(obj) == "ROAD") {
         const std::string js = doc_.dictGet("road:main");
         if (js.empty()) throw Error("obj.err.none", {"ROAD"});
         civil::RoadModel m;
@@ -150,7 +198,7 @@ bool Interpreter::dispatchAsBuilt(const std::string& cmd, const Args& a) {
             r.name = nameOf(q, id);
             r.elem = net.manholes[static_cast<std::size_t>(bi)].name + "→" + net.manholes[static_cast<std::size_t>(bi) + 1].name;
             r.pk = ch[static_cast<std::size_t>(bi)] + s.length * bt;
-            r.design = s.invUp + (s.invDown - s.invUp) * bt + (top ? s.spec->od / 1000.0 : 0.0);
+            r.design = s.invUp + (s.invDown - s.invUp) * bt + (ref == "TOP" ? s.spec->od / 1000.0 : 0.0);
             r.dz = q.z - r.design;
             r.off = bo;
             r.ok = std::abs(r.dz) * 100 <= tol + 1e-9 && std::abs(r.off) * 100 <= tolP + 1e-9;

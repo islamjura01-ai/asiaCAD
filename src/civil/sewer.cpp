@@ -395,6 +395,7 @@ std::vector<std::unique_ptr<IEntity>> drawPlan(const SewerNetwork& n, const Sewe
     for (std::size_t k = 0; k < nm; ++k) {
         const std::size_t first = out.size();
         const auto& m = n.manholes[k];
+        if (!m.joins.empty()) continue;   // ulanish qudug'i asosiy tarmoqda chizilgan
         const double rad = (k < r.manholes.size() ? r.manholes[k].diameter : 1.0) / 2;
         const Vec3 c{m.x, m.y, 0};
         put(std::make_unique<CircleEntity>(c, rad), 1);
@@ -572,6 +573,7 @@ std::string toJson(const SewerNetwork& n) {
         if (m.invert) os << std::format(", \"invert\": {}", *m.invert);
         if (m.diameter > 0) os << std::format(", \"d\": {}", m.diameter);
         if (m.areaHa > 0) os << std::format(", \"area\": {}", m.areaHa);
+        if (!m.joins.empty()) os << std::format(", \"joins\": \"{}\"", esc(m.joins));
         os << (i + 1 < n.manholes.size() ? "},\n" : "}\n");
     }
     os << "  ],\n  \"segments\": [\n";
@@ -636,6 +638,7 @@ SewerNetwork fromJson(const std::string& text) {
         if (const json::Value* iv = v.find("invert"); iv && iv->isNumber()) m.invert = iv->num();
         m.diameter = numv(v, "d", 0);
         m.areaHa = numv(v, "area", 0);
+        m.joins = str(v, "joins", "");
         n.manholes.push_back(m);
     }
     if (const json::Value* ss = root.find("segments"); ss && ss->isArray()) {

@@ -25,6 +25,7 @@ struct Manhole {
     std::optional<double> invert;         // chiqish quvuri tubi belgisi (berilmasa — hisoblanadi)
     double diameter = 0;                  // ichki diametr, m (0 — normaga ko'ra avto)
     double areaHa = 0;                    // shu quduqqa qo'shiladigan oqim maydoni, ga (yomg'ir tarmog'i)
+    std::string joins;                    // shoxobcha: boshqa tarmoq qudug'i ("K1-1") — planda qayta chizilmaydi
 };
 
 // Yomg'ir suvlari hisobi (SHNQ 2.04.22-25). q20, n, mr, γ — hudud bo'yicha 1-rasm va 2-ilovadan kiritiladi.

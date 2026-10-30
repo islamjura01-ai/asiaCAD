@@ -167,7 +167,10 @@ bool Interpreter::dispatchProps(const std::string& cmd, const Args& a) {
             m.y = pts[i].y;
             m.name = net.name + "-" + std::to_string(i + 1);
             double z = 0;
-            if (const Mh* e = near(pts[i])) { m.x = e->x; m.y = e->y; m.rim = e->rim; m.name = e->name; }
+            if (const Mh* e = near(pts[i])) {
+                m.x = e->x; m.y = e->y; m.rim = e->rim; m.name = e->name;
+                if (i + 1 == pts.size()) m.joins = e->net;
+            }
             else if (!std::isnan(rimFix)) m.rim = rimFix;
             else if (!tin.empty() && tin.z(m.x, m.y, z)) { m.rim = z; ++fromTin; }
             else if (std::abs(pts[i].z) > 1e-9) m.rim = pts[i].z;

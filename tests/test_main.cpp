@@ -3707,6 +3707,10 @@ TEST(branch_rect_estimate_asbuilt) {
     CHECK(rb.segments.back().invDown >= mainInv - 1e-9);
     CHECK(rb.segments.back().coverMin > 0.8);
     CHECK(rb.errors() == 0);
+    CHECK(br.manholes.back().joins == "K1-1");
+    int brCircles = 0;
+    doc.forEach([&](const IEntity& e) { brCircles += e.xget("sewer") == "K1-2" && e.type() == EntityType::Circle; });
+    CHECK(brCircles == 2);   // ulanish qudug'i qayta chizilmaydi
     // smeta Excel
     const std::string xl = (std::filesystem::temp_directory_path() / "asiacad_smeta_test.xlsx").string();
     in.run("PIPEEDIT K1-1 \"XLSX=" + xl + "\"");

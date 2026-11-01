@@ -13,7 +13,7 @@ namespace asiacad {
 using EntityId = std::uint64_t;
 inline constexpr EntityId kInvalidId = 0;
 
-enum class EntityType { Point, Line, Circle, Arc, Polyline, Text, Insert, Hatch, Dimension };
+enum class EntityType { Point, Line, Circle, Arc, Polyline, Text, Insert, Hatch, Dimension, Mesh };
 
 std::string_view toString(EntityType t);
 

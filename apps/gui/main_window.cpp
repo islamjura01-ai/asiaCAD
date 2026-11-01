@@ -338,7 +338,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.29"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.30"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -566,7 +566,7 @@ void MainWindow::buildRibbon() {
         auto* ic = new QLabel(brand);
         ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
         auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.29</span>"),
+                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.30</span>"),
                               brand);
         nm->setObjectName("brandName");
         nm->setTextFormat(Qt::RichText);
@@ -753,6 +753,7 @@ void MainWindow::buildDocks() {
     layers_->setRootIsDecorated(false);
     layers_->header()->setStretchLastSection(false);
     layers_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    layers_->setTextElideMode(Qt::ElideMiddle);
     layers_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     layers_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     layers_->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
@@ -916,7 +917,7 @@ void MainWindow::buildDocks() {
     connect(cmdEdit_, &QLineEdit::returnPressed, this, &MainWindow::submitCommandLine);
     // Viewport ichida harf terilsa — buyruq satriga o'tadi (AutoCAD odati)
     view_->installEventFilter(this);
-    resizeDocks({layersDock_, propsDock_}, {250, 290}, Qt::Horizontal);
+    resizeDocks({layersDock_, propsDock_}, {280, 290}, Qt::Horizontal);
     resizeDocks({cmdDock_}, {150}, Qt::Vertical);
 }
 
@@ -1180,6 +1181,7 @@ void MainWindow::refreshLayers() {
         it->setText(0, name == cur ? QString::fromUtf8("● ") + qn : qn);
         if (name == cur) it->setToolTip(0, t("gui.layers.current"));
         it->setData(0, Qt::UserRole, qn);
+        if (name != cur) it->setToolTip(0, qn);   // uzun nomlar to'liq — maslahatda
         it->setIcon(0, swatch(aciColor(l.color, theme_.lightCanvas)));
         QFont f = it->font(0);
         f.setBold(name == cur);
@@ -1188,11 +1190,11 @@ void MainWindow::refreshLayers() {
         it->setCheckState(2, l.frozen ? Qt::Checked : Qt::Unchecked);
         it->setCheckState(3, l.locked ? Qt::Checked : Qt::Unchecked);
         it->setIcon(4, swatch(aciColor(l.color, theme_.lightCanvas)));
-        it->setText(4, QString::number(l.color));
+        it->setText(4, QString());   // tor panelda nom uchun joy: rang raqami — maslahatda
         it->setToolTip(1, QString::fromStdString(loc_.keywordName("ON")) + " / " + QString::fromStdString(loc_.keywordName("OFF")));
         it->setToolTip(2, QString::fromStdString(loc_.keywordName("FREEZE")));
         it->setToolTip(3, QString::fromStdString(loc_.keywordName("LOCK")));
-        it->setToolTip(4, t("gui.layers.color"));
+        it->setToolTip(4, t("gui.layers.color") + ": " + QString::number(l.color));
         if (name == cur) layers_->setCurrentItem(it);
     }
     if (ribbonLayer_) {
@@ -1878,6 +1880,18 @@ void MainWindow::rebuild3D(bool keepView) {
     for (EntityId id : doc_.ids())
         if (const IEntity* e = doc_.find(id)) byLayer[e->layer()].push_back(id);
     std::size_t budget2d = 300000;
+    // 3D model absolyut belgilarda (masalan 480 m), 2D reja z = 0 da bo'lsa — reja modelning pastki belgisiga ko'tariladi
+    double zBase = 0;
+    {
+        double zmin = 1e300;
+        for (EntityId id : doc_.ids())
+            if (const IEntity* e = doc_.find(id)) {
+                if (e->type() == EntityType::Text || e->type() == EntityType::Insert || e->type() == EntityType::Dimension) continue;  // yozuvlar 3D da yo'q
+                const BBox b = e->bbox();
+                if (b.valid() && std::abs(b.min.z) > 1e-9) zmin = std::min(zmin, b.min.z);
+            }
+        if (zmin < 1e299 && std::abs(zmin) > 5.0) zBase = zmin;
+    }
     for (const auto& [name, ids] : byLayer) {
         const auto L = doc_.layer(name);
         if (L && (!L->visible || L->frozen)) continue;
@@ -1904,7 +1918,7 @@ void MainWindow::rebuild3D(bool keepView) {
             } else pts = civil::pathOf(*e);
             if (pts.size() < 2) continue;
             std::vector<P3> pp;
-            for (const auto& q : pts) pp.push_back({q.x, q.y, q.z});
+            for (const auto& q : pts) pp.push_back({q.x, q.y, q.z + zBase});
             budget2d -= std::min(budget2d, pp.size());
             view3d_->addPolyline(pp, lc, 1.0);
         }

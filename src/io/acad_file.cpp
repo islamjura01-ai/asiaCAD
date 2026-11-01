@@ -205,6 +205,24 @@ void writeEntity(std::ostream& os, const IEntity& e, bool withId = true) {
             key(os, "rot"); writeNum(os, d.rotation());
             break;
         }
+        case EntityType::Mesh: {   // "v": [[x,y,z]…], "f": [[a,b,c,d,hidden]…] (d = -1 — uchburchak)
+            const auto& m = static_cast<const MeshEntity&>(e);
+            key(os, "v");
+            os << '[';
+            for (std::size_t k = 0; k < m.vertices().size(); ++k) {
+                if (k) os << ',';
+                writeVec(os, m.vertices()[k]);
+            }
+            os << ']';
+            key(os, "f");
+            os << '[';
+            for (std::size_t k = 0; k < m.faces().size(); ++k) {
+                const auto& f = m.faces()[k];
+                os << (k ? "," : "") << '[' << f.a << ',' << f.b << ',' << f.c << ',' << f.d << ',' << f.hidden << ']';
+            }
+            os << ']';
+            break;
+        }
     }
     os << '}';
 }
@@ -302,6 +320,30 @@ std::unique_ptr<TextEntity> makeText(const EntityReader& r) {
 }
 
 std::unique_ptr<IEntity> makeEntity(const std::string& type, const EntityReader& r, const BlockMap& blocks) {
+    if (type == "MESH") {
+        const json::Value* vv = r.raw().find("v");
+        const json::Value* fv = r.raw().find("f");
+        if (!vv || !vv->isArray() || !fv || !fv->isArray()) r.bad("v");
+        std::vector<Vec3> v;
+        for (const auto& p : vv->arr()) {
+            Vec3 q;
+            if (!EntityReader::toVec(p, q)) r.bad("v");
+            v.push_back(q);
+        }
+        std::vector<MeshEntity::Face> f;
+        for (const auto& x : fv->arr()) {
+            if (!x.isArray() || x.arr().size() < 4) r.bad("f");
+            int k[5] = {0, 0, 0, -1, 0};
+            for (std::size_t j = 0; j < x.arr().size() && j < 5; ++j) {
+                if (!x.arr()[j].isNumber()) r.bad("f");
+                k[j] = static_cast<int>(x.arr()[j].num());
+            }
+            const int n = static_cast<int>(v.size());
+            if (k[0] < 0 || k[0] >= n || k[1] < 0 || k[1] >= n || k[2] < 0 || k[2] >= n || k[3] >= n) r.bad("f");
+            f.push_back({k[0], k[1], k[2], k[3], static_cast<unsigned>(k[4])});
+        }
+        return std::make_unique<MeshEntity>(std::move(v), std::move(f));
+    }
     if (type == "INSERT") {
         auto it = blocks.find(utf8::toUpper(r.str("block")));
         if (it == blocks.end()) r.bad("block");

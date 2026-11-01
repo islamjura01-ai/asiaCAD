@@ -258,6 +258,30 @@ private:
     double scale_, angle_;
 };
 
+// 3D sirt (AutoCAD PolyFace / Polygon mesh, 3D model): uchlar va yuzlar (3 yoki 4 uchli; d = -1 — uchburchak).
+// Qirraning ko'rinmasligi DXF'dagidek: indeks manfiy bo'lsa (1 dan boshlab) — shu uchdan boshlanadigan qirra chizilmaydi.
+class MeshEntity final : public IEntity {
+public:
+    struct Face { int a = 0, b = 0, c = 0, d = -1; unsigned hidden = 0; };  // hidden: 1 — ab, 2 — bc, 4 — cd/ca, 8 — da
+    MeshEntity(std::vector<Vec3> v, std::vector<Face> f) : v_(std::move(v)), f_(std::move(f)) {}
+    EntityType type() const override { return EntityType::Mesh; }
+    std::unique_ptr<IEntity> clone() const override { return std::make_unique<MeshEntity>(*this); }
+    BBox bbox() const override;
+    void transform(const Transform& t) override { for (auto& p : v_) p = t.apply(p); }
+    void writeDxf(DxfWriter& w) const override;   // POLYLINE 70=64 (polyface)
+    std::string describe() const override;
+
+    const std::vector<Vec3>& vertices() const { return v_; }
+    const std::vector<Face>& faces() const { return f_; }
+    // Ko'rinadigan qirralar (takrorlarsiz) — planda chizish, tanlash, bog'lanish uchun
+    std::vector<std::pair<Vec3, Vec3>> edges() const;
+    double area3d() const;
+
+private:
+    std::vector<Vec3> v_;
+    std::vector<Face> f_;
+};
+
 // ---------------------------------------------------------------- yordamchilar
 // Aylana/yoy/poliliniyani bulge'li poliliniyaga (aniq). Boshqa turlar uchun nullptr.
 std::unique_ptr<PolylineEntity> toBulgePolyline(const IEntity& e);

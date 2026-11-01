@@ -3,6 +3,7 @@
 // Sinov/hujjat uchun:
 //   --screenshot out.png [--size 1440x900] [--select-all] [--tool line] [--point x,y]... [--cursor x,y]
 //   [--cmd "LINE 0,0 10,10"]...
+#include <asiacad/io/dwg_bridge.h>
 #include "main_window.h"
 #include "sewer_dialog.h"
 #include "building_dialog.h"
@@ -57,6 +58,7 @@ int main(int argc, char** argv) {
     QSurfaceFormat::setDefaultFormat(fmt);
     QApplication app(argc, argv);
     QApplication::setApplicationName("AsiaCAD");
+    asiacad::dwg::useBundled(QCoreApplication::applicationDirPath().toStdString());   // tarqatmadagi LibreDWG
     QApplication::setOrganizationName("AsiaCAD");
     QFont f = QApplication::font();
     f.setPointSizeF(10);

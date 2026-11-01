@@ -405,8 +405,49 @@ private:
     void polyline(const Node& n, const Ctx& c) {
         const Raw& r = n.main;
         const int flags = r.inum(70);
-        if (flags & (16 | 64)) {
-            ++res_.skipped["POLYLINE (mesh)"];
+        if (flags & 64) {   // PolyFace mesh: 192-uchlar, 128-yuzlar (71..74, 1-asosli; manfiy — ko'rinmas qirra)
+            std::vector<Vec3> v;
+            std::vector<MeshEntity::Face> f;
+            for (const auto& x : n.sub) {
+                const int vf = x.inum(70);
+                if ((vf & 128) && (vf & 64)) v.push_back(x.pt(10));
+                else if (vf & 128) {
+                    int idx[4] = {x.inum(71), x.inum(72), x.inum(73), x.inum(74)};
+                    MeshEntity::Face fc;
+                    int* dst[4] = {&fc.a, &fc.b, &fc.c, &fc.d};
+                    int cnt = 0;
+                    for (int k = 0; k < 4; ++k) {
+                        if (idx[k] == 0) break;
+                        if (idx[k] < 0) fc.hidden |= 1u << k;
+                        *dst[k] = std::abs(idx[k]) - 1;
+                        ++cnt;
+                    }
+                    if (cnt < 3) continue;
+                    if (cnt == 3) fc.d = -1;
+                    f.push_back(fc);
+                }
+            }
+            const int nv = static_cast<int>(v.size());
+            f.erase(std::remove_if(f.begin(), f.end(), [&](const MeshEntity::Face& q) {
+                        return q.a >= nv || q.b >= nv || q.c >= nv || q.d >= nv; }), f.end());
+            if (v.size() < 3 || f.empty()) return badEntity(r);
+            emit(std::make_unique<MeshEntity>(std::move(v), std::move(f)), r, c);
+            return;
+        }
+        if (flags & 16) {   // Polygon mesh M×N (71 — M, 72 — N, 70&1 — M yopiq, 70&32 — N yopiq)
+            const int M = r.inum(71), N = r.inum(72);
+            std::vector<Vec3> v;
+            for (const auto& x : n.sub) v.push_back(x.pt(10));
+            if (M < 2 || N < 2 || static_cast<int>(v.size()) < M * N) return badEntity(r);
+            v.resize(static_cast<std::size_t>(M * N));
+            const bool cm = flags & 1, cn = flags & 32;
+            std::vector<MeshEntity::Face> f;
+            for (int i = 0; i < (cm ? M : M - 1); ++i)
+                for (int j = 0; j < (cn ? N : N - 1); ++j) {
+                    const int i1 = (i + 1) % M, j1 = (j + 1) % N;
+                    f.push_back({i * N + j, i1 * N + j, i1 * N + j1, i * N + j1, 0});
+                }
+            emit(std::make_unique<MeshEntity>(std::move(v), std::move(f)), r, c);
             return;
         }
         const bool d3 = (flags & 8) != 0;

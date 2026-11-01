@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.29: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.30: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -332,6 +332,14 @@ truba GOST 10704 va kvadrat truba GOST 30245 (formuladan) — jadval qiymatlari 
   Haydash sahnasida profil kesimi bilan ko'rinadi.
 * `STEELSEC` — kesim haqiqiy o'lchamda (shtrix bilan), `STEEL I20` — xossalar (A, kg/m, Ix, Wx).
 * `STEELSPEC [x,y] [%]` — metall prokat vedomosti: profil, GOST, soni, uzunlik, massa, zahira; jadval chizmaga.
+
+## 3D modelli DWG (Revit/ArchiCAD eksporti) — PolyFace sirtlar (v0.30) — `MeshEntity`
+- DWG/DXF dagi **3D sirtlar** (POLYLINE PolyFace 70=64 va Polygon mesh 70=16) endi o'qiladi: ustunlar, to'sinlar, plitalar, zinalar, fundament.
+  Rejada qirralari, «3D model» yorlig'ida yuzalari bilan; `.acad` va DXF ga qayta yoziladi (MESH / PolyFace).
+- 3D ko'rinishda 2D reja (z = 0) modelning absolyut belgisiga (masalan 483 m) ko'tariladi — model kichrayib qolmaydi.
+- Windows tarqatmasida LibreDWG (`libredwg\dwg2dxf.exe`) dastur yonida bo'lsa — DWG qo'shimcha o'rnatishsiz ochiladi.
+- Qatlamlar paneli: uzun nomlar o'rtasidan qisqartiriladi, to'liq nomi va rang raqami — maslahatda.
+- Sinov: "22E7- BLOK 3D MODEL.dwg" (AutoCAD 2018) — 7586 ta 3D sirt, 41 qatlam ochildi.
 
 ## DWG ochish va saqlash; yer osti tarmog'i ijro syomkasi (v0.29) — `io/dwg_bridge`
 - **DWG**: Fayl → Ochish / Import / Eksport `.dwg` ni qabul qiladi. DWG yopiq format, shuning uchun (FreeCAD, QGIS kabi) bepul tashqi konverter

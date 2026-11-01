@@ -235,6 +235,22 @@ DriveScene sceneFromDocument(const Document& doc) {
             for (const auto& c : ins->explode()) visit(*c);
             return;
         }
+        if (auto* me = dynamic_cast<const MeshEntity*>(&e)) {   // 3D sirt (DWG PolyFace): yuzlar + ko'rinadigan qirralar
+            int aci = e.color();
+            if (aci == kColorByLayer || aci == kColorByBlock) {
+                const auto L = doc.layer(e.layer());
+                aci = L ? L->color : 7;
+            }
+            static const std::uint32_t pal[] = {0xb0b4ba, 0xd65a5a, 0xd8c75a, 0x5ab45a, 0x5ac0c8, 0x5a78d6, 0xc65ac8, 0xd8dce4, 0x8a8e94, 0xc0c4ca};
+            const std::uint32_t col = aci >= 1 && aci <= 9 ? pal[aci] : 0xb0b4ba;
+            const auto& v = me->vertices();
+            for (const auto& f : me->faces()) {
+                sc.tris.push_back({{v[static_cast<std::size_t>(f.a)], v[static_cast<std::size_t>(f.b)], v[static_cast<std::size_t>(f.c)]}, col, true});
+                if (f.d >= 0) sc.tris.push_back({{v[static_cast<std::size_t>(f.a)], v[static_cast<std::size_t>(f.c)], v[static_cast<std::size_t>(f.d)]}, col, true});
+            }
+            for (const auto& [a, b] : me->edges()) sc.segs.push_back({a, b, 0x30343a});
+            return;
+        }
         if (e.layer().rfind("KOR_", 0) == 0) return;  // koridor yuzasi alohida (modeldan) quriladi
         if (e.layer().rfind("KM_", 0) == 0) return;   // metall elementlar — kesim bilan (yuqorida)
         if (auto* pl = dynamic_cast<const PolylineEntity*>(&e); pl && pl->isClosed() && !pl->hasBulges() && pl->vertices().size() >= 3) {

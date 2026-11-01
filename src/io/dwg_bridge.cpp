@@ -83,6 +83,18 @@ fs::path odaConvert(const Converter& c, const fs::path& src, const std::string& 
 }
 }  // namespace
 
+void useBundled(const std::string& exeDir) {
+    if (const char* env = std::getenv("ASIACAD_DWG_CONVERTER"); env && *env) return;
+    std::error_code ec;
+    const fs::path p = fs::path(exeDir) / "libredwg" / (std::string("dwg2dxf") + kExeExt);
+    if (!fs::exists(p, ec)) return;
+#ifdef _WIN32
+    _putenv_s("ASIACAD_DWG_CONVERTER", p.string().c_str());
+#else
+    setenv("ASIACAD_DWG_CONVERTER", p.string().c_str(), 0);
+#endif
+}
+
 std::string converterName(const Converter& c) {
     return c.kind == Converter::Oda ? "ODA File Converter" : c.kind == Converter::LibreDwg ? "LibreDWG" : "";
 }

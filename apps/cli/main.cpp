@@ -3,6 +3,7 @@
 //   asiacad skript.acs -o natija.dxf     — skriptni bajarib, DXF ga saqlash
 //   --lang uz|ru|kk|ky|tr|en             — interfeys tili (yoki ASIACAD_LANG muhit o'zgaruvchisi)
 //   --i18n <papka>                       — lug'atlar papkasi (standart: dastur yonidagi i18n/)
+#include <asiacad/io/dwg_bridge.h>
 #include "interpreter.h"
 
 #include <asiacad/io/dxf_writer.h>
@@ -41,6 +42,7 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #endif
+    if (argc > 0) asiacad::dwg::useBundled(std::filesystem::absolute(argv[0]).parent_path().string());
     std::string script, outPath, lang, i18nDir;
     bool showHelp = false;
     for (int i = 1; i < argc; ++i) {
@@ -92,7 +94,7 @@ int main(int argc, char** argv) {
             if (!interp.run(line)) break;
         }
     } else {
-        std::cout << loc.tr("app.banner", {"0.29"}) << '\n';
+        std::cout << loc.tr("app.banner", {"0.30"}) << '\n';
         std::string line;
         while (std::cout << loc.tr("app.prompt") << std::flush, std::getline(std::cin, line))
             if (!interp.run(line)) break;

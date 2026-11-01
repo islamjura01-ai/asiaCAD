@@ -1154,6 +1154,18 @@ void Viewport::drawEntity(QPainter& p, const IEntity& e, const QColor& inherit, 
     case EntityType::Dimension:
         for (const auto& child : static_cast<const DimensionEntity&>(e).explode()) drawEntity(p, *child, col, selected, depth + 1);
         break;
+    case EntityType::Mesh: {   // 3D sirt — rejada ko'rinadigan qirralar
+        const auto& m = static_cast<const MeshEntity&>(e);
+        const BBox b = m.bbox();
+        if (std::max(b.max.x - b.min.x, b.max.y - b.min.y) * scale_ < 2) { p.drawPoint(toScreen(b.min)); break; }
+        QVector<QLineF> ls;
+        for (const auto& [a, c] : m.edges()) {
+            const QPointF qa = toScreen(a), qc = toScreen(c);
+            if (QLineF(qa, qc).length() > 0.3) ls.push_back(QLineF(qa, qc));
+        }
+        p.drawLines(ls);
+        break;
+    }
     }
 }
 

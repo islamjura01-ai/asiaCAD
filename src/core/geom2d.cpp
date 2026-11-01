@@ -96,6 +96,10 @@ std::vector<Prim> primitivesOf(const IEntity& e) {
                 out.insert(out.end(), p.begin(), p.end());
             }
             break;
+        case EntityType::Mesh:
+            for (const auto& [a, b] : static_cast<const MeshEntity&>(e).edges())
+                if (std::hypot(b.x - a.x, b.y - a.y) > 1e-9) out.push_back(Prim::seg(a, b));  // tik qirralar rejada nuqta
+            break;
         case EntityType::Point:
         case EntityType::Text:
             break;

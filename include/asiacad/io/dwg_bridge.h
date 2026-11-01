@@ -19,6 +19,8 @@ Converter find();
 std::string toDxf(const std::string& dwgPath);
 // DXF -> DWG (version: ACAD2018, ACAD2013, ACAD2010, ACAD2007, ACAD2004, ACAD2000)
 void fromDxf(const std::string& dxfPath, const std::string& dwgPath, const std::string& version = "ACAD2018");
-std::string converterName(const Converter& c);   // "ODA File Converter" | "LibreDWG" | ""
+std::string converterName(const Converter& c);
+// Dastur yonidagi "libredwg/dwg2dxf" (Windows tarqatmasida) — ASIACAD_DWG_CONVERTER berilmagan bo'lsa shu ishlatiladi
+void useBundled(const std::string& exeDir);   // "ODA File Converter" | "LibreDWG" | ""
 
 } // namespace asiacad::dwg

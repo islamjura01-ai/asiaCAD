@@ -38,6 +38,7 @@ std::vector<Vec3> gripPoints(const IEntity& e) {
             const auto& d = static_cast<const DimensionEntity&>(e);
             return {d.p1(), d.p2(), d.location()};
         }
+        case EntityType::Mesh: return {};   // 3D sirt — tutqichsiz (MOVE/ROTATE bilan)
     }
     return {};
 }
@@ -104,6 +105,7 @@ std::unique_ptr<IEntity> withGripMoved(const IEntity& e, std::size_t i, const Ve
             }
             case EntityType::Point:
             case EntityType::Text:
+            case EntityType::Mesh:
             case EntityType::Insert: out = moved(e, g[0], to); break;
         }
     } catch (const Error& ex) {

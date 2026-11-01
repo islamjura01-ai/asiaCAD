@@ -3807,6 +3807,40 @@ TEST(dwg_bridge_and_util_asbuilt) {
     CHECK(out.str().find("As-built — Underground utilities: 1 points, within tolerance (±5 cm) 1") != std::string::npos);
 }
 
+
+// ---------- 3D sirt (PolyFace mesh): DWG/DXF 3D modellari ----------
+TEST(mesh_polyface_roundtrip) {
+    // kub: 8 uch, 6 to'rtburchak yuz, bitta qirra ko'rinmas
+    std::vector<Vec3> v{{0, 0, 480}, {2, 0, 480}, {2, 2, 480}, {0, 2, 480}, {0, 0, 483}, {2, 0, 483}, {2, 2, 483}, {0, 2, 483}};
+    std::vector<MeshEntity::Face> f{{0, 1, 2, 3, 0}, {4, 5, 6, 7, 0}, {0, 1, 5, 4, 0}, {1, 2, 6, 5, 0}, {2, 3, 7, 6, 0}, {3, 0, 4, 7, 1}};
+    Document d;
+    auto m = std::make_unique<MeshEntity>(v, f);
+    m->setLayer("S-COLS");
+    CHECK(std::abs(m->area3d() - (2 * 4 + 4 * 6)) < 1e-9);
+    CHECK(m->edges().size() == 12);
+    CHECK(!geom::primitivesOf(*m).empty());
+    d.add(std::move(m));
+    d.add(std::make_unique<MeshEntity>(std::vector<Vec3>{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, std::vector<MeshEntity::Face>{{0, 1, 2, -1, 0}}));
+    const std::string path = (std::filesystem::temp_directory_path() / "asiacad_mesh.dxf").string();
+    CHECK(saveDxf(d, path));
+    auto r = readDxfFile(path);
+    std::filesystem::remove(path);
+    CHECK(r.entities.size() == 2 && r.imported["MESH"] == 2 && r.skipped.empty());
+    const auto* m2 = dynamic_cast<const MeshEntity*>(r.entities[0].get());
+    CHECK(m2 && m2->vertices().size() == 8 && m2->faces().size() == 6 && m2->faces()[5].hidden == 1 && m2->layer() == "S-COLS");
+    CHECK(m2 && std::abs(m2->bbox().max.z - 483) < 1e-9);
+    const auto* t2 = dynamic_cast<const MeshEntity*>(r.entities[1].get());
+    CHECK(t2 && t2->faces().size() == 1 && t2->faces()[0].d == -1);
+    // .acad
+    std::ostringstream os;
+    writeAcad(d, os);
+    auto ra = readAcad(os.str());
+    const auto* m3 = dynamic_cast<const MeshEntity*>(ra.doc.find(ra.doc.ids().front()));
+    CHECK(m3 && m3->faces().size() == 6 && m3->faces()[5].hidden == 1 && m3->vertices()[6].z == 483);
+    // MOVE ishlaydi (tutqichsiz)
+    CHECK(gripPoints(*m3).empty());
+}
+
 // GUI matnlarining tarjimasi: manbadagi har t("gui.…") / tr_("v3d.…") kaliti 6 tilda bo'lishi kerak
 
 // ---------- Listlar (Revit Sheets): format, GOST shtamp, ko'rinishlar, .acad, CLI + undo ----------

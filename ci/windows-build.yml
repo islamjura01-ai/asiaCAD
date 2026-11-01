@@ -39,6 +39,8 @@ jobs:
 
       - name: Tarqatma papkasi
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $d = "AsiaCAD"
           New-Item -ItemType Directory -Force $d | Out-Null
@@ -47,6 +49,17 @@ jobs:
           Copy-Item -Recurse i18n $d\i18n
           if (Test-Path examples) { Copy-Item -Recurse examples $d\examples }
           windeployqt --release --no-translations --compiler-runtime $d\AsiaCAD.exe
+          # DWG: LibreDWG (GPL-3, alohida dastur) — dwg2dxf/dxf2dwg dastur yonidagi libredwg\ papkasiga
+          try {
+            gh release download --repo LibreDWG/libredwg --pattern "*win64*.zip" --dir ldwg
+            Expand-Archive (Get-ChildItem ldwg\*.zip | Select-Object -First 1).FullName -DestinationPath ldwg\x -Force
+            $exe = Get-ChildItem -Recurse ldwg\x -Filter dwg2dxf.exe | Select-Object -First 1
+            if ($exe) {
+              New-Item -ItemType Directory -Force $d\libredwg | Out-Null
+              Copy-Item "$($exe.DirectoryName)\*" $d\libredwg -Recurse
+              Get-ChildItem -Recurse ldwg\x -Filter COPYING* | Select-Object -First 1 | Copy-Item -Destination $d\libredwg
+            }
+          } catch { Write-Host "LibreDWG yuklanmadi: $_" }
           "AsiaCAD — ishga tushirish: AsiaCAD.exe (buyruq satri: asiacad-cli.exe)" | Out-File -Encoding utf8 $d\README.txt
           Compress-Archive -Path $d -DestinationPath AsiaCAD-Windows.zip -Force
 

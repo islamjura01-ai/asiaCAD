@@ -3,6 +3,8 @@
 #include <asiacad/io/dxf_writer.h>
 
 #include <format>
+#include <set>
+#include <cmath>
 #include <stdexcept>
 
 namespace asiacad {
@@ -18,6 +20,7 @@ std::string_view toString(EntityType t) {
         case EntityType::Insert: return "INSERT";
         case EntityType::Hatch: return "HATCH";
         case EntityType::Dimension: return "DIMENSION";
+        case EntityType::Mesh: return "MESH";
     }
     return "UNKNOWN";
 }
@@ -608,6 +611,75 @@ void HatchEntity::writeDxf(DxfWriter& w) const {
         p.setColor(color());
         p.writeDxf(w);
     }
+}
+
+// ---------------- Mesh ----------------
+BBox MeshEntity::bbox() const {
+    BBox b;
+    for (const auto& p : v_) b.expand(p);
+    return b;
+}
+
+std::vector<std::pair<Vec3, Vec3>> MeshEntity::edges() const {
+    std::vector<std::pair<Vec3, Vec3>> out;
+    std::set<std::pair<int, int>> seen;
+    const int n = static_cast<int>(v_.size());
+    for (const auto& f : f_) {
+        const int idx[4] = {f.a, f.b, f.c, f.d};
+        const int k = f.d >= 0 ? 4 : 3;
+        for (int i = 0; i < k; ++i) {
+            if (f.hidden & (1u << i)) continue;
+            const int a = idx[i], b = idx[(i + 1) % k];
+            if (a < 0 || b < 0 || a >= n || b >= n || a == b) continue;
+            if (!seen.insert({std::min(a, b), std::max(a, b)}).second) continue;
+            out.push_back({v_[static_cast<std::size_t>(a)], v_[static_cast<std::size_t>(b)]});
+        }
+    }
+    return out;
+}
+
+double MeshEntity::area3d() const {
+    double s = 0;
+    const int n = static_cast<int>(v_.size());
+    auto tri = [&](int a, int b, int c) {
+        if (a < 0 || b < 0 || c < 0 || a >= n || b >= n || c >= n) return 0.0;
+        const Vec3 u = v_[static_cast<std::size_t>(b)] - v_[static_cast<std::size_t>(a)], w = v_[static_cast<std::size_t>(c)] - v_[static_cast<std::size_t>(a)];
+        const double cx = u.y * w.z - u.z * w.y, cy = u.z * w.x - u.x * w.z, cz = u.x * w.y - u.y * w.x;
+        return 0.5 * std::sqrt(cx * cx + cy * cy + cz * cz);
+    };
+    for (const auto& f : f_) s += tri(f.a, f.b, f.c) + (f.d >= 0 ? tri(f.a, f.c, f.d) : 0.0);
+    return s;
+}
+
+std::string MeshEntity::describe() const {
+    return std::format("MESH {} uch, {} yuz, S={:.2f}", v_.size(), f_.size(), area3d());
+}
+
+void MeshEntity::writeDxf(DxfWriter& w) const {
+    // R12 PolyFace: POLYLINE (66=1, 70=64, 71=uchlar, 72=yuzlar) + VERTEX (70=192 — uch, 70=128 — yuz, 71..74 1-asosli, manfiy — ko'rinmas qirra)
+    w.beginEntity("POLYLINE", *this);
+    w.group(66, 1);
+    w.point(10, Vec3{0, 0, 0});
+    w.group(70, 64);
+    w.group(71, static_cast<int>(v_.size()));
+    w.group(72, static_cast<int>(f_.size()));
+    for (const auto& p : v_) {
+        w.beginEntity("VERTEX", *this);
+        w.point(10, p);
+        w.group(70, 192);
+    }
+    for (const auto& f : f_) {
+        w.beginEntity("VERTEX", *this);
+        w.point(10, Vec3{0, 0, 0});
+        w.group(70, 128);
+        const int idx[4] = {f.a, f.b, f.c, f.d};
+        for (int i = 0; i < 4; ++i) {
+            if (idx[i] < 0) break;
+            const int one = idx[i] + 1;
+            w.group(71 + i, (f.hidden & (1u << i)) ? -one : one);
+        }
+    }
+    w.beginEntity("SEQEND", *this);
 }
 
 } // namespace asiacad

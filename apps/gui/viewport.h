@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 // AsiaCAD GUI — chizma oynasi (OpenGL sirt ustida QPainter).
 //  * Zoom — g'ildirak (kursor atrofida), Pan — o'rta tugma yoki Space+chap tugma
 //  * Tanlash — bosish (Shift — qo'shish/olib tashlash), ramka: chapdan o'ngga — WINDOW, o'ngdan chapga — CROSSING
@@ -71,6 +72,9 @@ public:
     Tool lastTool() const { return lastTool_; }
     bool repeatLast();                         // bo'sh holatda Enter/Space — oxirgi asbob
     QMenu* contextMenu(QWidget* parent);        // o'ng tugma menyusi (holatga qarab)
+    // Oyna to'liq kontekst menyusini quradi (ikonkalar, yorliqlar, qatlam/rang, yordamchilar). at — kursor nuqtasi (dunyo)
+    void setContextHook(std::function<void(QMenu*, const Vec3& at)> h) { ctxHook_ = std::move(h); }
+    Vec3 cursorWorld() const { return toWorld(mouse_); }
     QMenu* snapMenu(QWidget* parent);           // Shift+o'ng: bir martalik bog'lanish
     bool windowPending() const { return boxPending_; }
     // Kompas / UCS belgisi geometriyasi (ekran)
@@ -188,6 +192,7 @@ private:
     std::vector<EntityId> sel_;
 
     QPointF mouse_;
+    std::function<void(QMenu*, const Vec3&)> ctxHook_;
     bool mouseInside_ = false;
     std::optional<SnapResult> snap_;
     Vec3 acquired_;

@@ -65,8 +65,12 @@
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QWidgetAction>
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 namespace asiacad::gui {
@@ -313,6 +317,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     buildStatusBar();
 
     connect(view_, &Viewport::runCommand, this, [this](const QString& l) { runLine(l); });
+    view_->setContextHook([this](QMenu* m, const Vec3& at) { fillViewContext(m, at); });
     connect(view_, &Viewport::pointsPicked, this, [this](const std::vector<Vec3>& pts) {
         if (auto cb = std::move(pickCb_)) { pickCb_ = {}; cb(pts); }
     });
@@ -321,7 +326,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     });
     connect(view_, &Viewport::promptChanged, this, [this](const QString& s) { prompt_->setText(s); });
     connect(view_, &Viewport::cursorMoved, this, [this](double x, double y) {
-        coords_->setText(QStringLiteral("X %1   Y %2").arg(x, 0, 'f', 3).arg(y, 0, 'f', 3));
+        coords_->setText(QStringLiteral("X %1   Y %2").arg(x, 0, 'f', coordDecimals_).arg(y, 0, 'f', coordDecimals_));
     });
     connect(view_, &Viewport::selectionChanged, this, &MainWindow::refreshProperties);
     // kontekst: bitta chiziq (feature line) tanlansa — viewport ustida "▶ Haydash" (Civil 3D kontekst lentasi kabi)
@@ -894,6 +899,49 @@ void MainWindow::buildDocks() {
     layersDock_->setWidget(lw);
     layersDock_->setMinimumWidth(240);
     addDockWidget(Qt::LeftDockWidgetArea, layersDock_);
+    layers_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(layers_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QTreeWidgetItem* it = layers_->itemAt(pos);
+        QMenu m(layers_);
+        if (it) {
+            const QString name = it->data(0, Qt::UserRole).toString();
+            const auto L = doc_.layer(name.toStdString());
+            addMenuHeader(&m, name, t("gui.ctx.layerobjs", {QString::number(doc_.idsOnLayer(name.toStdString()).size())}));
+            m.addAction(t("gui.act.laymcur"), this, [this, name] { runLine(QStringLiteral("CLAYER \"%1\"").arg(name)); });
+            m.addAction(t("gui.ctx.selonlayer"), this, [this, name] {
+                std::vector<EntityId> out;
+                for (EntityId id : doc_.idsOnLayer(name.toStdString())) if (doc_.isEditable(id)) out.push_back(id);
+                show3D(false);
+                view_->setSelection(out);
+            });
+            m.addSeparator();
+            auto kw = [this](const char* k) { return QString::fromStdString(loc_.keywordName(k)); };
+            if (L) {
+                m.addAction(L->visible ? t("gui.ctx.layhide") : t("gui.ctx.layshow"), this, [this, name, kw, v = L->visible] { runLine(QStringLiteral("LAYER \"%1\" %2").arg(name, kw(v ? "OFF" : "ON"))); });
+                m.addAction(L->frozen ? t("gui.ctx.laythaw") : t("gui.act.layfrz"), this, [this, name, kw, f = L->frozen] { runLine(QStringLiteral("LAYER \"%1\" %2").arg(name, kw(f ? "THAW" : "FREEZE"))); });
+                m.addAction(L->locked ? t("gui.act.layulk") : t("gui.act.laylck"), this, [this, name, kw, l = L->locked] { runLine(QStringLiteral("LAYER \"%1\" %2").arg(name, kw(l ? "UNLOCK" : "LOCK"))); });
+                auto* cm = m.addMenu(swatch(aciColor(L->color, theme_.lightCanvas)), t("gui.layers.color"));
+                for (int c = 1; c <= 9; ++c)
+                    cm->addAction(swatch(aciColor(c, theme_.lightCanvas)), QString::number(c), this, [this, name, c] { runLine(QStringLiteral("LAYER \"%1\" %2").arg(name).arg(c)); });
+                cm->addSeparator();
+                cm->addAction(t("gui.ctx.othercolor"), this, [this, name, c0 = L->color] {
+                    bool ok = false;
+                    const int c = QInputDialog::getInt(this, t("gui.layers.color"), name, c0, 1, 255, 1, &ok);
+                    if (ok) runLine(QStringLiteral("LAYER \"%1\" %2").arg(name).arg(c));
+                });
+            }
+            m.addSeparator();
+        }
+        m.addAction(t("gui.act.layon"), this, [this] { runLine("LAYON"); });
+        m.addAction(t("gui.act.layuniso"), this, [this] { runLine("LAYUNISO"); });
+        m.addSeparator();
+        m.addAction(t("gui.layers.new"), this, [this] {
+            bool ok = false;
+            const QString n = QInputDialog::getText(this, t("gui.layers.new"), t("gui.layers.name"), QLineEdit::Normal, {}, &ok).trimmed();
+            if (ok && !n.isEmpty()) runLine(QStringLiteral("LAYER \"%1\"").arg(QString(n).remove('"')));
+        });
+        m.exec(layers_->viewport()->mapToGlobal(pos));
+    });
     connect(layers_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* it, int col) {
         if (updatingUi_) return;
         const QString name = it->data(0, Qt::UserRole).toString();
@@ -1040,6 +1088,27 @@ void MainWindow::buildDocks() {
     history_->setMaximumBlockCount(2000);
     history_->setFont(QFont(QStringLiteral("DejaVu Sans Mono"), 10));
     history_->setMinimumHeight(70);
+    history_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(history_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QMenu m(history_);
+        const QString selText = history_->textCursor().selectedText();
+        auto* c1 = m.addAction(t("gui.ctx.copysel"), this, [this, selText] { copyText(selText); });
+        c1->setEnabled(!selText.isEmpty());
+        m.addAction(t("gui.ctx.copyall"), this, [this] { QGuiApplication::clipboard()->setText(history_->toPlainText()); statusBar()->showMessage(t("gui.ctx.copiedall"), 3000); });
+        m.addSeparator();
+        auto* rep = m.addAction(t("gui.ctx.repeat"), this, [this] { if (!cmdHistory_.isEmpty()) runLine(cmdHistory_.last()); });
+        rep->setEnabled(!cmdHistory_.isEmpty());
+        if (!cmdHistory_.isEmpty()) {
+            auto* rm = m.addMenu(t("gui.ctx.recent"));
+            for (int i = static_cast<int>(cmdHistory_.size()) - 1, n = 0; i >= 0 && n < 10; --i, ++n) {
+                const QString c = cmdHistory_[i];
+                rm->addAction(c.left(60), this, [this, c] { cmdEdit_->setText(c); cmdEdit_->setFocus(); });
+            }
+        }
+        m.addSeparator();
+        m.addAction(t("gui.ctx.clear"), history_, &QPlainTextEdit::clear);
+        m.exec(history_->mapToGlobal(pos));
+    });
     cv->addWidget(history_, 1);
     auto* row = new QHBoxLayout;
     prompt_ = new QLabel(cw);
@@ -1082,6 +1151,26 @@ void MainWindow::buildStatusBar() {
     coords_ = new QLabel(sb);
     coords_->setMinimumWidth(240);
     coords_->setFont(QFont(QStringLiteral("DejaVu Sans Mono"), 9));
+    coords_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(coords_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QMenu m(coords_);
+        const QString txt = coords_->text();
+        static const QRegularExpression rx(QStringLiteral("X\\s+(\\S+)\\s+Y\\s+(\\S+)"));
+        const auto mt = rx.match(txt);
+        if (mt.hasMatch()) {
+            m.addAction(t("gui.ctx.copyxy"), this, [this, mt] { copyText(mt.captured(1) + "," + mt.captured(2)); });
+            m.addAction(t("gui.ctx.copyyx"), this, [this, mt] { copyText(mt.captured(2) + "," + mt.captured(1)); });
+            m.addSeparator();
+        }
+        auto* dm = m.addMenu(t("gui.status.decimals"));
+        for (int d = 0; d <= 4; ++d) {
+            auto* a = dm->addAction(QString::number(1.0 / std::pow(10.0, d), 'f', d), this, [this, d] { coordDecimals_ = d; });
+            a->setCheckable(true);
+            a->setChecked(coordDecimals_ == d);
+        }
+        m.exec(coords_->mapToGlobal(pos));
+    });
+    coords_->setToolTip(QString());
     sb->addWidget(coords_);
 
     auto addToggle = [&](QToolButton*& b, const char* name, Qt::Key key, auto setter, bool on) {
@@ -1202,6 +1291,21 @@ void MainWindow::buildStatusBar() {
             g->addAction(a);
             connect(a, &QAction::triggered, this, [this, pct] { view_->setCrosshairSize(pct); });
         }
+        auto* dm = gearMenu_->addMenu(t("gui.status.decimals"));
+        auto* dg = new QActionGroup(dm);
+        for (int d = 0; d <= 4; ++d) {
+            auto* a = dm->addAction(QString::number(1.0 / std::pow(10.0, d), 'f', d));
+            a->setCheckable(true);
+            a->setChecked(coordDecimals_ == d);
+            dg->addAction(a);
+            connect(a, &QAction::triggered, this, [this, d] { coordDecimals_ = d; });
+        }
+        gearMenu_->addAction(t("gui.ctx.copycursor"), this, [this] {
+            const Vec3 p = view_->cursorWorld();
+            copyText(QString::number(p.x, 'f', coordDecimals_) + "," + QString::number(p.y, 'f', coordDecimals_));
+        });
+        gearMenu_->addSeparator();
+        gearMenu_->addAction(t("gui.act.projset") + QStringLiteral("…"), this, [this] { projectSettingsDialog(); });
         gearMenu_->addAction(t("gui.act.view3d"), this, [this] { show3D(true); });
     });
 
@@ -2858,6 +2962,196 @@ void MainWindow::projectSettingsDialog() {
     if (lang->currentData().toString() != QString::fromStdString(loc_.language())) setLanguage(lang->currentData().toString());
     if (static_cast<UiMode>(mode->currentData().toInt()) != mode_) setMode(static_cast<UiMode>(mode->currentData().toInt()));
     if (openGeo) openGeoPlace();
+}
+
+
+// ---------------------------------------------------------------- kontekst menyular va mayda yordamchilar
+void MainWindow::addMenuHeader(QMenu* m, const QString& title, const QString& sub) {
+    auto* w = new QWidget(m);
+    w->setObjectName("ctxHead");
+    auto* v = new QVBoxLayout(w);
+    v->setContentsMargins(12, 8, 12, 6);
+    v->setSpacing(1);
+    auto* t1 = new QLabel(title, w);
+    t1->setObjectName("ctxTitle");
+    v->addWidget(t1);
+    if (!sub.isEmpty()) {
+        auto* t2 = new QLabel(sub, w);
+        t2->setObjectName("ctxSub");
+        v->addWidget(t2);
+    }
+    auto* wa = new QWidgetAction(m);
+    wa->setDefaultWidget(w);
+    wa->setEnabled(false);
+    m->addAction(wa);
+    m->addSeparator();
+}
+
+void MainWindow::copyText(const QString& s) {
+    QGuiApplication::clipboard()->setText(s);
+    statusBar()->showMessage(t("gui.ctx.copied", {s}), 3000);
+}
+
+QMenu* MainWindow::layerSubmenu(QMenu* parent, const QString& title, bool forSelection) {
+    auto* sm = parent->addMenu(makeIcon("layers", theme_.lightCanvas ? QColor("#2B2118") : QColor("#D5DEF3")), title);
+    const std::string cur = interp_->currentLayer();
+    std::set<std::string> used;
+    if (forSelection)
+        for (EntityId id : view_->selection())
+            if (const IEntity* e = doc_.find(id)) used.insert(e->layer());
+    for (const auto& [name, l] : doc_.layers()) {
+        const QString qn = QString::fromStdString(name);
+        auto* a = sm->addAction(swatch(aciColor(l.color, theme_.lightCanvas)), qn + (l.visible ? QString() : QStringLiteral("  ·  ") + QString::fromStdString(loc_.keywordName("OFF"))));
+        a->setCheckable(true);
+        a->setChecked(forSelection ? (used.size() == 1 && used.count(name)) : name == cur);
+        connect(a, &QAction::triggered, this, [this, qn, forSelection] {
+            if (!forSelection) { runLine(QStringLiteral("CLAYER \"%1\"").arg(qn)); return; }
+            QStringList ids;
+            for (EntityId id : view_->selection()) ids << QString::number(id);
+            runLine(QStringLiteral("CHPROP %1 %2=\"%3\"").arg(ids.join(','), QString::fromStdString(loc_.keywordName("LAYER")), qn));
+        });
+    }
+    return sm;
+}
+
+void MainWindow::fillViewContext(QMenu* m, const Vec3& at) {
+    const QColor fg = theme_.lightCanvas ? QColor("#2B2118") : QColor("#D5DEF3");
+    auto ic = [&](const char* n) { return makeIcon(QString::fromLatin1(n), fg); };
+    auto key = [](const QString& text, const QString& k) { return k.isEmpty() ? text : text + '\t' + k; };
+    const QString xy = QStringLiteral("X %1   Y %2").arg(at.x, 0, 'f', coordDecimals_).arg(at.y, 0, 'f', coordDecimals_);
+    // Yordamchi kalitlar (holat satri bilan bir xil holatda)
+    auto helpers = [&](QMenu* parent) {
+        auto* hm = parent->addMenu(ic("grid"), t("gui.ctx.helpers"));
+        const struct { QToolButton* b; const char* k; const char* f; } hs[] = {
+            {orthoBtn_, "gui.status.ortho", "F8"}, {polarBtn_, "gui.status.polar", "F10"}, {osnapBtn_, "gui.status.osnap", "F3"},
+            {snapBtn_, "gui.status.snap", "F9"},   {gridBtn_, "gui.status.grid", "F7"},    {otrackBtn_, "gui.status.otrack", "F11"},
+            {dynBtn_, "gui.status.dyn", "F12"}};
+        for (const auto& h : hs) {
+            QToolButton* b = h.b;
+            auto* a = hm->addAction(key(t(h.k), QString::fromLatin1(h.f)));
+            a->setCheckable(true);
+            a->setChecked(b->isChecked());
+            connect(a, &QAction::toggled, b, &QToolButton::setChecked);
+        }
+        return hm;
+    };
+
+    // 1) Asbob ishlayapti
+    const Tool tool = view_->tool();
+    if (tool != Tool::Select) {
+        const QString tk = toolKey(tool);
+        addMenuHeader(m, act_.contains(tk) && tk != "select" ? act_[tk]->text() : t("gui.ctx.active"), xy);
+        m->addAction(ic("redo"), key(t("gui.ctx.enter"), "Enter"), this, [this] { view_->finishTool(); });
+        m->addAction(ic("erase"), key(t("gui.ctx.cancel"), "Esc"), this, [this] { view_->cancelTool(); });
+        m->addSeparator();
+        m->addMenu(view_->snapMenu(m))->setText(key(t("gui.ctx.snapover"), "Shift+RMB"));
+        helpers(m);
+        return;
+    }
+
+    const auto& sel = view_->selection();
+    QStringList ids;
+    for (EntityId id : sel) ids << QString::number(id);
+    // 2) Tanlov bor — obyekt menyusi
+    if (!sel.empty()) {
+        std::map<EntityType, int> kinds;
+        std::set<std::string> layersUsed;
+        for (EntityId id : sel)
+            if (const IEntity* e = doc_.find(id)) { kinds[e->type()]++; layersUsed.insert(e->layer()); }
+        QStringList parts;
+        for (const auto& [k, n] : kinds) parts << QStringLiteral("%1 × %2").arg(n).arg(t((std::string("gui.ent.") + std::string(toString(k))).c_str()));
+        QString sub = parts.mid(0, 3).join(QStringLiteral(" · "));
+        if (layersUsed.size() == 1) sub += QStringLiteral("\n") + t("gui.props.layer") + QStringLiteral(": ") + QString::fromStdString(*layersUsed.begin());
+        addMenuHeader(m, t("gui.props.count", {QString::number(sel.size())}), sub);
+        for (const char* k : {"move", "copy", "rotate", "scale", "mirror", "stretch"}) m->addAction(act_[k]);
+        auto* mod = m->addMenu(ic("matchprop"), t("gui.ctx.modify"));
+        for (const char* k : {"offset", "array", "explode", "join", "matchprop", "hatch"}) mod->addAction(act_[k]);
+        m->addSeparator();
+        layerSubmenu(m, t("gui.ctx.tolayer"), true);
+        auto* cm = m->addMenu(swatch(QColor("#E0A526")), t("gui.ctx.color"));
+        {
+            auto* a = cm->addAction(t("gui.props.bylayer"));
+            connect(a, &QAction::triggered, this, [this, ids] {
+                runLine(QStringLiteral("CHPROP %1 %2=%3").arg(ids.join(','), QString::fromStdString(loc_.keywordName("COLOR")), QString::fromStdString(loc_.keywordName("BYLAYER"))));
+            });
+            cm->addSeparator();
+            for (int c = 1; c <= 9; ++c)
+                cm->addAction(swatch(aciColor(c, theme_.lightCanvas)), QString::number(c), this, [this, ids, c] {
+                    runLine(QStringLiteral("CHPROP %1 %2=%3").arg(ids.join(','), QString::fromStdString(loc_.keywordName("COLOR"))).arg(c));
+                });
+        }
+        auto* lm = m->addMenu(ic("layiso"), t("gui.ctx.layertools"));
+        for (const char* k : {"laymcur", "layoff", "layfrz", "laylck", "layiso"}) lm->addAction(act_[k]);
+        m->addSeparator();
+        auto* sm = m->addMenu(ic("select"), t("gui.ctx.selection"));
+        sm->addAction(t("gui.ctx.selsimilar"), this, [this] {   // bir xil tur va qatlam
+            std::set<std::pair<EntityType, std::string>> keys;
+            for (EntityId id : view_->selection()) if (const IEntity* e = doc_.find(id)) keys.insert({e->type(), e->layer()});
+            std::vector<EntityId> out;
+            for (EntityId id : doc_.ids())
+                if (const IEntity* e = doc_.find(id); e && doc_.isEditable(id) && keys.count({e->type(), e->layer()})) out.push_back(id);
+            view_->setSelection(out);
+        });
+        sm->addAction(t("gui.ctx.sellayer"), this, [this] {
+            std::set<std::string> lays;
+            for (EntityId id : view_->selection()) if (const IEntity* e = doc_.find(id)) lays.insert(e->layer());
+            std::vector<EntityId> out;
+            for (const auto& l : lays) for (EntityId id : doc_.idsOnLayer(l)) if (doc_.isEditable(id)) out.push_back(id);
+            view_->setSelection(out);
+        });
+        sm->addAction(t("gui.ctx.selinvert"), this, [this] {
+            const std::set<EntityId> cur(view_->selection().begin(), view_->selection().end());
+            std::vector<EntityId> out;
+            for (EntityId id : doc_.ids()) if (doc_.isEditable(id) && !cur.count(id)) out.push_back(id);
+            view_->setSelection(out);
+        });
+        sm->addSeparator();
+        sm->addAction(ic("extents"), t("gui.ctx.zoomsel"), this, [this] {
+            BBox b;
+            for (EntityId id : view_->selection()) if (const IEntity* e = doc_.find(id)) b.expand(e->bbox());
+            if (!b.valid()) return;
+            const double w = std::max(b.max.x - b.min.x, 1.0), h = std::max(b.max.y - b.min.y, 1.0);
+            view_->setView((b.min + b.max) * 0.5, std::min((view_->width() - 80.0) / w, (view_->height() - 80.0) / h));
+        });
+        auto* me = m->addMenu(ic("dist"), t("gui.ctx.measure"));
+        me->addAction(act_["area"]);
+        me->addAction(act_["list"]);
+        me->addAction(act_["dist"]);
+        m->addAction(ic("props"), t("gui.ctx.props"), this, [this] { propsDock_->show(); propsDock_->raise(); });
+        m->addSeparator();
+        m->addAction(ic("erase"), key(t("gui.act.erase"), "Del"), this, [this, ids] { runLine("ERASE " + ids.join(',')); });
+        m->addAction(key(t("gui.ctx.deselect"), "Esc"), this, [this] { view_->setSelection({}); });
+        return;
+    }
+
+    // 3) Bo'sh joy — chizma menyusi
+    addMenuHeader(m, t("gui.ctx.drawing"), xy);
+    if (view_->lastTool() != Tool::Select)
+        m->addAction(ic("redo"), key(t("gui.ctx.repeat"), "Enter"), this, [this] { view_->repeatLast(); });
+    m->addAction(act_["undo"]);
+    m->addAction(act_["redo"]);
+    m->addSeparator();
+    auto* dm = m->addMenu(ic("line"), t("gui.grp.draw"));
+    for (const char* k : {"line", "pline", "circle", "arc", "rect", "polygon", "point", "text"}) dm->addAction(act_[k]);
+    m->addAction(ic("select"), key(t("gui.ctx.selall"), "Ctrl+A"), this, [this] {
+        std::vector<EntityId> all;
+        for (EntityId id : doc_.ids()) if (doc_.isEditable(id)) all.push_back(id);
+        view_->setSelection(all);
+    });
+    layerSubmenu(m, t("gui.ctx.curlayer"), false);
+    m->addSeparator();
+    auto* pm = m->addMenu(ic("point"), t("gui.ctx.thispoint"));
+    const QString px = QString::number(at.x, 'f', coordDecimals_), py = QString::number(at.y, 'f', coordDecimals_);
+    pm->addAction(t("gui.ctx.copyxy"), this, [this, px, py] { copyText(px + "," + py); });
+    pm->addAction(t("gui.ctx.copyyx"), this, [this, px, py] { copyText(py + "," + px); });
+    pm->addSeparator();
+    pm->addAction(ic("point"), t("gui.ctx.putpoint"), this, [this, at] { runLine("POINT " + Viewport::fmtPoint(at)); });
+    pm->addAction(ic("extents"), t("gui.ctx.center"), this, [this, at] { view_->setView(at, view_->toScreen({1, 0, 0}).x() - view_->toScreen({0, 0, 0}).x()); });
+    auto* vm = m->addMenu(ic("extents"), t("gui.tab.view"));
+    for (const char* k : {"extents", "zoomin", "zoomout", "view3d", "sheets"}) vm->addAction(act_[k]);
+    helpers(m);
+    m->addSeparator();
+    m->addAction(ic("search"), key(t("gui.act.palette"), "Ctrl+K"), this, [this] { palette_->open(view_); });
 }
 
 } // namespace asiacad::gui

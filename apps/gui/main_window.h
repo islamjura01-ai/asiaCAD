@@ -191,6 +191,11 @@ private:
     bool layersWanted_ = true;
     QWidget* empty3d_ = nullptr;   // bo'sh 3D sahna uchun foydali holat (amallar bilan)
     void refreshEmpty3D();
+    void fillViewContext(QMenu* m, const Vec3& at);   // chizmadagi o'ng tugma menyusi (holatga qarab)
+    void addMenuHeader(QMenu* m, const QString& title, const QString& sub);
+    QMenu* layerSubmenu(QMenu* parent, const QString& title, bool forSelection);
+    void copyText(const QString& s);
+    int coordDecimals_ = 3;
     QWidget* propsForm_ = nullptr;
     QLabel* propsHint_ = nullptr;
 public:

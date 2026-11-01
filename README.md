@@ -542,6 +542,16 @@ Lenta vazifa bo'yicha 8 varaqqa ajratildi (har buyruq lentada bir marta; faqat �
 - **Kontekstli panellar**: KM profillari paneli Konstruksiya varagʻida oʻzi chiqadi; 3D va varaqlarda qatlamlar paneli yashiriladi;
   tanlov boʻlmasa Xossalar paneli boʻsh maydonlar oʻrniga qisqa yoʻl-yoʻriq koʻrsatadi; Belgilar paneli talab boʻyicha.
 - **Boʻsh 3D sahna** — amallar bilan karta: Namuna bino · Nuqtalar import · Faylni ochish · 2D chizmaga qaytish.
+- **Kontekst menyular** (oʻng tugma) — hamma rejimda aniq, kontrastli (`QMenu` uslubi barcha mavzularda):
+  - obyekt tanlanganda: sarlavha (soni, turi, qatlami) · Koʻchirish/Nusxalash/Burish/Masshtab/Koʻzgu/Choʻzish ·
+    Oʻzgartirish ▸ · Qatlamga oʻtkazish ▸ · Rang ▸ · Qatlam amallari ▸ · Tanlov ▸ (oʻxshashlari, shu qatlam, teskari,
+    tanlovga yaqinlashtirish) · Oʻlchash ▸ (yuza, maʼlumot, masofa) · Xossalar paneli · Oʻchirish;
+  - boʻsh joyda: kursor koordinatasi · Bekor qilish/Qaytarish · Chizish ▸ · Hammasini tanlash · Joriy qatlam ▸ ·
+    Shu nuqta ▸ (X,Y / Y,X nusxalash, nuqta qoʻyish, markazlash) · Koʻrinish ▸ · Yordamchilar ▸ (ORTO, QUTB, OSNAP …);
+  - asbob ishlayotganda: Enter · Bekor qilish · bir martalik bogʻlanish · yordamchilar.
+- Qatlamlar roʻyxatida oʻng tugma (joriy qilish, obyektlarini tanlash, yashirish/muzlatish/qulflash, rang), buyruq
+  tarixida (nusxalash, oxirgi buyruqlar, tozalash), koordinata satrida (X,Y / Y,X nusxalash, aniqlik 0–4 xona); ⚙ menyusida
+  koordinata aniqligi va loyiha sozlamalari.
 - Oʻzbekcha nomlar birxillashtirildi (oʻ/gʻ — ʻ, «List» → «Varaq», bir xil nomli tugmalar ajratildi). Buyruq aliaslari
   (LINE/L, ЛИНИЯ, CHIZIQ …) oʻzgarmadi.
 

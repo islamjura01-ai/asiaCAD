@@ -60,6 +60,16 @@ QScrollBar:horizontal { background: transparent; height: 10px; }
 QScrollBar::handle:horizontal { background: %6; border-radius: 5px; min-width: 30px; }
 QScrollBar::handle:vertical { background: %6; border-radius: 5px; min-height: 30px; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+QMenu { background: %2; color: %4; border: 1px solid %6; border-radius: 8px; padding: 5px; font-size: 13px; }
+QMenu::item { color: %4; background: transparent; padding: 6px 26px 6px 10px; border-radius: 6px; margin: 1px 2px; }
+QMenu::item:selected { background: %3; color: %4; }
+QMenu::item:disabled { color: %5; }
+QMenu::icon { padding-left: 6px; }
+QMenu::separator { height: 1px; background: %6; margin: 4px 8px; }
+QMenu::right-arrow { width: 8px; height: 8px; }
+QMenu QLabel#ctxTitle { color: %4; font-weight: 800; font-size: 13px; }
+QMenu QLabel#ctxSub { color: %5; font-size: 11px; }
+QToolTip { background: %2; color: %4; border: 1px solid %6; padding: 4px 6px; }
 )")
         .arg(win, panel, panel2, text, muted, border, accent, accentText, ribbon, ribbonText, input);
 }
@@ -139,10 +149,10 @@ QFrame#emptyCard { background: rgba(15, 29, 64, 235); border: 1px solid #22386B;
 QLabel#emptyTitle { color: #F2F5FD; font-size: 17px; font-weight: 800; }
 QLabel#emptyText { color: #8FA2CF; font-size: 13px; }
 QFrame#emptyCard QPushButton { padding: 8px 14px; text-align: left; }
-QMenu { background: #0F1D40; color: #E6ECFA; border: 1px solid #22386B; padding: 4px; }
-QMenu::item { padding: 6px 18px; border-radius: 5px; }
-QMenu::item:selected { background: #1C3166; }
-QMenu::separator { height: 1px; background: #22386B; margin: 4px 6px; }
+QMenu { background: #12224A; border: 1px solid #2A447E; }
+QMenu::item:selected { background: #22396F; color: #FFFFFF; }
+QMenu::item:checked { color: #F1C35A; }
+QMenu::item:disabled { color: #5F7099; }
 QToolTip { background: #08112A; color: #E6ECFA; border: 1px solid #22386B; padding: 4px 6px; }
 )");
         break;

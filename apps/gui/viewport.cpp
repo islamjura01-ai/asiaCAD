@@ -100,6 +100,7 @@ QMenu* Viewport::contextMenu(QWidget* parent) {
     m->setAttribute(Qt::WA_DeleteOnClose);
     m->setObjectName("viewContext");
     auto tr = [this](const char* k) { return QString::fromStdString(loc_.tr(k)); };
+    if (ctxHook_) { ctxHook_(m, toWorld(mouse_)); return m; }
     if (tool_ != Tool::Select) {
         m->addAction(tr("gui.ctx.enter"), this, [this] { finishTool(); });
         m->addAction(tr("gui.ctx.cancel"), this, [this] { cancelTool(); });

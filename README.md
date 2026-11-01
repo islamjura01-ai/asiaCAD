@@ -1,4 +1,4 @@
-# AsiaCAD — Phase 1: Drawing Engine (v0.30: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
+# AsiaCAD — Phase 1: Drawing Engine (v0.31: yangilangan lenta va dizayn tizimi; v0.30: Qt 6 grafik interfeys, 6 til, DXF, .acad, bloklar, HATCH, OSNAP, R-tree)
 
 C++20, tashqi bog'liqliksiz. CMake 3.20+, GCC 13 / Clang 16 / MSVC 2022.
 
@@ -519,6 +519,31 @@ Civil 3D "Analyze → Drive" kabi: chiziq (feature line, 3D poliliniya, o'q) tan
   Tekshiruv: qavariq egri R=2000 da nazariy √(2R)(√h1+√h2) ≈ 97.6 m, egri ichidagi devor — 2R·acos((R−m)/R).
 * Boshqaruv: sichqoncha — atrofga qarash, Bo'sh joy — yurish/to'xtash, ← → — siljish, W/S — tezlik, yon siljish — o'ng polosa.
 * CLI: `DRIVE id [V=80] [EYE=1.2] [OBJ=0.2] [STEP=10]` — ko'rinish masofasi hisoboti.
+
+## Interfeys qayta tashkil qilindi (v0.31) — `apps/gui/main_window.cpp`, `apps/gui/theme.cpp`
+
+Lenta vazifa bo'yicha 8 varaqqa ajratildi (har buyruq lentada bir marta; faqat «Matn» Chizish va Annotatsiyada):
+
+| Varaq | Guruhlar |
+|---|---|
+| Fayl | Hujjat (Yangi · Ochish · Saqlash · Boshqacha saqlash) · Almashinuv (DXF import/eksport) · Loyiha (sozlamalar) |
+| Chizish | Chizish (chiziq va shakllar) · Matn va belgilar · Tahrirlash · Qatlamlar |
+| Oʻlcham va annotatsiya | Oʻlchamlar (chiziqli, parallel, burchak, radius, diametr) · Izohlar (vynoska, matn) |
+| Geodeziya | Nuqtalar · Syomka va ijro · Yer ishlari · Profil va kesimlar · Ogʻish tahlili · Koordinatalar (geo-joylash) |
+| Tarmoqlar | Suv va kanalizatsiya · Yer osti tarmoqlari · Yoʻl va koridor |
+| Konstruksiya | Metall karkas (KM) · Elementlar (zina, rampa, tirgak devor) · Monolit va armatura · Mavze |
+| Koʻrinish va varaqlar | Model (2D/3D) · Kamera va kesim · Toifalar · Varaqlar · Masshtab · Panellar |
+| Tahlil | Hajm · Tekshiruv (masofa, yuza, maʼlumot) · Hisobotlar (metall spetsifikatsiyasi) |
+
+- **Doimiy ilova sarlavhasi** (hamma rejimda bir xil joyda): brend · Saqlash / Bekor qilish / Qaytarish · hujjat nomi · umumiy qidiruv (Ctrl+K).
+  Bekor qilish/Qaytarish, 3D va Geo-joylash endi har varaqda takrorlanmaydi.
+- **Yagona rang tizimi** (Klassik — Lojuvard): toʻq koʻk sirtlar, bir xil chiziqli ikonkalar; sariq faqat faol asbob,
+  har varaqning bosh amali va asosiy tugmalar uchun. Holat tugmalari (panellar, toʻr) yumshoq urgʻu bilan.
+- **Kontekstli panellar**: KM profillari paneli Konstruksiya varagʻida oʻzi chiqadi; 3D va varaqlarda qatlamlar paneli yashiriladi;
+  tanlov boʻlmasa Xossalar paneli boʻsh maydonlar oʻrniga qisqa yoʻl-yoʻriq koʻrsatadi; Belgilar paneli talab boʻyicha.
+- **Boʻsh 3D sahna** — amallar bilan karta: Namuna bino · Nuqtalar import · Faylni ochish · 2D chizmaga qaytish.
+- Oʻzbekcha nomlar birxillashtirildi (oʻ/gʻ — ʻ, «List» → «Varaq», bir xil nomli tugmalar ajratildi). Buyruq aliaslari
+  (LINE/L, ЛИНИЯ, CHIZIQ …) oʻzgarmadi.
 
 ## Grafik interfeys (Qt 6) — `asiacad-gui`
 

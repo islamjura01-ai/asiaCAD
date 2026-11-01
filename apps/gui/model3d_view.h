@@ -67,6 +67,7 @@ public:
     void setClip(double frac);          // 0..1 — balandlik bo'yicha kesim (1 — kesimsiz)
     void setCategoryVisible(const QString& cat, bool on);
     QStringList categories() const;
+    bool categoryVisible(const QString& cat) const { return !hiddenCats_.count(cat); }
     void isolateSelected();
     void hideSelected();
     void showAll();

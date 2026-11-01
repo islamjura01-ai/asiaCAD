@@ -34,6 +34,8 @@
 #include <QMenu>
 #include <QKeyEvent>
 #include <QTabWidget>
+#include <QDockWidget>
+#include <QHash>
 #include <QTableWidget>
 
 #include <asiacad/core/dimension.h>
@@ -169,6 +171,50 @@ int main(int argc, char** argv) {
     w.setMode(UiMode::Focus);
     CHECK(w.mode() == UiMode::Focus);
     w.setMode(UiMode::Classic);
+
+    // 10b. Lenta tuzilmasi (v0.31): 8 varaq, takrorlarsiz; tez kirish va qidiruv — doimiy ilova sarlavhasida
+    {
+        QTabWidget* rb = w.ribbon();
+        QStringList pages;
+        for (int i = 0; i < rb->count(); ++i) pages << rb->widget(i)->property("i18n").toString();
+        CHECK(pages == QStringList({"gui.tab.file", "gui.tab.draw", "gui.tab.annot", "gui.tab.survey", "gui.tab.networks",
+                                    "gui.tab.struct", "gui.tab.view", "gui.tab.analyze"}));
+        QHash<QAction*, int> uses;
+        for (auto* b : rb->findChildren<QToolButton*>())
+            if (b->defaultAction()) uses[b->defaultAction()]++;
+        int undoInRibbon = 0, dup = 0;
+        for (auto it = uses.cbegin(); it != uses.cend(); ++it) {
+            const QString icon = it.key()->data().toString();
+            if (icon == "undo" || icon == "redo" || icon == "search") undoInRibbon += it.value();
+            if (it.value() > 1 && icon != "text") ++dup;   // matn: Chizish va Annotatsiyada (ataylab)
+        }
+        CHECK(undoInRibbon == 0 && dup == 0);
+        QStringList qat;
+        for (auto* b : w.appBar()->findChildren<QToolButton*>()) qat << b->objectName();
+        CHECK(qat.contains("qat_undo") && qat.contains("qat_redo") && qat.contains("qat_save"));
+        CHECK(w.appBar()->findChild<QPushButton*>("searchBox") != nullptr);
+        for (UiMode m : {UiMode::Module, UiMode::Focus}) {   // boshqa rejimlarda ham bir xil joyda
+            w.setMode(m);
+            QApplication::processEvents();
+            CHECK(w.appBar()->isVisibleTo(&w) && !w.ribbon()->isVisibleTo(&w));
+        }
+        w.setMode(UiMode::Classic);
+        // Konstruksiya varag'i — KM paneli o'zi chiqadi, chiqilganda yopiladi
+        auto* steel = w.findChild<QDockWidget*>("steelDock");
+        CHECK(steel && steel->isHidden());
+        rb->setCurrentIndex(pages.indexOf("gui.tab.struct"));
+        CHECK(!steel->isHidden());
+        rb->setCurrentIndex(pages.indexOf("gui.tab.draw"));
+        CHECK(steel->isHidden());
+        // bo'sh chizmada 3D — foydali bo'sh holat; 2D ga qaytishda qatlamlar paneli qaytadi
+        auto* layersDock = w.findChild<QDockWidget*>("layersDock");
+        w.show3D(true);
+        QApplication::processEvents();
+        if (w.document().ids().empty()) CHECK(w.empty3D() && w.empty3D()->isVisibleTo(&w));
+        CHECK(layersDock->isHidden());
+        w.show3D(false);
+        CHECK(!layersDock->isHidden());
+    }
 
     // 11. Nuqta formati: katta UTM koordinatalari aniqligi yo'qolmaydi
     CHECK(Viewport::fmtPoint({4512398.123456, 1234612.5, 0}) == "4512398.123456,1234612.5");

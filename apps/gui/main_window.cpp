@@ -57,6 +57,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QSet>
 #include <QShortcut>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -82,7 +83,7 @@ struct ActDef {
 const ActDef kActs[] = {
     {"new", "new", "gui.act.new", false},         {"open", "open", "gui.act.open", false},
     {"save", "save", "gui.act.save", false},      {"saveas", "save", "gui.act.saveas", false},
-    {"import", "open", "gui.act.import", false},   {"export", "save", "gui.act.export", false},
+    {"import", "ptimport", "gui.act.import", false}, {"export", "ptexport", "gui.act.export", false},
     {"undo", "undo", "gui.act.undo", false},      {"redo", "redo", "gui.act.redo", false},
     {"select", "select", "gui.act.select", true}, {"line", "line", "gui.act.line", true},
     {"pline", "pline", "gui.act.pline", true},    {"circle", "circle", "gui.act.circle", true},
@@ -136,9 +137,29 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"view3d", "volume", "gui.act.view3d", false},
+    {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
+    // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
+    {"projset", "projset", "gui.act.projset", false},
+    {"view2d", "view2d", "gui.act.view2d", false},
+    {"cam3d", "camera", "gui.act.cam3d", false},  {"cut3d", "cut", "gui.act.cut3d", false},
+    {"cats3d", "cats", "gui.act.cats3d", false},
+    {"pnlayers", "layers", "gui.act.pnlayers", false}, {"pnprops", "props", "gui.act.pnprops", false},
+    {"pncmd", "cmdline", "gui.act.pncmd", false},
+    {"dist", "dist", "gui.act.dist", false},      {"area", "area", "gui.act.area", false},
+    {"list", "list", "gui.act.list", false},      {"steelspec", "report", "gui.act.steelspec", false},
 };
+
+// Har varaqning bosh (urg'uli) amali — ikonkasi oltin rangda; qolganlari bir xil neytral rangda
+bool isPrimary(const QString& key) {
+    static const QSet<QString> p = {"save", "line", "dimlinear", "ptimport", "sewer", "steelframe", "ewvolume"};
+    return p.contains(key);
+}
+// Holat tugmalari (panel, to'r): yoqilganda sariq fon emas — oltin ikonka va matn (kamroq chalg'itadi)
+bool isStateToggle(const QString& key) {
+    static const QSet<QString> p = {"pnlayers", "pnprops", "pncmd", "grid"};
+    return p.contains(key);
+}
 
 // Asbob -> Tool va kanonik buyruq
 Tool toolOf(const QString& k) {
@@ -250,7 +271,16 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     col->setContentsMargins(0, 0, 0, 0);
     col->setSpacing(0);
     buildRibbon();
-    setMenuWidget(ribbon_);  // lenta butun kenglikda (panellar ustida) — AutoCAD kabi
+    {   // yuqori qism: doimiy ilova sarlavhasi + lenta (butun kenglikda, panellar ustida — AutoCAD kabi)
+        auto* top = new QWidget(this);
+        top->setObjectName("topArea");
+        auto* tv = new QVBoxLayout(top);
+        tv->setContentsMargins(0, 0, 0, 0);
+        tv->setSpacing(0);
+        tv->addWidget(buildAppBar());
+        tv->addWidget(ribbon_);
+        setMenuWidget(top);
+    }
     // 2D chizma / 3D model (Revit kabi ko'rinish yorliqlari)
     viewTabs_ = new QTabBar(central);
     viewTabs_->setObjectName("viewTabs");
@@ -338,7 +368,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.30"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.31"})), theme_.accent);
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -353,25 +383,17 @@ QString MainWindow::t(const char* key, const QStringList& args) const {
     return QString::fromStdString(loc_.tr(key, a));
 }
 
-QIcon MainWindow::icon(const QString& name) const {
+QIcon MainWindow::icon(const QString& name) const { return icon(name, QString()); }
+
+QIcon MainWindow::icon(const QString& name, const QString& key) const {
     switch (mode_) {
     case UiMode::Classic: {
-        // lenta: rangli plitka ikonkalar (Samarqand palitrasi)
-        static const QHash<QString, QString> tint = {
-            {"line", "#1FA3A0"}, {"pline", "#1FA3A0"}, {"circle", "#1FA3A0"}, {"arc", "#1FA3A0"}, {"point", "#1FA3A0"}, {"text", "#1FA3A0"},
-            {"move", "#E0A526"}, {"copy", "#E0A526"}, {"rotate", "#E0A526"}, {"select", "#E0A526"}, {"erase", "#C8324B"},
-            {"pipes", "#1F7BE0"}, {"pipedraw", "#1F7BE0"}, {"asbuilt", "#2BA84A"}, {"bim", "#D9466A"}, {"rebar", "#D9466A"}, {"util", "#1F7BE0"}, {"road", "#1F7BE0"}, {"waterway", "#1F9BD0"}, {"corridor", "#E7881B"}, {"city", "#8E5BD6"}, {"drive", "#2BA84A"}, {"offset", "#E0A526"}, {"trim", "#E0A526"}, {"extend", "#E0A526"}, {"fillet", "#E0A526"}, {"stretch", "#E0A526"}, {"scale", "#E0A526"}, {"mirror", "#E0A526"}, {"chamfer", "#E0A526"}, {"array", "#E0A526"}, {"explode", "#E0A526"}, {"join", "#E0A526"}, {"break", "#E0A526"}, {"matchprop", "#E0A526"},
-            {"rect", "#1C8C6E"}, {"polygon", "#1C8C6E"}, {"ellipse", "#1C8C6E"}, {"spline", "#1C8C6E"}, {"hatch", "#1C8C6E"}, {"symbols", "#3E9B3A"}, {"steel", "#4F6D8A"},
-            {"steelframe", "#4F6D8A"}, {"stairtpl", "#D9466A"}, {"ramptpl", "#E7881B"}, {"rwalltpl", "#8A7B5C"}, {"geoplace", "#0E9F8E"},
-            {"ptimport", "#0E9F8E"}, {"ptexport", "#0E9F8E"}, {"devplan", "#0E9F8E"}, {"devvert", "#0E9F8E"}, {"devheight", "#0E9F8E"},
-            {"devaxis", "#0E9F8E"}, {"devpoint", "#0E9F8E"}, {"devclear", "#E0A526"},
-            {"ewtin", "#3E9B3A"}, {"ewprofile", "#3E9B3A"}, {"ewsections", "#3E9B3A"}, {"ewcarto", "#3E9B3A"}, {"ewvolume", "#3E9B3A"}, {"view3d", "#7A3FC8"}, {"sheets", "#7A3FC8"},
-            {"leader", "#C8324B"}, {"dimangular", "#C8324B"},
-            {"layers", "#D99A1E"}, {"laymcur", "#2BA84A"}, {"laymatch", "#1C8C9E"}, {"layoff", "#6B7280"}, {"layfrz", "#2F7FD8"}, {"laylck", "#C2410C"}, {"layulk", "#E58A3A"}, {"layiso", "#7A3FC8"}, {"layuniso", "#A27BDB"}, {"layon", "#3E9B3A"},
-            {"dimlinear", "#C8324B"}, {"dimaligned", "#C8324B"}, {"dimradius", "#C8324B"}, {"dimdiameter", "#C8324B"},
-            {"new", "#2F5DA8"}, {"open", "#2F5DA8"}, {"save", "#2F5DA8"}, {"undo", "#5B6B95"}, {"redo", "#5B6B95"},
-            {"extents", "#7A3FC8"}, {"zoomin", "#7A3FC8"}, {"zoomout", "#7A3FC8"}, {"grid", "#7A3FC8"}, {"search", "#C8324B"}};
-        return makeIcon(name, Qt::white, QColor(tint.value(name, "#2F5DA8")));
+        // Lojuvard: bir xil chiziqli ikonkalar (neytral), bosh amallar — oltin; faol (bosilgan) holatda to'q ikonka sariq fonda
+        QIcon ic = makeIcon(name, isPrimary(key) ? theme_.accent : QColor("#D5DEF3"));
+        const QIcon on = makeIcon(name, isStateToggle(key) ? theme_.accent : theme_.accentText);
+        ic.addPixmap(on.pixmap(64, 64), QIcon::Normal, QIcon::On);
+        ic.addPixmap(makeIcon(name, QColor("#55658C")).pixmap(64, 64), QIcon::Disabled, QIcon::Off);
+        return ic;
     }
     case UiMode::Module: return makeIcon(name, QColor("#B4600A"));
     case UiMode::Focus: return makeIcon(name, QColor("#E7EAF6"));
@@ -459,6 +481,21 @@ void MainWindow::buildActions() {
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
     connect(act_["ewvolume"], &QAction::triggered, this, [this] { openEarthwork(4); });
     connect(act_["drive"], &QAction::triggered, this, [this] { openDrive(); });
+    // ---- Fayl → Loyiha, Ko'rinish, Tahlil
+    connect(act_["projset"], &QAction::triggered, this, [this] { projectSettingsDialog(); });
+    act_["view2d"]->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F4));
+    connect(act_["view2d"], &QAction::triggered, this, [this] { show3D(false); });
+    act_["view3d"]->setCheckable(true);
+    act_["view2d"]->setCheckable(true);
+    act_["sheets"]->setCheckable(true);
+    for (const char* k : {"pnlayers", "pnprops", "pncmd"}) act_[k]->setCheckable(true);
+    connect(act_["dist"], &QAction::triggered, this, [this] { measureDistance(); });
+    connect(act_["steelspec"], &QAction::triggered, this, [this] {
+        show3D(false);
+        const BBox b = doc_.extents(true);
+        runLine(QStringLiteral("STEELSPEC %1,%2").arg(b.valid() ? b.max.x + 5 : 0).arg(b.valid() ? b.max.y : 0));
+        view_->zoomExtents();
+    });
     // ---- tanlov bilan bajariladigan amallar
     auto withSel = [this](const QString& canon) {
         if (view_->selection().empty()) { prompt_->setText(t("gui.prompt.selectfirst")); return; }
@@ -468,6 +505,8 @@ void MainWindow::buildActions() {
     };
     connect(act_["explode"], &QAction::triggered, this, [withSel] { withSel("EXPLODE"); });
     connect(act_["join"], &QAction::triggered, this, [withSel] { withSel("JOIN"); });
+    connect(act_["area"], &QAction::triggered, this, [this, withSel] { show3D(false); withSel("AREA"); });
+    connect(act_["list"], &QAction::triggered, this, [this, withSel] { show3D(false); withSel("LIST"); });
     connect(act_["hatch"], &QAction::triggered, this, [this] {
         if (view_->selection().empty()) { prompt_->setText(t("gui.prompt.hatchsel")); return; }
         QStringList ids;
@@ -550,51 +589,134 @@ void MainWindow::buildActions() {
     });
 }
 
+QWidget* MainWindow::buildAppBar() {
+    // Ilova sarlavhasi — barcha rejimlarda bir xil joyda: brend · tez kirish · hujjat nomi · umumiy qidiruv
+    appBar_ = new QWidget(this);
+    appBar_->setObjectName("appBar");
+    appBar_->setAttribute(Qt::WA_StyledBackground, true);
+    appBar_->setFixedHeight(44);
+    auto* h = new QHBoxLayout(appBar_);
+    h->setContentsMargins(12, 0, 12, 0);
+    h->setSpacing(4);
+    auto* logo = new QLabel(appBar_);
+    logo->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(24, 24));
+    h->addWidget(logo);
+    auto* name = new QLabel(QStringLiteral("<span style='font-size:16px; font-weight:800;'>Asia<span style='color:#E0A526'>CAD</span></span>"
+                                           "<span style='font-size:11px; color:#7F92BF;'>&nbsp;0.31</span>"),
+                            appBar_);
+    name->setObjectName("brandName");
+    name->setTextFormat(Qt::RichText);
+    h->addWidget(name);
+    h->addSpacing(14);
+    auto* sep = new QFrame(appBar_);
+    sep->setObjectName("appSep");
+    sep->setFixedSize(1, 20);
+    h->addWidget(sep);
+    h->addSpacing(6);
+    for (const char* k : {"save", "undo", "redo"}) {   // tez kirish paneli (QAT)
+        auto* b = new QToolButton(appBar_);
+        b->setDefaultAction(act_[k]);
+        b->setObjectName(QStringLiteral("qat_%1").arg(k));
+        b->setProperty("qat", true);
+        b->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        b->setIconSize(QSize(18, 18));
+        b->setAutoRaise(true);
+        h->addWidget(b);
+    }
+    h->addStretch(1);
+    appTitle_ = new QLabel(appBar_);
+    appTitle_->setObjectName("appTitle");
+    h->addWidget(appTitle_);
+    h->addStretch(1);
+    searchBtn_ = new QPushButton(appBar_);
+    searchBtn_->setObjectName("searchBox");
+    searchBtn_->setCursor(Qt::PointingHandCursor);
+    searchBtn_->setFixedWidth(300);
+    searchBtn_->setIconSize(QSize(15, 15));
+    connect(searchBtn_, &QPushButton::clicked, this, [this] { palette_->open(view_); });
+    h->addWidget(searchBtn_);
+    return appBar_;
+}
+
 void MainWindow::buildRibbon() {
     ribbon_ = new QTabWidget(this);
     ribbon_->setObjectName("ribbon");
     ribbon_->setDocumentMode(true);
-    ribbon_->setFixedHeight(134);
-    {   // brend: o'ng yuqori burchakda katta logotip va nom
-        auto* brand = new QWidget(ribbon_);
-        brand->setObjectName("brand");
-        brand->setStyleSheet("#brand { background: transparent; }");
-        brand->setAttribute(Qt::WA_TranslucentBackground);
-        auto* bl = new QHBoxLayout(brand);
-        bl->setContentsMargins(8, 2, 14, 2);
-        bl->setSpacing(8);
-        auto* ic = new QLabel(brand);
-        ic->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(30, 30));
-        auto* nm = new QLabel(QStringLiteral("<span style='font-size:21px; font-weight:800; letter-spacing:0.5px;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                             "<span style='font-size:11px; color:#8a93a3;'>&nbsp;0.30</span>"),
-                              brand);
-        nm->setObjectName("brandName");
-        nm->setTextFormat(Qt::RichText);
-        bl->addWidget(ic);
-        bl->addWidget(nm);
-        ribbon_->setCornerWidget(brand, Qt::TopRightCorner);
-        setWindowIcon(makeIcon("logo", QColor("#E0A526"), QColor("#14213D"), 256));
-    }
-    // Har bir sahifa: guruhlar (tugmalar + pastda guruh nomi)
+    ribbon_->setFixedHeight(124);
+    setWindowIcon(makeIcon("logo", QColor("#E0A526"), QColor("#14213D"), 256));
+    // Har varaq — vazifa bo'yicha guruhlar. Bekor qilish/qaytarish va qidiruv lentada takrorlanmaydi: ular ilova sarlavhasida doimiy.
     struct Group { const char* title; std::vector<const char*> keys; std::vector<const char*> small = {}; bool iconsOnly = false; int rows = 3; };
     struct Page { const char* title; std::vector<Group> groups; };
     const std::vector<Page> pages = {
-        {"gui.tab.home", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch", "text", "symbols", "steel"}, true},
+        {"gui.tab.file", {{"gui.grp.document", {"new", "open", "save", "saveas"}},
+                          {"gui.grp.exchange", {"import", "export"}},
+                          {"gui.grp.project", {"projset"}}}},
+        {"gui.tab.draw", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch"}, true},
+                          {"gui.grp.textsym", {"text", "symbols"}},
                           {"gui.grp.modify", {"select"}, {"move", "copy", "stretch", "rotate", "mirror", "scale", "trim", "extend", "fillet",
                                                           "chamfer", "array", "offset", "erase", "explode", "join", "break", "matchprop"}},
-                          {"gui.grp.layers", {}, {"layprops", "laymcur", "laymatch", "layoff", "layfrz", "laylck", "layulk", "layiso", "layuniso", "layon"}, true, 2},
-                          {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.dim", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}, {"leader", "text"}},
-                         {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.utilities", {{"gui.grp.utilities", {"pipedraw", "sewer", "util", "road", "waterway", "corridor", "building", "rebar", "city"}}, {"gui.grp.analyze", {"drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}}, {"gui.grp.asbuilt", {"asbuilt"}}, {"gui.grp.earth", {"ewtin", "ewprofile", "ewsections", "ewcarto", "ewvolume"}},
-                            {"gui.grp.deviation", {"devplan", "devvert", "devheight", "devaxis", "devpoint"}},
-                            {"gui.grp.clean", {"devclear"}}, {"gui.grp.geo", {"geoplace"}}, {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.tab.struct", {{"gui.grp.templates", {"steelframe", "stairtpl", "ramptpl", "rwalltpl"}}, {"gui.grp.km", {"steel"}},
-                            {"gui.grp.geo", {"geoplace"}}, {"gui.grp.analyze", {"view3d", "drive"}}, {"gui.grp.history", {"undo", "redo"}}}},
-        {"gui.grp.file", {{"gui.grp.file", {"new", "open", "save", "saveas", "import", "export"}}}},
-        {"gui.tab.view", {{"gui.grp.model", {"view3d", "sheets"}}, {"gui.grp.zoom", {"extents", "zoomin", "zoomout", "grid"}},
-                          {"gui.grp.interface", {"palette"}}}},
+                          {"gui.grp.layers", {}, {"layprops", "laymcur", "laymatch", "layoff", "layfrz", "laylck", "layulk", "layiso", "layuniso", "layon"}, true, 2}}},
+        {"gui.tab.annot", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}},
+                           {"gui.grp.notes", {"leader", "text"}}}},
+        {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}},
+                            {"gui.grp.asbuilt", {"asbuilt"}},
+                            {"gui.grp.earth", {"ewtin", "ewcarto"}},
+                            {"gui.grp.profiles", {"ewprofile", "ewsections"}},
+                            {"gui.grp.deviation", {"devplan"}, {"devheight", "devvert", "devaxis", "devpoint", "devclear"}},
+                            {"gui.grp.geo", {"geoplace"}}}},
+        {"gui.tab.networks", {{"gui.grp.water", {"sewer", "pipedraw", "waterway"}},
+                              {"gui.grp.underground", {"util"}},
+                              {"gui.grp.roads", {"road", "corridor"}}}},
+        {"gui.tab.struct", {{"gui.grp.steelkm", {"steelframe", "steel"}},
+                            {"gui.grp.elements", {"stairtpl", "ramptpl", "rwalltpl"}},
+                            {"gui.grp.concrete", {"building", "rebar"}},
+                            {"gui.grp.district", {"city"}}}},
+        {"gui.tab.view", {{"gui.grp.model", {"view2d", "view3d"}},
+                          {"gui.grp.camera", {"cam3d", "cut3d", "drive"}},
+                          {"gui.grp.cats", {"cats3d"}},
+                          {"gui.grp.sheets", {"sheets"}},
+                          {"gui.grp.zoom", {"extents"}, {"zoomin", "zoomout", "grid"}},
+                          {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
+        {"gui.tab.analyze", {{"gui.grp.volume", {"ewvolume"}},
+                             {"gui.grp.check", {"dist", "area", "list"}},
+                             {"gui.grp.reports", {"steelspec"}}}},
+    };
+    // Ochiladigan menyuli tugmalar (3D kamera, kesim, toifalar)
+    auto menuFor = [this](const QString& key, QToolButton* b) {
+        auto* m = new QMenu(b);
+        b->setMenu(m);
+        b->setPopupMode(QToolButton::InstantPopup);
+        connect(m, &QMenu::aboutToShow, this, [this, key, m] {
+            m->clear();
+            if (!is3D()) show3D(true);
+            if (key == "cam3d") {
+                const struct { const char* k; Model3DView::View v; } views[] = {
+                    {"gui.v3d.home", Model3DView::Home}, {"gui.v3d.top", Model3DView::Top}, {"gui.v3d.front", Model3DView::Front},
+                    {"gui.v3d.back", Model3DView::Back}, {"gui.v3d.left", Model3DView::Left}, {"gui.v3d.right", Model3DView::Right}};
+                for (const auto& v : views) {
+                    const auto vv = v.v;
+                    m->addAction(t(v.k), this, [this, vv] { view3d_->setView(vv); });
+                }
+                m->addSeparator();
+                m->addAction(t("gui.v3d.fit"), this, [this] { view3d_->fit(); });
+            } else if (key == "cut3d") {
+                for (int pct : {100, 75, 50, 25}) {
+                    const QString txt = pct == 100 ? t("gui.cut.none") : t("gui.cut.at", {QString::number(pct)});
+                    m->addAction(txt, this, [this, pct] { view3d_->setClip(pct / 100.0); });
+                }
+            } else if (key == "cats3d") {
+                const QStringList cats = view3d_->categories();
+                if (cats.isEmpty()) m->addAction(t("gui.cats.none"))->setEnabled(false);
+                for (const QString& c : cats) {
+                    auto* a = m->addAction(c.isEmpty() ? QStringLiteral("—") : c);
+                    a->setCheckable(true);
+                    a->setChecked(view3d_->categoryVisible(c));
+                    connect(a, &QAction::toggled, this, [this, c](bool on) { view3d_->setCategoryVisible(c, on); });
+                }
+                m->addSeparator();
+                m->addAction(t("gui.v3d.showall"), this, [this] { view3d_->showAll(); });
+            }
+        });
     };
     for (const auto& pg : pages) {
         auto* page = new QWidget(ribbon_);
@@ -602,8 +724,8 @@ void MainWindow::buildRibbon() {
         page->setAttribute(Qt::WA_StyledBackground, true);
         page->setProperty("i18n", pg.title);
         auto* row = new QHBoxLayout(page);
-        row->setContentsMargins(10, 6, 10, 4);
-        row->setSpacing(6);
+        row->setContentsMargins(12, 6, 12, 4);
+        row->setSpacing(8);
         bool first = true;
         for (const auto& g : pg.groups) {
             if (!first) {
@@ -620,7 +742,7 @@ void MainWindow::buildRibbon() {
             v->setSpacing(2);
             if (std::string(g.title) == "gui.grp.layers") {  // joriy qatlam ro'yxati (AutoCAD Layers paneli kabi)
                 ribbonLayer_ = new QComboBox(box);
-                ribbonLayer_->setMinimumWidth(190);
+                ribbonLayer_->setMinimumWidth(150);
                 ribbonLayer_->setObjectName("ribbonLayer");
                 v->addWidget(ribbonLayer_);
                 connect(ribbonLayer_, &QComboBox::activated, this, [this](int i) {
@@ -633,30 +755,34 @@ void MainWindow::buildRibbon() {
                 auto* b = new QToolButton(box);
                 b->setDefaultAction(act_[k]);
                 b->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-                b->setIconSize(QSize(30, 30));
-                b->setMinimumWidth(56);
+                b->setIconSize(QSize(28, 28));
+                b->setMinimumWidth(58);
                 b->setProperty("ribbonBtn", true);
+                const QString key = QString::fromLatin1(k);
+                if (key == "cam3d" || key == "cut3d" || key == "cats3d") menuFor(key, b);
                 btns->addWidget(b);
             }
-            if (!g.small.empty()) {  // kichik tugmalar: 2 qator, ikona yonida matn (AutoCAD lentasi kabi)
+            if (!g.small.empty()) {  // kichik tugmalar: ustunlarda, ikona yonida matn (AutoCAD lentasi kabi)
                 auto* grid = new QGridLayout;
                 grid->setSpacing(1);
                 for (std::size_t i = 0; i < g.small.size(); ++i) {
                     auto* b = new QToolButton(box);
                     b->setDefaultAction(act_[g.small[i]]);
                     b->setToolButtonStyle(g.iconsOnly ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
-                    b->setIconSize(g.iconsOnly ? QSize(22, 22) : QSize(18, 18));
+                    b->setIconSize(g.iconsOnly ? QSize(20, 20) : QSize(16, 16));
                     b->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
                     b->setProperty("ribbonSmall", true);
+                    if (isStateToggle(QString::fromLatin1(g.small[i]))) b->setProperty("stateToggle", true);
                     if (!g.iconsOnly) {  // matn qisqartirilmasin (retranslate dan keyin ham)
                         b->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
-                        b->setMinimumWidth(118);
+                        b->setMinimumWidth(112);
                     }
-                    grid->addWidget(b, static_cast<int>(i) % g.rows, static_cast<int>(i) / g.rows);  // 3 qator — AutoCAD kabi
+                    grid->addWidget(b, static_cast<int>(i) % g.rows, static_cast<int>(i) / g.rows);
                 }
                 btns->addLayout(grid);
             }
             v->addLayout(btns);
+            v->addStretch(1);
             auto* title = new QLabel(box);
             title->setObjectName("groupTitle");
             title->setAlignment(Qt::AlignCenter);
@@ -667,6 +793,8 @@ void MainWindow::buildRibbon() {
         row->addStretch(1);
         ribbon_->addTab(page, QString());
     }
+    ribbon_->setCurrentIndex(1);   // ish boshlanishi — Chizish
+    connect(ribbon_, &QTabWidget::currentChanged, this, [this] { updateContextDocks(); });
 }
 
 void MainWindow::buildModuleBars() {
@@ -724,7 +852,7 @@ void MainWindow::buildModuleBars() {
     context_->setMovable(false);
     context_->setIconSize(QSize(18, 18));
     context_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    for (const char* k : {"select", "line", "pline", "circle", "arc", "point", "text", "move", "copy", "rotate", "offset", "trim", "fillet", "erase", "dimlinear", "dimradius", "undo", "redo", "extents"})
+    for (const char* k : {"select", "line", "pline", "circle", "arc", "point", "text", "move", "copy", "rotate", "offset", "trim", "fillet", "erase", "dimlinear", "dimradius", "extents"})
         context_->addAction(act_[k]);
     addToolBar(Qt::TopToolBarArea, context_);
 
@@ -733,7 +861,7 @@ void MainWindow::buildModuleBars() {
     floating_->setObjectName("floating");
     floating_->setOrientation(Qt::Vertical);
     floating_->setIconSize(QSize(22, 22));
-    for (const char* k : {"select", "line", "pline", "circle", "arc", "text", "move", "trim", "dimlinear", "erase", "extents", "palette"})
+    for (const char* k : {"select", "line", "pline", "circle", "arc", "text", "move", "trim", "dimlinear", "erase", "extents"})
         floating_->addAction(act_[k]);
     floating_->move(16, 16);
     floating_->adjustSize();
@@ -760,7 +888,7 @@ void MainWindow::buildDocks() {
     layers_->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     lv->addWidget(layers_);
     auto* addLayer = new QPushButton(lw);
-    addLayer->setObjectName("accent");
+    addLayer->setObjectName("layerAdd");   // ikkinchi darajali amal — sariq emas
     addLayer->setProperty("i18n", "gui.layers.new");
     lv->addWidget(addLayer);
     layersDock_->setWidget(lw);
@@ -803,14 +931,22 @@ void MainWindow::buildDocks() {
     propsCount_ = new QLabel(propsBox_);
     propsCount_->setObjectName("title");
     pv->addWidget(propsCount_);
-    auto* form = new QFormLayout;
-    propsLayer_ = new QComboBox(propsBox_);
-    propsColor_ = new QComboBox(propsBox_);
-    auto* l1 = new QLabel(propsBox_); l1->setProperty("i18n", "gui.props.layer"); l1->setObjectName("muted");
-    auto* l2 = new QLabel(propsBox_); l2->setProperty("i18n", "gui.props.color"); l2->setObjectName("muted");
+    // tanlov bo'lmasa — bo'sh maydonlar o'rniga qisqa yo'l-yo'riq (kamroq chalg'itadi)
+    propsHint_ = new QLabel(propsBox_);
+    propsHint_->setObjectName("panelHint");
+    propsHint_->setWordWrap(true);
+    propsHint_->setProperty("i18n", "gui.props.hint");
+    pv->addWidget(propsHint_);
+    propsForm_ = new QWidget(propsBox_);
+    auto* form = new QFormLayout(propsForm_);
+    form->setContentsMargins(0, 0, 0, 0);
+    propsLayer_ = new QComboBox(propsForm_);
+    propsColor_ = new QComboBox(propsForm_);
+    auto* l1 = new QLabel(propsForm_); l1->setProperty("i18n", "gui.props.layer"); l1->setObjectName("muted");
+    auto* l2 = new QLabel(propsForm_); l2->setProperty("i18n", "gui.props.color"); l2->setObjectName("muted");
     form->addRow(l1, propsLayer_);
     form->addRow(l2, propsColor_);
-    pv->addLayout(form);
+    pv->addWidget(propsForm_);
     // Tuzatish paneli: obyekt turiga qarab (quvur, quduq, chiziq, aylana, matn ...) tahrirlanadigan maydonlar
     auto* scroll = new QScrollArea(propsBox_);
     scroll->setWidgetResizable(true);
@@ -852,6 +988,8 @@ void MainWindow::buildDocks() {
     steelDock_->setWidget(steelPal_);
     addDockWidget(Qt::RightDockWidgetArea, steelDock_);
     tabifyDockWidget(symDock_, steelDock_);
+    symDock_->hide();     // kerak bo'lganda ochiladi: "Belgilar" tugmasi
+    steelDock_->hide();   // Konstruksiya varag'ida o'zi chiqadi yoki "Metall (KM)" tugmasi
     propsDock_->raise();
     connect(steelPal_, &SteelPanel::drawMember, this, [this](const QString& p) {
         view_->setSteelProfile(p);
@@ -917,6 +1055,19 @@ void MainWindow::buildDocks() {
     connect(cmdEdit_, &QLineEdit::returnPressed, this, &MainWindow::submitCommandLine);
     // Viewport ichida harf terilsa — buyruq satriga o'tadi (AutoCAD odati)
     view_->installEventFilter(this);
+    // Ko'rinish → Panellar: tugmalar panellarning haqiqiy holatini ko'rsatadi
+    const std::pair<const char*, QDockWidget*> panels[] = {{"pnlayers", layersDock_}, {"pnprops", propsDock_}, {"pncmd", cmdDock_}};
+    for (const auto& [key, dock] : panels) {
+        QAction* a = act_[key];
+        QDockWidget* d = dock;
+        connect(a, &QAction::triggered, this, [this, a, d](bool on) {
+            if (d == layersDock_) layersWanted_ = on;
+            d->setVisible(on);
+            if (on) d->raise();
+        });
+        connect(d, &QDockWidget::visibilityChanged, this, [a, d] { a->setChecked(!d->isHidden()); });
+        a->setChecked(!d->isHidden());
+    }
     resizeDocks({layersDock_, propsDock_}, {280, 290}, Qt::Horizontal);
     resizeDocks({cmdDock_}, {150}, Qt::Vertical);
 }
@@ -1094,14 +1245,15 @@ void MainWindow::retranslateStatus() {
 void MainWindow::setMode(UiMode m) {
     mode_ = m;
     theme_ = themeFor(m);
-    ribbon_->setVisible(m == UiMode::Classic);
+    ribbon_->setVisible(m == UiMode::Classic);   // ilova sarlavhasi (tez kirish, qidiruv) hamma rejimda qoladi
     rail_->setVisible(m == UiMode::Module);
     context_->setVisible(m == UiMode::Module);
     floating_->setVisible(m == UiMode::Focus);
-    layersDock_->setVisible(m != UiMode::Focus);
+    layersWanted_ = m != UiMode::Focus;
     propsDock_->setVisible(m != UiMode::Focus);
     cmdDock_->setVisible(true);
     applyTheme();
+    updateContextDocks();
     if (modeBox_) {
         updatingUi_ = true;
         modeBox_->setCurrentIndex(modeBox_->findData(static_cast<int>(m)));
@@ -1112,7 +1264,10 @@ void MainWindow::setMode(UiMode m) {
 void MainWindow::applyTheme() {
     qApp->setStyleSheet(theme_.styleSheet);
     view_->setTheme(theme_);
-    for (auto* a : act_) a->setIcon(icon(a->data().toString()));
+    for (auto it = act_.cbegin(); it != act_.cend(); ++it) it.value()->setIcon(icon(it.value()->data().toString(), it.key()));
+    for (const char* k : {"pnlayers", "pnprops", "pncmd", "grid"}) act_[k]->setProperty("stateToggle", true);
+    if (searchBtn_) searchBtn_->setIcon(makeIcon("search", theme_.lightCanvas ? QColor("#7A6A58") : QColor("#8FA2CF")));
+    if (empty3d_) refreshEmpty3D();
     floating_->adjustSize();
     refreshLayers();
 }
@@ -1129,9 +1284,16 @@ void MainWindow::retranslate() {
     }
     updatingUi_ = true;
     for (const auto& d : kActs) {
-        act_[d.key]->setText(t(d.label));
-        act_[d.key]->setToolTip(t(d.label));
+        QAction* a = act_[d.key];
+        a->setText(t(d.label));
+        const QString sc = a->shortcut().toString(QKeySequence::NativeText);
+        a->setToolTip(sc.isEmpty() ? t(d.label) : QStringLiteral("%1  (%2)").arg(t(d.label), sc));
     }
+    if (searchBtn_) {
+        searchBtn_->setText(t("gui.search.placeholder"));
+        searchBtn_->setToolTip(t("gui.act.palette") + QStringLiteral("  (Ctrl+K)"));
+    }
+    if (empty3d_) refreshEmpty3D();
     // ribbon_ sahifa nomlari va guruh sarlavhalari
     for (int i = 0; i < ribbon_->count(); ++i) {
         QWidget* page = ribbon_->widget(i);
@@ -1140,7 +1302,9 @@ void MainWindow::retranslate() {
     }
     for (auto* b : ribbon_->findChildren<QToolButton*>())
         if (b->property("ribbonBtn").toBool())
-            b->setMinimumWidth(std::max(56, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 14));
+            b->setMinimumWidth(std::max(58, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 24));
+        else if (b->property("ribbonSmall").toBool() && b->toolButtonStyle() == Qt::ToolButtonTextBesideIcon)
+            b->setMinimumWidth(std::max(112, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 52));
     for (auto* a : rail_->actions()) a->setText(t(a->property("i18n").toByteArray().constData()));
     for (QWidget* w : findChildren<QWidget*>())
         if (auto* b = qobject_cast<QPushButton*>(w); b && b->property("i18n").isValid()) b->setText(t(b->property("i18n").toByteArray().constData()));
@@ -1218,7 +1382,9 @@ void MainWindow::refreshProperties() {
     propsColor_->clear();
     propsList_->clear();
     smart_->rebuild(sel);
-    propsList_->setVisible(smart_->title().isEmpty());  // tuzatish paneli bo'lsa — oddiy ro'yxat yashiriladi
+    propsList_->setVisible(smart_->title().isEmpty() && !sel.empty());  // tuzatish paneli bo'lsa — oddiy ro'yxat yashiriladi
+    propsForm_->setVisible(!sel.empty());
+    propsHint_->setVisible(sel.empty());
     if (sel.empty()) {
         propsCount_->setText(t("gui.props.none"));
         propsLayer_->setEnabled(false);
@@ -1289,6 +1455,7 @@ void MainWindow::refreshTitle() {
     const QString file = QString::fromStdString(interp_->currentFile());
     const QString name = file.isEmpty() ? t("gui.untitled") : QFileInfo(file).fileName();
     setWindowTitle(QStringLiteral("%1%2 — AsiaCAD").arg(name, stack_.isDirty() ? " *" : ""));
+    if (appTitle_) appTitle_->setText(name + (stack_.isDirty() ? QStringLiteral("  •") : QString()));
 }
 
 void MainWindow::appendHistory(const QString& text, const QColor& color) {
@@ -1538,6 +1705,7 @@ void MainWindow::show3D(bool on) {
         viewStack_->setCurrentWidget(view_);
         view_->setFocus();
     }
+    updateContextDocks();
     raise();
     activateWindow();
 }
@@ -1743,6 +1911,7 @@ void MainWindow::showSheets() {
     viewStack_->setCurrentWidget(sheetPage_);
     refreshSheets();
     sheetView_->setFocus();
+    updateContextDocks();
 }
 
 bool MainWindow::newSheet(const QString& name, const QString& size, bool portrait) {
@@ -2007,8 +2176,9 @@ void MainWindow::rebuild3D(bool keepView) {
         view3d_->addTriangles(civil::sceneFromCorridor(corridor_->model()), 1.0);
         view3d_->endObject();
     }
-    view3d_->setEmptyText(t("gui.v3d.empty"));
+    view3d_->setEmptyText(QString());   // bo'sh holat — alohida karta (refreshEmpty3D)
     view3d_->endScene(keepView);
+    refreshEmpty3D();
 }
 
 void MainWindow::makeSampleBuilding() {
@@ -2534,6 +2704,160 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
 
 void MainWindow::closeEvent(QCloseEvent* e) {
     if (maybeSave()) e->accept(); else e->ignore();
+}
+
+// ---------------------------------------------------------------- v0.31: kontekstli panellar, bo'sh 3D holati, loyiha sozlamalari
+void MainWindow::updateContextDocks() {
+    if (!layersDock_ || !ribbon_) return;
+    const bool is2D = viewStack_ && viewStack_->currentWidget() == view_;
+    // Qatlamlar — faqat 2D chizmada (3D va varaqlarda o'z boshqaruvi bor); foydalanuvchi tanlovi saqlanadi
+    const bool wantLayers = layersWanted_ && mode_ != UiMode::Focus;
+    if (layersDock_->isHidden() == (wantLayers && is2D)) layersDock_->setVisible(wantLayers && is2D);
+    // KM profillari paneli — Konstruksiya varag'ida o'zi chiqadi, chiqib ketilganda yopiladi (qo'lda ochilgan bo'lsa qoladi)
+    const QWidget* page = ribbon_->currentWidget();
+    const bool structTab = mode_ == UiMode::Classic && page && page->property("i18n").toByteArray() == "gui.tab.struct";
+    if (structTab && steelDock_->isHidden()) {
+        steelAuto_ = true;
+        steelDock_->show();
+        propsDock_->raise();
+    } else if (!structTab && steelAuto_) {
+        steelAuto_ = false;
+        steelDock_->hide();
+    }
+    // Ko'rinish tugmalari joriy oynani ko'rsatadi
+    if (act_.contains("view2d")) {
+        act_["view2d"]->setChecked(is2D);
+        act_["view3d"]->setChecked(is3D());
+        act_["sheets"]->setChecked(isSheets());
+    }
+}
+
+void MainWindow::refreshEmpty3D() {
+    if (!view3d_) return;
+    if (!empty3d_) {
+        auto* lay = new QGridLayout(view3d_);
+        lay->setContentsMargins(24, 48, 24, 48);
+        empty3d_ = new QFrame(view3d_);
+        empty3d_->setObjectName("emptyCard");
+        empty3d_->setAttribute(Qt::WA_StyledBackground, true);
+        empty3d_->setMaximumWidth(520);
+        auto* v = new QVBoxLayout(empty3d_);
+        v->setContentsMargins(28, 24, 28, 24);
+        v->setSpacing(10);
+        auto* ic = new QLabel(empty3d_);
+        ic->setPixmap(makeIcon("empty3d", QColor("#E0A526")).pixmap(44, 44));
+        ic->setAlignment(Qt::AlignCenter);
+        v->addWidget(ic);
+        auto* title = new QLabel(empty3d_);
+        title->setObjectName("emptyTitle");
+        title->setAlignment(Qt::AlignCenter);
+        title->setProperty("i18n", "gui.empty3d.title");
+        v->addWidget(title);
+        auto* text = new QLabel(empty3d_);
+        text->setObjectName("emptyText");
+        text->setAlignment(Qt::AlignCenter);
+        text->setWordWrap(true);
+        text->setProperty("i18n", "gui.empty3d.text");
+        v->addWidget(text);
+        v->addSpacing(6);
+        auto* grid = new QGridLayout;
+        grid->setSpacing(8);
+        const struct { const char* name; const char* key; const char* icon; } btns[] = {
+            {"emptySample", "gui.empty3d.sample", "bim"}, {"emptyPoints", "gui.empty3d.points", "ptimport"},
+            {"emptyOpen", "gui.empty3d.open", "open"},   {"empty2d", "gui.empty3d.back", "view2d"}};
+        int i = 0;
+        for (const auto& b : btns) {
+            auto* pb = new QPushButton(empty3d_);
+            pb->setObjectName(QString::fromLatin1(b.name));
+            pb->setProperty("i18n", b.key);
+            pb->setProperty("iconName", b.icon);
+            pb->setCursor(Qt::PointingHandCursor);
+            pb->setIconSize(QSize(18, 18));
+            if (i == 0) pb->setProperty("accent", true);   // asosiy taklif — sariq
+            grid->addWidget(pb, i / 2, i % 2);
+            ++i;
+        }
+        v->addLayout(grid);
+        lay->addWidget(empty3d_, 0, 0, Qt::AlignCenter);
+        connect(empty3d_->findChild<QPushButton*>("emptySample"), &QPushButton::clicked, this, [this] { makeSampleBuilding(); });
+        connect(empty3d_->findChild<QPushButton*>("emptyPoints"), &QPushButton::clicked, this, [this] { act_["ptimport"]->trigger(); });
+        connect(empty3d_->findChild<QPushButton*>("emptyOpen"), &QPushButton::clicked, this, [this] { openFile(); });
+        connect(empty3d_->findChild<QPushButton*>("empty2d"), &QPushButton::clicked, this, [this] { show3D(false); });
+    }
+    for (auto* l : empty3d_->findChildren<QLabel*>())
+        if (l->property("i18n").isValid()) l->setText(t(l->property("i18n").toByteArray().constData()));
+    const QColor fg = theme_.lightCanvas ? QColor("#2B2118") : QColor("#D5DEF3");
+    for (auto* b : empty3d_->findChildren<QPushButton*>()) {
+        b->setText(t(b->property("i18n").toByteArray().constData()));
+        b->setIcon(makeIcon(b->property("iconName").toString(), b->property("accent").toBool() ? theme_.accentText : fg));
+    }
+    empty3d_->setVisible(view3d_->objectCount() == 0);
+}
+
+void MainWindow::measureDistance() {
+    show3D(false);
+    pickCb_ = [this](const std::vector<Vec3>& pts) {
+        if (pts.size() == 2) runLine(QStringLiteral("DIST %1 %2").arg(Viewport::fmtPoint(pts[0]), Viewport::fmtPoint(pts[1])));
+    };
+    view_->startPick(2, {QStringLiteral("gui.dist.p1"), QStringLiteral("gui.dist.p2")});
+    view_->setFocus();
+}
+
+void MainWindow::projectSettingsDialog() {
+    // Loyiha sozlamalari: izoh masshtabi, qadam, qutb burchagi, kursor, interfeys rejimi va tili, geo-joylash
+    QDialog dlg(this);
+    dlg.setObjectName("projectSettings");
+    dlg.setWindowTitle(t("gui.proj.title"));
+    dlg.setStyleSheet(theme_.styleSheet);
+    dlg.setMinimumWidth(420);
+    auto* v = new QVBoxLayout(&dlg);
+    auto* head = new QLabel(t("gui.proj.file", {QFileInfo(QString::fromStdString(interp_->currentFile())).fileName().isEmpty()
+                                                    ? t("gui.untitled") : QFileInfo(QString::fromStdString(interp_->currentFile())).fileName()}), &dlg);
+    head->setObjectName("title");
+    v->addWidget(head);
+    auto* form = new QFormLayout;
+    auto* anno = new QComboBox(&dlg);
+    for (int i = 0; i < annoBox_->count(); ++i) anno->addItem(annoBox_->itemText(i), annoBox_->itemData(i));
+    anno->setCurrentIndex(annoBox_->currentIndex());
+    auto* step = new QComboBox(&dlg);
+    for (double st : {0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0}) step->addItem(QString::number(st), st);
+    step->setCurrentIndex(std::max(0, step->findData(view_->snapUnit())));
+    auto* polar = new QComboBox(&dlg);
+    for (double ang : {90.0, 45.0, 30.0, 22.5, 18.0, 15.0, 10.0, 5.0}) polar->addItem(QStringLiteral("%1°").arg(ang), ang);
+    polar->setCurrentIndex(std::max(0, polar->findData(view_->polarStep())));
+    auto* mode = new QComboBox(&dlg);
+    for (int i = 0; i < modeBox_->count(); ++i) mode->addItem(modeBox_->itemText(i), modeBox_->itemData(i));
+    mode->setCurrentIndex(modeBox_->currentIndex());
+    auto* lang = new QComboBox(&dlg);
+    for (int i = 0; i < langBox_->count(); ++i) lang->addItem(langBox_->itemText(i), langBox_->itemData(i));
+    lang->setCurrentIndex(langBox_->currentIndex());
+    form->addRow(t("gui.status.anno"), anno);
+    form->addRow(t("gui.proj.step"), step);
+    form->addRow(t("gui.proj.polar"), polar);
+    form->addRow(t("gui.proj.mode"), mode);
+    form->addRow(t("gui.proj.lang"), lang);
+    v->addLayout(form);
+    auto* geo = new QPushButton(makeIcon("geoplace", theme_.lightCanvas ? QColor("#2B2118") : QColor("#D5DEF3")), t("gui.act.geoplace") + QStringLiteral("…"), &dlg);
+    geo->setObjectName("projGeo");
+    v->addWidget(geo);
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    bb->button(QDialogButtonBox::Ok)->setProperty("accent", true);
+    v->addWidget(bb);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    bool openGeo = false;
+    connect(geo, &QPushButton::clicked, &dlg, [&] { openGeo = true; dlg.accept(); });
+    if (dlg.exec() != QDialog::Accepted) return;
+    view_->setAnnoScale(anno->currentData().toDouble());
+    annoBox_->setCurrentIndex(anno->currentIndex());
+    view_->setSnapUnit(step->currentData().toDouble());
+    view_->setPolarStep(polar->currentData().toDouble());
+    for (auto* a : stepMenu_->actions()) a->setChecked(a->text() == step->currentText());
+    for (auto* a : polarMenu_->actions()) a->setChecked(a->text() == polar->currentText());
+    retranslateStatus();
+    if (lang->currentData().toString() != QString::fromStdString(loc_.language())) setLanguage(lang->currentData().toString());
+    if (static_cast<UiMode>(mode->currentData().toInt()) != mode_) setMode(static_cast<UiMode>(mode->currentData().toInt()));
+    if (openGeo) openGeoPlace();
 }
 
 } // namespace asiacad::gui

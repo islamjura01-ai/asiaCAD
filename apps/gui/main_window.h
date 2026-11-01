@@ -26,6 +26,7 @@ class QDockWidget;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
+class QPushButton;
 class QTabWidget;
 class QToolBar;
 class QToolButton;
@@ -136,6 +137,7 @@ private:
     void importDxf();
     void exportDxf();
     QIcon icon(const QString& name) const;
+    QIcon icon(const QString& name, const QString& actionKey) const;   // amal kaliti: urg'u va holat ranglari uchun
 
     i18n::Localizer& loc_;
     Document doc_;
@@ -175,6 +177,27 @@ private:
     QToolButton* driveCtx_ = nullptr;  // chiziq tanlanganda viewport ustida "▶ Haydash"
 
     QHash<QString, QAction*> act_;  // "line" -> QAction
+    // Doimiy ilova sarlavhasi: brend · tez kirish (saqlash, bekor qilish, qaytarish) · hujjat nomi · umumiy qidiruv.
+    // Barcha rejimlarda (Klassik / Modul / Fokus) bir xil joyda turadi.
+    QWidget* appBar_ = nullptr;
+    QLabel* appTitle_ = nullptr;
+    QPushButton* searchBtn_ = nullptr;
+    QWidget* buildAppBar();
+    void projectSettingsDialog();
+    void measureDistance();
+    // Kontekstli panellar: KM paneli faqat Konstruksiya varag'ida o'zi ochiladi; 3D/varaqlarda qatlamlar yashiriladi
+    void updateContextDocks();
+    bool steelAuto_ = false;
+    bool layersWanted_ = true;
+    QWidget* empty3d_ = nullptr;   // bo'sh 3D sahna uchun foydali holat (amallar bilan)
+    void refreshEmpty3D();
+    QWidget* propsForm_ = nullptr;
+    QLabel* propsHint_ = nullptr;
+public:
+    QTabWidget* ribbon() const { return ribbon_; }   // sinov uchun
+    QWidget* appBar() const { return appBar_; }
+    QWidget* empty3D() const { return empty3d_; }
+private:
     QTabWidget* ribbon_ = nullptr;
     QToolBar* rail_ = nullptr;
     QToolBar* context_ = nullptr;

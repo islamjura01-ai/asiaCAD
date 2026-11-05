@@ -2362,6 +2362,13 @@
     "gui.ent.INSERT": "Блок",
     "gui.ent.HATCH": "Штрих",
     "gui.ent.DIMENSION": "Өлчөм",
-    "gui.ent.MESH": "3D бет"
+    "gui.ent.MESH": "3D бет",
+    "gui.tip.command": "Буйрук",
+    "gui.palette.footer": "↑↓ тандоо · Enter — аткаруу · Esc — жабуу · буйрук аты каалаган тилде же алиас (L, C …)",
+    "gui.act.recent": "Акыркылар",
+    "gui.recent.none": "Акыркы файлдар жок",
+    "gui.recent.clear": "Тизмени тазалоо",
+    "gui.v3d.views": "Көрүнүштөр",
+    "gui.v3d.copyinfo": "Маалыматты көчүрүү"
   }
 }

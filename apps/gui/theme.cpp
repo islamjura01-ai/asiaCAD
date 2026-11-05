@@ -32,6 +32,12 @@ QToolButton:checked { background: %7; color: %8; border-color: %7; }
 QToolButton[ribbonSmall="true"] { padding: 1px 4px; border-radius: 5px; }
 QTabWidget#ribbon::pane { background: %9; border: 0; border-bottom: 1px solid %6; }
 QWidget#ribbonPage { background: %9; }
+QScrollArea#ribbonScroll, QScrollArea#ribbonScroll > QWidget, QScrollArea#ribbonScroll > QWidget > QWidget#ribbonPage { background: %9; border: 0; }
+QScrollArea#ribbonScroll QScrollBar:horizontal { height: 6px; background: transparent; }
+QListWidget#paletteList::item { padding: 7px 8px; border-radius: 6px; }
+QListWidget#paletteList::item:selected { background: %3; color: %4; border-left: 3px solid %7; }
+QLineEdit#paletteEdit { font-size: 15px; padding: 9px 12px; }
+QDialog#palette { background: %2; border: 1px solid %6; border-radius: 10px; }
 QTabWidget#ribbon > QTabBar::tab { background: transparent; color: %10; padding: 8px 16px; font-weight: 600; border: 0; }
 QTabWidget#ribbon > QTabBar::tab:selected { background: %9; color: %4; border-top-left-radius: 8px; border-top-right-radius: 8px; }
 QFrame#ribbonGroup QLabel#groupTitle { color: %5; font-size: 11px; font-weight: 700; }
@@ -129,12 +135,12 @@ QTabWidget#ribbon QToolButton:hover { background: #1C3166; border-color: #2A447E
 QTabWidget#ribbon QToolButton:checked { background: #E0A526; color: #231800; border-color: #E0A526; }
 QTabWidget#ribbon QToolButton[stateToggle="true"]:checked { background: #1C3166; color: #F1C35A; border-color: #2A447E; }
 QTabWidget#ribbon QToolButton::menu-indicator { image: none; width: 0; }
-QFrame#ribbonGroup QLabel#groupTitle { color: #6F82B0; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
+QFrame#ribbonGroup QLabel#groupTitle { color: #8597C4; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
 QFrame#ribbonSep { background: #22386B; margin: 6px 0 6px 0; }
 QComboBox#ribbonLayer { background: #0A1633; }
 QDockWidget { font-size: 12px; }
 QDockWidget::title { background: #0C1836; color: #8FA2CF; padding: 6px 10px; border-bottom: 1px solid #1A2C5A; }
-QLabel#panelHint { color: #6F82B0; font-size: 12px; padding: 6px 2px; }
+QLabel#panelHint { color: #8FA2CF; font-size: 12px; padding: 6px 2px; }
 QPushButton#layerAdd { background: transparent; color: #DCE4F7; border: 1px dashed #2A447E; }
 QPushButton#layerAdd:hover { border-color: #E0A526; color: #F1B93B; }
 QPushButton[accent="true"]:hover, QPushButton#accent:hover { background: #F1B93B; }

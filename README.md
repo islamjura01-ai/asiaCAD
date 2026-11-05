@@ -552,6 +552,15 @@ Lenta vazifa bo'yicha 8 varaqqa ajratildi (har buyruq lentada bir marta; faqat �
 - Qatlamlar roʻyxatida oʻng tugma (joriy qilish, obyektlarini tanlash, yashirish/muzlatish/qulflash, rang), buyruq
   tarixida (nusxalash, oxirgi buyruqlar, tozalash), koordinata satrida (X,Y / Y,X nusxalash, aniqlik 0–4 xona); ⚙ menyusida
   koordinata aniqligi va loyiha sozlamalari.
+- **Tor ekranlar** (1280–1366 px): lenta oynani kengaytirmaydi — sigʻmasa kichik tugmalar ixcham (faqat ikonka,
+  maslahat qoladi), baribir sigʻmasa sahifa gorizontal suriladi; hujjat nomi qisqartiriladi, qidiruv maydoni torayadi.
+- **Qidiruv (Ctrl+K)** — lenta amallari ham: ikonka, joyi («Chizish › Qatlamlar») va tezkor tugmasi bilan; aniq alias
+  (L, C, QATLAM …) roʻyxat boshida; ↑↓ / PgUp / PgDn.
+- **Maslahatlar**: nom, tezkor tugma, buyruq nomi va aliasi (CHIZIQ · LINE), lentadagi joyi.
+- **3D oynalar** (asosiy va dialoglardagi) — ilova fonida, faol tugmalar oltin; oʻng tugma: obyekt nomi, koʻrinishlar,
+  uslub, orto/perspektiva, maʼlumotni nusxalash, rasm.
+- **Holat saqlanadi** (QSettings): oyna oʻlchami, panellar joylashuvi, lenta varagʻi, rejim, til, koordinata aniqligi;
+  Fayl › Hujjat › **Oxirgilar** — oxirgi 10 ta fayl. Ctrl+A — hammasini tanlash.
 - Oʻzbekcha nomlar birxillashtirildi (oʻ/gʻ — ʻ, «List» → «Varaq», bir xil nomli tugmalar ajratildi). Buyruq aliaslari
   (LINE/L, ЛИНИЯ, CHIZIQ …) oʻzgarmadi.
 

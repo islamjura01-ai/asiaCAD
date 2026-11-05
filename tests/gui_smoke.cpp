@@ -35,6 +35,8 @@
 #include <QKeyEvent>
 #include <QTabWidget>
 #include <QDockWidget>
+#include <QScrollArea>
+#include "command_palette.h"
 #include <QHash>
 #include <QTableWidget>
 
@@ -214,6 +216,25 @@ int main(int argc, char** argv) {
         CHECK(layersDock->isHidden());
         w.show3D(false);
         CHECK(!layersDock->isHidden());
+        // Qidiruv: lenta amallari (joyi bilan) va aliaslar
+        auto* pal = w.commandPalette();
+        pal->setFilter(QString::fromStdString(loc.tr("gui.act.projset")));
+        CHECK(pal->resultCount() >= 1);
+        pal->setFilter("L");
+        CHECK(pal->resultCount() > 0);
+        // Tor ekran: lenta oynani kengaytirmaydi, kichik tugmalar ixchamlashadi
+        rb->setCurrentIndex(pages.indexOf("gui.tab.draw"));
+        w.resize(1180, 760);
+        w.show();
+        QApplication::processEvents();
+        auto* drawPage = qobject_cast<QScrollArea*>(rb->currentWidget())->widget();
+        CHECK(drawPage->property("compact").toBool());
+        CHECK(w.minimumSizeHint().width() <= 1180);
+        w.resize(1600, 900);
+        QApplication::processEvents();
+        CHECK(!drawPage->property("compact").toBool());
+        w.resize(1440, 900);
+        QApplication::processEvents();
     }
 
     // 11. Nuqta formati: katta UTM koordinatalari aniqligi yo'qolmaydi

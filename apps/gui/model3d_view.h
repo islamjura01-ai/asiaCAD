@@ -42,6 +42,8 @@ public:
     void setTr(std::function<QString(const char*)> tr);
     static void setGlobalTr(std::function<QString(const char*)> tr);   // hamma 3D oynalar uchun (til almashganda)
     void setDark(bool dark);
+    void setThemeColors(const QColor& bg, const QColor& accent);          // ilova mavzusiga moslash (fon, urg'u)
+    static void setGlobalTheme(const QColor& bg, const QColor& accent);   // hamma 3D oynalar (dialoglardagilar ham)
 
     // ---- sahna (Pipe3DView bilan mos)
     void beginScene(const QString& title, const QString& subtitle);
@@ -133,7 +135,10 @@ private:
 
     std::function<QString(const char*)> trf_;
     static std::function<QString(const char*)>& globalTr();
+    static QColor& globalBg();
+    static QColor& globalAccent();
     bool dark_ = true;
+    QColor bg_, accent_{30, 140, 255};
     // sahna
     std::vector<float> tri_, line_, edge_;    // barcha (yashirinlarini ham) — CPU nusxa
     std::vector<Obj> objs_;

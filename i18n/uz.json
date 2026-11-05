@@ -2009,7 +2009,7 @@
     "sheet.err.notfound": "«{0}» nomli varaq yoʻq",
     "sheet.err.exists": "«{0}» nomli varaq allaqachon bor",
     "sheet.err.size": "Notoʻgʻri format «{0}» (A0, A1, A2, A3, A4, TIK/YOTIQ)",
-    "sheet.err.nospace": "«{0}» listida joy yetmaydi (M {1}) — formatni kattalashtiring yoki masshtabni kichraytiring",
+    "sheet.err.nospace": "«{0}» varaqda joy yetmaydi (M {1}) — formatni kattalashtiring yoki masshtabni kichraytiring",
     "sheet.err.key": "Shtamp maydoni «{0}» notoʻgʻri. Maydonlar: {1}",
     "sheet.st.izm": "Oʻzg.",
     "sheet.st.kol": "Soni",
@@ -2058,7 +2058,7 @@
     "gui.sheet.f.NCTRL": "Normativ nazorat",
     "gui.sheet.f.APPR": "Tasdiqladi",
     "gui.sheet.f.DATE": "Sana",
-    "gui.sheet.allsheets": "Umumiy maydonlarni barcha listlarga qoʻllash",
+    "gui.sheet.allsheets": "Umumiy maydonlarni barcha varaqlarga qoʻllash",
     "gui.sheet.saved": "PDF saqlandi: {0}",
     "gui.sheet.hint": "Gʻildirak — zoom, oʻrta tugma — siljitish, koʻrinishni ikki marta bosing — chizmada ochiladi",
     "gui.act.sheets": "Varaqlar",
@@ -2362,6 +2362,13 @@
     "gui.ent.INSERT": "Blok",
     "gui.ent.HATCH": "Shtrix",
     "gui.ent.DIMENSION": "Oʻlcham",
-    "gui.ent.MESH": "3D sirt"
+    "gui.ent.MESH": "3D sirt",
+    "gui.tip.command": "Buyruq",
+    "gui.palette.footer": "↑↓ tanlash · Enter — bajarish · Esc — yopish · buyruq nomi istalgan tilda yoki alias (L, C, CHIZIQ …)",
+    "gui.act.recent": "Oxirgilar",
+    "gui.recent.none": "Hali fayl ochilmagan",
+    "gui.recent.clear": "Roʻyxatni tozalash",
+    "gui.v3d.views": "Koʻrinishlar",
+    "gui.v3d.copyinfo": "Maʼlumotni nusxalash"
   }
 }

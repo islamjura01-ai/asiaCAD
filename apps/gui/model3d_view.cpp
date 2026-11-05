@@ -6,6 +6,9 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QApplication>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QPainter>
@@ -126,6 +129,17 @@ Model3DView::Model3DView(QWidget* parent) : QOpenGLWidget(parent) {
     setMouseTracking(true);
     setMinimumSize(320, 240);
     buildUi();
+    if (globalBg().isValid()) setThemeColors(globalBg(), globalAccent());   // barcha 3D oynalar — ilova mavzusida
+}
+
+QColor& Model3DView::globalBg() { static QColor c; return c; }
+QColor& Model3DView::globalAccent() { static QColor c(30, 140, 255); return c; }
+
+void Model3DView::setGlobalTheme(const QColor& bg, const QColor& accent) {
+    globalBg() = bg;
+    globalAccent() = accent;
+    for (QWidget* top : QApplication::topLevelWidgets())
+        for (auto* v : top->findChildren<Model3DView*>()) v->setThemeColors(bg, accent);
 }
 
 Model3DView::~Model3DView() {
@@ -157,7 +171,7 @@ QString Model3DView::tr_(const char* k) const {
         if (!s.isEmpty() && s != QString::fromLatin1(k)) return s;
     }
     static const std::map<std::string, const char*> def = {
-        {"v3d.top", "Yuqori"}, {"v3d.bottom", "Past"}, {"v3d.front", "Old"}, {"v3d.back", "Orqa"}, {"v3d.left", "Chap"}, {"v3d.right", "O'ng"},
+        {"v3d.top", "Yuqori"}, {"v3d.bottom", "Past"}, {"v3d.front", "Old"}, {"v3d.back", "Orqa"}, {"v3d.left", "Chap"}, {"v3d.right", "O'ng"}, {"v3d.views", "Ko'rinishlar"}, {"v3d.copyinfo", "Ma'lumotni nusxalash"},
         {"v3d.fit", "Hammasi"}, {"v3d.persp", "Perspektiva"}, {"v3d.ortho", "Orto"}, {"v3d.style", "Uslub"}, {"v3d.cut", "Kesim"},
         {"v3d.vis", "Toifalar"}, {"v3d.shot", "Rasm"}, {"v3d.s.shaded", "Bo'yalgan"}, {"v3d.s.edges", "Bo'yalgan + qirralar"},
         {"v3d.s.wire", "Sim karkas"}, {"v3d.s.xray", "Rentgen"}, {"v3d.showall", "Hammasini ko'rsatish"}, {"v3d.isolate", "Ajratish"},
@@ -169,6 +183,19 @@ QString Model3DView::tr_(const char* k) const {
 
 void Model3DView::setDark(bool dark) {
     dark_ = dark;
+    update();
+}
+
+void Model3DView::setThemeColors(const QColor& bg, const QColor& accent) {
+    bg_ = bg;
+    accent_ = accent;
+    if (bar_) {
+        bar_->setStyleSheet(QStringLiteral("#v3dBar { background: rgba(10,18,40,200); border: 1px solid rgba(255,255,255,30); border-radius: 8px; } "
+                                           "#v3dBar QToolButton { color: #e8ecf2; padding: 4px 8px; border: none; border-radius: 5px; } "
+                                           "#v3dBar QToolButton:hover { background: rgba(255,255,255,36); } "
+                                           "#v3dBar QToolButton:checked { background: %1; color: %2; }")
+                                .arg(accent.name(), accent.lightnessF() > 0.55 ? QStringLiteral("#231800") : QStringLiteral("#ffffff")));
+    }
     update();
 }
 
@@ -752,7 +779,7 @@ void Model3DView::upload() {
 }
 
 void Model3DView::paintGL() {
-    const QColor bg = dark_ ? QColor(27, 31, 39) : QColor(236, 239, 243);
+    const QColor bg = bg_.isValid() ? bg_ : (dark_ ? QColor(27, 31, 39) : QColor(236, 239, 243));
     glClearColor(float(bg.redF()), float(bg.greenF()), float(bg.blueF()), 1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if (glReady_ && !objs_.empty()) {
@@ -1245,6 +1272,12 @@ void Model3DView::contextMenuEvent(QContextMenuEvent* e) {
     QMenu m(this);
     QVector3D hit;
     const bool onObj = rayHit(e->pos(), hit);
+    if (sel_ >= 0 && sel_ < static_cast<int>(objs_.size())) {   // sarlavha: tanlangan obyekt
+        auto* h = m.addAction(objs_[static_cast<std::size_t>(sel_)].name);
+        h->setEnabled(false);
+        QFont f = h->font(); f.setBold(true); h->setFont(f);
+        m.addSeparator();
+    }
     auto* iso = m.addAction(tr_("v3d.isolate"));
     auto* hide = m.addAction(tr_("v3d.hide"));
     iso->setEnabled(sel_ >= 0);
@@ -1254,6 +1287,25 @@ void Model3DView::contextMenuEvent(QContextMenuEvent* e) {
     auto* ctr = m.addAction(tr_("v3d.center"));
     ctr->setEnabled(onObj);
     auto* fitA = m.addAction(tr_("v3d.fit"));
+    auto* vm = m.addMenu(tr_("v3d.views"));
+    const struct { const char* k; View v; } views[] = {{"v3d.home", Home}, {"v3d.top", Top}, {"v3d.front", Front}, {"v3d.back", Back},
+                                                       {"v3d.left", Left}, {"v3d.right", Right}, {"v3d.bottom", Bottom}};
+    for (const auto& vv : views) { const View v = vv.v; vm->addAction(tr_(vv.k), this, [this, v] { setView(v); }); }
+    auto* sm = m.addMenu(tr_("v3d.style"));
+    const char* skeys[4] = {"v3d.s.shaded", "v3d.s.edges", "v3d.s.wire", "v3d.s.xray"};
+    for (int i = 0; i < 4; ++i) {
+        auto* a = sm->addAction(tr_(skeys[i]), this, [this, i] { setStyle(static_cast<Style>(i)); });
+        a->setCheckable(true);
+        a->setChecked(style_ == i);
+    }
+    auto* pa = m.addAction(ortho_ ? tr_("v3d.persp") : tr_("v3d.ortho"), this, [this] { setOrtho(!ortho_); if (bProj_) bProj_->setChecked(ortho_); });
+    Q_UNUSED(pa);
+    m.addSeparator();
+    if (sel_ >= 0) m.addAction(tr_("v3d.copyinfo"), this, [this] { QGuiApplication::clipboard()->setText(selectionInfo()); });
+    m.addAction(tr_("v3d.shot") + QStringLiteral("…"), this, [this] {
+        const QString f = QFileDialog::getSaveFileName(this, tr_("v3d.shot"), "model3d.png", "PNG (*.png)");
+        if (!f.isEmpty()) snapshot().save(f);
+    });
     QAction* r = m.exec(e->globalPos());
     if (r == iso) isolateSelected();
     else if (r == hide) hideSelected();

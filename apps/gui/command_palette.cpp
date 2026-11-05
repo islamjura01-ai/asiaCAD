@@ -3,23 +3,36 @@
 #include <asiacad/i18n/utf8.h>
 
 #include <QKeyEvent>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <set>
 
 namespace asiacad::gui {
 
 CommandPalette::CommandPalette(const i18n::Localizer& loc, QWidget* parent) : QDialog(parent), loc_(loc) {
     setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
-    setMinimumWidth(520);
+    setObjectName("palette");
+    setMinimumWidth(600);
     auto* lay = new QVBoxLayout(this);
-    lay->setContentsMargins(10, 10, 10, 10);
+    lay->setContentsMargins(10, 10, 10, 8);
     lay->setSpacing(8);
     edit_ = new QLineEdit(this);
+    edit_->setObjectName("paletteEdit");
+    edit_->setClearButtonEnabled(true);
     list_ = new QListWidget(this);
-    list_->setMinimumHeight(300);
+    list_->setObjectName("paletteList");
+    list_->setMinimumHeight(340);
+    list_->setIconSize(QSize(18, 18));
+    list_->setUniformItemSizes(true);
+    footer_ = new QLabel(this);
+    footer_->setObjectName("muted");
     lay->addWidget(edit_);
     lay->addWidget(list_);
+    lay->addWidget(footer_);
     edit_->installEventFilter(this);
     connect(edit_, &QLineEdit::textChanged, this, &CommandPalette::refill);
     connect(list_, &QListWidget::itemActivated, this, [this] { accept(); });
@@ -27,6 +40,8 @@ CommandPalette::CommandPalette(const i18n::Localizer& loc, QWidget* parent) : QD
 
 void CommandPalette::open(QWidget* anchor) {
     edit_->setPlaceholderText(QString::fromStdString(loc_.tr("gui.palette.hint")));
+    footer_->setText(QString::fromStdString(loc_.tr("gui.palette.footer")));
+    entries_ = provider_ ? provider_() : QList<Entry>{};
     edit_->clear();
     refill({});
     if (anchor) {
@@ -37,20 +52,45 @@ void CommandPalette::open(QWidget* anchor) {
     edit_->setFocus();
 }
 
+void CommandPalette::setFilter(const QString& f) {
+    if (entries_.isEmpty() && provider_) entries_ = provider_();
+    edit_->setText(f);
+    refill(f);
+}
+
+int CommandPalette::resultCount() const { return list_->count(); }
+
 void CommandPalette::refill(const QString& filter) {
     list_->clear();
     const std::string f = asiacad::utf8::foldKey(filter.trimmed().toStdString());
+    std::set<std::string> seenCanon;
+    // 1) lenta amallari — joyi va tezkor tugmasi bilan (lentani o'rgatadi)
+    for (const auto& e : entries_) {
+        if (!f.empty()) {
+            const std::string hay = asiacad::utf8::foldKey((e.label + " " + e.path + " " + e.keywords).toStdString());
+            if (hay.find(f) == std::string::npos) continue;
+        }
+        QString text = e.label;
+        if (!e.path.isEmpty()) text += QStringLiteral("    ·    ") + e.path;
+        if (!e.shortcut.isEmpty()) text += QStringLiteral("    [") + e.shortcut + ']';
+        auto* it = new QListWidgetItem(e.icon, text, list_);
+        it->setData(Qt::UserRole, e.id);
+        it->setToolTip(e.keywords);
+    }
+    // 2) buyruqlar (CLI) — istalgan tildagi nom va aliaslar bilan
+    const std::string fr = filter.trimmed().toStdString();
+    const std::string aliasCanon = fr.empty() ? std::string{} : loc_.resolveCommand(fr);
     for (const auto& canon : loc_.canonicalCommands()) {
         const std::string name = loc_.commandName(canon);
         const std::string desc = loc_.hasMessage("desc." + canon) ? loc_.tr("desc." + canon) : std::string{};
         if (!f.empty()) {
             const std::string hay = asiacad::utf8::foldKey(canon + " " + name + " " + desc);
-            const bool alias = !loc_.resolveCommand(filter.trimmed().toStdString()).empty() &&
-                               loc_.resolveCommand(filter.trimmed().toStdString()) == canon;
-            if (hay.find(f) == std::string::npos && !alias) continue;
+            if (hay.find(f) == std::string::npos && aliasCanon != canon) continue;
         }
         auto* it = new QListWidgetItem(QString::fromStdString(name + "   ·   " + desc), list_);
         it->setData(Qt::UserRole, QString::fromStdString(canon));
+        // aniq alias (masalan "L", "C", "ЛИНИЯ") — ro'yxat boshiga
+        if (!aliasCanon.empty() && aliasCanon == canon) list_->insertItem(0, list_->takeItem(list_->row(it)));
     }
     if (list_->count()) list_->setCurrentRow(0);
 }
@@ -63,6 +103,11 @@ bool CommandPalette::eventFilter(QObject* o, QEvent* e) {
             if (r >= 0 && r < list_->count()) list_->setCurrentRow(r);
             return true;
         }
+        if (k->key() == Qt::Key_PageDown || k->key() == Qt::Key_PageUp) {
+            const int r = std::clamp(list_->currentRow() + (k->key() == Qt::Key_PageDown ? 10 : -10), 0, std::max(0, list_->count() - 1));
+            list_->setCurrentRow(r);
+            return true;
+        }
         if (k->key() == Qt::Key_Return || k->key() == Qt::Key_Enter) { accept(); return true; }
         if (k->key() == Qt::Key_Escape) { reject(); return true; }
     }
@@ -70,8 +115,9 @@ bool CommandPalette::eventFilter(QObject* o, QEvent* e) {
 }
 
 void CommandPalette::accept() {
-    if (auto* it = list_->currentItem()) emit commandChosen(it->data(Qt::UserRole).toString());
+    const QString id = list_->currentItem() ? list_->currentItem()->data(Qt::UserRole).toString() : QString();
     QDialog::accept();
+    if (!id.isEmpty()) emit commandChosen(id);
 }
 
 } // namespace asiacad::gui

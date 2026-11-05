@@ -2362,6 +2362,13 @@
     "gui.ent.INSERT": "Блок",
     "gui.ent.HATCH": "Штрихтау",
     "gui.ent.DIMENSION": "Өлшем",
-    "gui.ent.MESH": "3D бет"
+    "gui.ent.MESH": "3D бет",
+    "gui.tip.command": "Пәрмен",
+    "gui.palette.footer": "↑↓ таңдау · Enter — орындау · Esc — жабу · пәрмен атауы кез келген тілде немесе бүркеншік ат (L, C …)",
+    "gui.act.recent": "Соңғылар",
+    "gui.recent.none": "Соңғы файлдар жоқ",
+    "gui.recent.clear": "Тізімді тазалау",
+    "gui.v3d.views": "Көріністер",
+    "gui.v3d.copyinfo": "Мәліметті көшіру"
   }
 }

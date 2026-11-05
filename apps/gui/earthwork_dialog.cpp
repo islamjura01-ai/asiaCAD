@@ -98,7 +98,7 @@ EarthworkDialog::EarthworkDialog(const i18n::Localizer& loc, const Document& doc
     left->addWidget(data);
     auto* hint = new QLabel(t("gui.ew.hint"), this);
     hint->setWordWrap(true);
-    hint->setStyleSheet("color:#8a93a3;");
+    hint->setObjectName("muted");
     left->addWidget(hint);
     left->addStretch();
     connect(fgMode_, &QComboBox::currentIndexChanged, this, [this] { updateInfo(); });

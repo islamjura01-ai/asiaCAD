@@ -28,6 +28,7 @@
 #include <QSurfaceFormat>
 #include <QFile>
 #include <QTimer>
+#include <QSettings>
 
 #include <cstdio>
 
@@ -64,7 +65,7 @@ int main(int argc, char** argv) {
     f.setPointSizeF(10);
     QApplication::setFont(f);
 
-    QString file, lang, mode, i18nDir, shot, size = "1440x900", tool, cursor, select, grip, value, sewerFile, sewerTab, sewerTpl, viewArg;
+    QString file, lang, mode, i18nDir, shot, size, tool, cursor, select, grip, value, sewerFile, sewerTab, sewerTpl, viewArg;
     bool sewer = false;
     int building = 0;
     bool rebar = false;
@@ -149,6 +150,8 @@ int main(int argc, char** argv) {
         else if (a == "--polar") polar = true;
         else file = a;
     }
+    const bool persist = shot.isEmpty();   // skrinshot/avtomatik ishga tushirishda saqlangan holat ishlatilmaydi
+    if (lang.isEmpty() && persist) lang = QSettings().value("ui/lang").toString();   // oxirgi tanlangan til
     if (lang.isEmpty()) lang = qEnvironmentVariable("ASIACAD_LANG", "uz");
 
     asiacad::i18n::Localizer loc;
@@ -160,7 +163,9 @@ int main(int argc, char** argv) {
     if (!loc.setLanguage(lang.toStdString())) loc.setLanguage("en");
 
     asiacad::gui::MainWindow w(loc);
+    if (persist) w.restoreUiState(mode.isEmpty());   // oyna o'lchami, panellar, lenta varag'i, rejim, oxirgi fayllar
     if (!mode.isEmpty()) w.setMode(asiacad::gui::modeFromKey(mode));
+    if (size.isEmpty() && !persist) size = QStringLiteral("1440x900");
     const auto wh = size.split('x');
     if (wh.size() == 2) w.resize(wh[0].toInt(), wh[1].toInt());
     w.show();

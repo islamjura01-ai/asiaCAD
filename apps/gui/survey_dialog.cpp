@@ -199,7 +199,7 @@ SurveyDialog::SurveyDialog(const i18n::Localizer& loc, const Document& doc, std:
     });
     auto* hint = new QLabel(t("gui.dev.hint"), this);
     hint->setWordWrap(true);
-    hint->setStyleSheet("color: #8a93a3;");
+    hint->setObjectName("muted");
     right->addWidget(hint);
     refreshLayers();
     updateEnabled();

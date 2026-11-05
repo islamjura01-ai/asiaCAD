@@ -2362,6 +2362,13 @@
     "gui.ent.INSERT": "Blok",
     "gui.ent.HATCH": "Tarama",
     "gui.ent.DIMENSION": "Ölçü",
-    "gui.ent.MESH": "3D ağ"
+    "gui.ent.MESH": "3D ağ",
+    "gui.tip.command": "Komut",
+    "gui.palette.footer": "↑↓ seç · Enter — çalıştır · Esc — kapat · herhangi bir dilde komut adı veya kısaltma (L, C, ÇİZGİ …)",
+    "gui.act.recent": "Son dosyalar",
+    "gui.recent.none": "Son dosya yok",
+    "gui.recent.clear": "Listeyi temizle",
+    "gui.v3d.views": "Görünümler",
+    "gui.v3d.copyinfo": "Bilgiyi kopyala"
   }
 }

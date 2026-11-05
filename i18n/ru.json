@@ -2362,6 +2362,13 @@
     "gui.ent.INSERT": "Блок",
     "gui.ent.HATCH": "Штриховка",
     "gui.ent.DIMENSION": "Размер",
-    "gui.ent.MESH": "3D сеть"
+    "gui.ent.MESH": "3D сеть",
+    "gui.tip.command": "Команда",
+    "gui.palette.footer": "↑↓ выбор · Enter — выполнить · Esc — закрыть · имя команды на любом языке или псевдоним (L, C, ОТРЕЗОК …)",
+    "gui.act.recent": "Недавние",
+    "gui.recent.none": "Нет недавних файлов",
+    "gui.recent.clear": "Очистить список",
+    "gui.v3d.views": "Виды",
+    "gui.v3d.copyinfo": "Копировать сведения"
   }
 }

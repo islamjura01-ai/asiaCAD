@@ -2362,6 +2362,13 @@
     "gui.ent.INSERT": "Block",
     "gui.ent.HATCH": "Hatch",
     "gui.ent.DIMENSION": "Dimension",
-    "gui.ent.MESH": "3D mesh"
+    "gui.ent.MESH": "3D mesh",
+    "gui.tip.command": "Command",
+    "gui.palette.footer": "↑↓ select · Enter — run · Esc — close · command names in any language or aliases (L, C, LINE …)",
+    "gui.act.recent": "Recent",
+    "gui.recent.none": "No recent files",
+    "gui.recent.clear": "Clear list",
+    "gui.v3d.views": "Views",
+    "gui.v3d.copyinfo": "Copy info"
   }
 }

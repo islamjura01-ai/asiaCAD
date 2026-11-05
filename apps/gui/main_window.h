@@ -67,6 +67,11 @@ public:
     ~MainWindow() override;
 
     void setMode(UiMode m);
+    // Foydalanuvchi holati (QSettings): oyna o'lchami, panellar, lenta varag'i, rejim, koordinata aniqligi, oxirgi fayllar.
+    // Faqat dastur ishga tushganda chaqiriladi (sinovlar va skrinshotlar toza holatda qoladi).
+    void restoreUiState(bool restoreMode);
+    void saveUiState() const;
+    QStringList recentFiles() const { return recent_; }
     UiMode mode() const { return mode_; }
     void setLanguage(const QString& code);
     bool runLine(const QString& line, bool echo = true);  // false — EXIT
@@ -177,6 +182,7 @@ private:
     QToolButton* driveCtx_ = nullptr;  // chiziq tanlanganda viewport ustida "▶ Haydash"
 
     QHash<QString, QAction*> act_;  // "line" -> QAction
+    QHash<QString, QPair<QByteArray, QByteArray>> actPath_;   // amal -> (varaq, guruh) i18n kalitlari
     // Doimiy ilova sarlavhasi: brend · tez kirish (saqlash, bekor qilish, qaytarish) · hujjat nomi · umumiy qidiruv.
     // Barcha rejimlarda (Klassik / Modul / Fokus) bir xil joyda turadi.
     QWidget* appBar_ = nullptr;
@@ -187,6 +193,8 @@ private:
     void measureDistance();
     // Kontekstli panellar: KM paneli faqat Konstruksiya varag'ida o'zi ochiladi; 3D/varaqlarda qatlamlar yashiriladi
     void updateContextDocks();
+    void applyRibbonDensity();
+    bool ribbonDensityBusy_ = false;
     bool steelAuto_ = false;
     bool layersWanted_ = true;
     QWidget* empty3d_ = nullptr;   // bo'sh 3D sahna uchun foydali holat (amallar bilan)
@@ -196,12 +204,16 @@ private:
     QMenu* layerSubmenu(QMenu* parent, const QString& title, bool forSelection);
     void copyText(const QString& s);
     int coordDecimals_ = 3;
+    bool persist_ = false;
+    QStringList recent_;
+    void noteRecent(const QString& file);
     QWidget* propsForm_ = nullptr;
     QLabel* propsHint_ = nullptr;
 public:
     QTabWidget* ribbon() const { return ribbon_; }   // sinov uchun
     QWidget* appBar() const { return appBar_; }
     QWidget* empty3D() const { return empty3d_; }
+    CommandPalette* commandPalette() const { return palette_; }
 private:
     QTabWidget* ribbon_ = nullptr;
     QToolBar* rail_ = nullptr;

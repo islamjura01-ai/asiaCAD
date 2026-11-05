@@ -35,7 +35,9 @@
 #include <QCheckBox>
 #include <QDate>
 #include <QComboBox>
+#include <QDebug>
 #include <QDialog>
+#include <QDir>
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
@@ -57,6 +59,9 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QTimer>
+#include <QSettings>
 #include <QSet>
 #include <QShortcut>
 #include <QStatusBar>
@@ -145,6 +150,7 @@ const ActDef kActs[] = {
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
     {"projset", "projset", "gui.act.projset", false},
+    {"recent", "recent", "gui.act.recent", false},
     {"view2d", "view2d", "gui.act.view2d", false},
     {"cam3d", "camera", "gui.act.cam3d", false},  {"cut3d", "cut", "gui.act.cut3d", false},
     {"cats3d", "cats", "gui.act.cats3d", false},
@@ -153,6 +159,24 @@ const ActDef kActs[] = {
     {"dist", "dist", "gui.act.dist", false},      {"area", "area", "gui.act.area", false},
     {"list", "list", "gui.act.list", false},      {"steelspec", "report", "gui.act.steelspec", false},
 };
+
+// Lenta amali -> CLI kanonik buyruq (qidiruv va maslahatda buyruq nomi/aliasini ko'rsatish uchun)
+QString canonOf(const QString& key) {
+    static const QHash<QString, QString> m = {
+        {"rect", "RECTANG"}, {"steelframe", "STEELFRAME"}, {"stairtpl", "STAIR"}, {"ramptpl", "RAMP"}, {"rwalltpl", "RWALL"},
+        {"ewtin", "TIN"}, {"ewprofile", "PROFILE"}, {"ewsections", "XSECTIONS"}, {"ewcarto", "CARTOGRAM"}, {"ewvolume", "VOLUME"},
+        {"sheets", "SHEET"}, {"symbols", "SYMBOL"}, {"layprops", "LAYER"}, {"devplan", "DEVIATION"}, {"devheight", "DEVIATION"},
+        {"devvert", "DEVIATION"}, {"devaxis", "DEVIATION"}, {"devpoint", "DEVIATION"}, {"saveas", "SAVE"}, {"export", "SAVE"},
+        {"select", "SELECT"}, {"palette", ""}, {"projset", ""}, {"view2d", ""}, {"view3d", ""}, {"cam3d", ""}, {"cut3d", ""},
+        {"cats3d", ""}, {"pnlayers", ""}, {"pnprops", ""}, {"pncmd", ""}, {"zoomin", ""}, {"zoomout", ""}, {"grid", ""}};
+    if (m.contains(key)) return m.value(key);
+    return key.toUpper();
+}
+
+bool hasCommand(const i18n::Localizer& loc, const QString& canon) {
+    const auto& c = loc.canonicalCommands();
+    return std::find(c.begin(), c.end(), canon.toStdString()) != c.end();
+}
 
 // Har varaqning bosh (urg'uli) amali — ikonkasi oltin rangda; qolganlari bir xil neytral rangda
 bool isPrimary(const QString& key) {
@@ -369,6 +393,31 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
         }
     });
     connect(palette_, &CommandPalette::commandChosen, this, &MainWindow::startCommand);
+    palette_->setEntries([this] {
+        QList<CommandPalette::Entry> out;
+        for (const auto& d : kActs) {
+            const QString k = QString::fromLatin1(d.key);
+            if (k == "palette" || k == "cam3d" || k == "cut3d" || k == "cats3d" || k == "recent") continue;   // menyuli tugmalar — lentada
+            QAction* a = act_[k];
+            CommandPalette::Entry e;
+            e.id = "act:" + k;
+            e.label = a->text();
+            if (actPath_.contains(k)) e.path = t(actPath_.value(k).first) + QStringLiteral(" › ") + t(actPath_.value(k).second);
+            e.shortcut = a->shortcut().toString(QKeySequence::NativeText);
+            const QString canon = canonOf(k);
+            if (!canon.isEmpty() && hasCommand(loc_, canon))
+                e.keywords = canon + " " + QString::fromStdString(loc_.commandName(canon.toStdString()));
+            e.icon = a->icon();
+            out << e;
+        }
+        return out;
+    });
+    auto* selAll = new QShortcut(QKeySequence::SelectAll, view_, nullptr, nullptr, Qt::WidgetWithChildrenShortcut);
+    connect(selAll, &QShortcut::activated, this, [this] {
+        std::vector<EntityId> all;
+        for (EntityId id : doc_.ids()) if (doc_.isEditable(id)) all.push_back(id);
+        view_->setSelection(all);
+    });
     auto* k = new QShortcut(QKeySequence(QStringLiteral("Ctrl+K")), this);
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
@@ -628,15 +677,21 @@ QWidget* MainWindow::buildAppBar() {
         b->setAutoRaise(true);
         h->addWidget(b);
     }
-    h->addStretch(1);
+    h->addSpacing(12);
     appTitle_ = new QLabel(appBar_);
     appTitle_->setObjectName("appTitle");
-    h->addWidget(appTitle_);
-    h->addStretch(1);
+    appTitle_->setMinimumWidth(40);
+    appTitle_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);   // kengligi — bo'sh joy, uzun nom qisqartiriladi
+    appTitle_->setAlignment(Qt::AlignCenter);
+    appTitle_->installEventFilter(this);
+    h->addWidget(appTitle_, 1);
+    h->addSpacing(12);
     searchBtn_ = new QPushButton(appBar_);
     searchBtn_->setObjectName("searchBox");
     searchBtn_->setCursor(Qt::PointingHandCursor);
-    searchBtn_->setFixedWidth(300);
+    searchBtn_->setMinimumWidth(170);
+    searchBtn_->setMaximumWidth(320);
+    searchBtn_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     searchBtn_->setIconSize(QSize(15, 15));
     connect(searchBtn_, &QPushButton::clicked, this, [this] { palette_->open(view_); });
     h->addWidget(searchBtn_);
@@ -647,13 +702,13 @@ void MainWindow::buildRibbon() {
     ribbon_ = new QTabWidget(this);
     ribbon_->setObjectName("ribbon");
     ribbon_->setDocumentMode(true);
-    ribbon_->setFixedHeight(124);
+    ribbon_->setFixedHeight(138);
     setWindowIcon(makeIcon("logo", QColor("#E0A526"), QColor("#14213D"), 256));
     // Har varaq — vazifa bo'yicha guruhlar. Bekor qilish/qaytarish va qidiruv lentada takrorlanmaydi: ular ilova sarlavhasida doimiy.
     struct Group { const char* title; std::vector<const char*> keys; std::vector<const char*> small = {}; bool iconsOnly = false; int rows = 3; };
     struct Page { const char* title; std::vector<Group> groups; };
     const std::vector<Page> pages = {
-        {"gui.tab.file", {{"gui.grp.document", {"new", "open", "save", "saveas"}},
+        {"gui.tab.file", {{"gui.grp.document", {"new", "open", "recent", "save", "saveas"}},
                           {"gui.grp.exchange", {"import", "export"}},
                           {"gui.grp.project", {"projset"}}}},
         {"gui.tab.draw", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch"}, true},
@@ -693,6 +748,21 @@ void MainWindow::buildRibbon() {
         b->setPopupMode(QToolButton::InstantPopup);
         connect(m, &QMenu::aboutToShow, this, [this, key, m] {
             m->clear();
+            if (key == "recent") {   // oxirgi fayllar
+                if (recent_.isEmpty()) m->addAction(t("gui.recent.none"))->setEnabled(false);
+                for (const QString& f : recent_) {
+                    const QFileInfo fi(f);
+                    auto* a = m->addAction(makeIcon("open", theme_.lightCanvas ? QColor("#2B2118") : QColor("#D5DEF3")),
+                                           fi.fileName() + QStringLiteral("    ") + fi.absolutePath());
+                    a->setEnabled(fi.exists());
+                    connect(a, &QAction::triggered, this, [this, f] { if (maybeSave()) runLine(QStringLiteral("OPEN \"%1\" !").arg(f)); });
+                }
+                if (!recent_.isEmpty()) {
+                    m->addSeparator();
+                    m->addAction(t("gui.recent.clear"), this, [this] { recent_.clear(); if (persist_) QSettings().setValue("files/recent", recent_); });
+                }
+                return;
+            }
             if (!is3D()) show3D(true);
             if (key == "cam3d") {
                 const struct { const char* k; Model3DView::View v; } views[] = {
@@ -729,8 +799,8 @@ void MainWindow::buildRibbon() {
         page->setAttribute(Qt::WA_StyledBackground, true);
         page->setProperty("i18n", pg.title);
         auto* row = new QHBoxLayout(page);
-        row->setContentsMargins(12, 6, 12, 4);
-        row->setSpacing(8);
+        row->setContentsMargins(8, 4, 8, 2);
+        row->setSpacing(6);
         bool first = true;
         for (const auto& g : pg.groups) {
             if (!first) {
@@ -747,8 +817,9 @@ void MainWindow::buildRibbon() {
             v->setSpacing(2);
             if (std::string(g.title) == "gui.grp.layers") {  // joriy qatlam ro'yxati (AutoCAD Layers paneli kabi)
                 ribbonLayer_ = new QComboBox(box);
-                ribbonLayer_->setMinimumWidth(150);
+                ribbonLayer_->setMinimumWidth(140);
                 ribbonLayer_->setObjectName("ribbonLayer");
+                ribbonLayer_->setFixedHeight(26);
                 v->addWidget(ribbonLayer_);
                 connect(ribbonLayer_, &QComboBox::activated, this, [this](int i) {
                     if (!updatingUi_ && i >= 0) runLine(QStringLiteral("CLAYER \"%1\"").arg(ribbonLayer_->itemData(i).toString()));
@@ -756,6 +827,8 @@ void MainWindow::buildRibbon() {
             }
             auto* btns = new QHBoxLayout;
             btns->setSpacing(2);
+            for (const char* k : g.keys) actPath_.insert(QString::fromLatin1(k), {pg.title, g.title});
+            for (const char* k : g.small) actPath_.insert(QString::fromLatin1(k), {pg.title, g.title});
             for (const char* k : g.keys) {
                 auto* b = new QToolButton(box);
                 b->setDefaultAction(act_[k]);
@@ -764,7 +837,7 @@ void MainWindow::buildRibbon() {
                 b->setMinimumWidth(58);
                 b->setProperty("ribbonBtn", true);
                 const QString key = QString::fromLatin1(k);
-                if (key == "cam3d" || key == "cut3d" || key == "cats3d") menuFor(key, b);
+                if (key == "cam3d" || key == "cut3d" || key == "cats3d" || key == "recent") menuFor(key, b);
                 btns->addWidget(b);
             }
             if (!g.small.empty()) {  // kichik tugmalar: ustunlarda, ikona yonida matn (AutoCAD lentasi kabi)
@@ -777,8 +850,10 @@ void MainWindow::buildRibbon() {
                     b->setIconSize(g.iconsOnly ? QSize(20, 20) : QSize(16, 16));
                     b->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
                     b->setProperty("ribbonSmall", true);
+                    b->setFixedHeight(g.iconsOnly ? 26 : 22);
                     if (isStateToggle(QString::fromLatin1(g.small[i]))) b->setProperty("stateToggle", true);
                     if (!g.iconsOnly) {  // matn qisqartirilmasin (retranslate dan keyin ham)
+                        b->setProperty("textSmall", true);
                         b->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
                         b->setMinimumWidth(112);
                     }
@@ -790,16 +865,27 @@ void MainWindow::buildRibbon() {
             v->addStretch(1);
             auto* title = new QLabel(box);
             title->setObjectName("groupTitle");
+            title->setFixedHeight(14);
             title->setAlignment(Qt::AlignCenter);
             title->setProperty("i18n", g.title);
             v->addWidget(title);
             row->addWidget(box);
         }
         row->addStretch(1);
-        ribbon_->addTab(page, QString());
+        // tor ekranda (1280–1366 px) lenta oynani kengaytirmasin: sahifa gorizontal suriladi, kichik tugmalar ixchamlashadi
+        auto* sc = new QScrollArea(ribbon_);
+        sc->setObjectName("ribbonScroll");
+        sc->setProperty("i18n", pg.title);
+        sc->setFrameShape(QFrame::NoFrame);
+        sc->setWidgetResizable(true);
+        sc->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        sc->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        sc->setWidget(page);
+        ribbon_->addTab(sc, QString());
     }
+    ribbon_->installEventFilter(this);
     ribbon_->setCurrentIndex(1);   // ish boshlanishi — Chizish
-    connect(ribbon_, &QTabWidget::currentChanged, this, [this] { updateContextDocks(); });
+    connect(ribbon_, &QTabWidget::currentChanged, this, [this] { updateContextDocks(); applyRibbonDensity(); });
 }
 
 void MainWindow::buildModuleBars() {
@@ -1138,7 +1224,7 @@ void MainWindow::buildDocks() {
         a->setChecked(!d->isHidden());
     }
     resizeDocks({layersDock_, propsDock_}, {280, 290}, Qt::Horizontal);
-    resizeDocks({cmdDock_}, {150}, Qt::Vertical);
+    resizeDocks({cmdDock_}, {130}, Qt::Vertical);
 }
 
 void MainWindow::buildStatusBar() {
@@ -1368,6 +1454,7 @@ void MainWindow::setMode(UiMode m) {
 void MainWindow::applyTheme() {
     qApp->setStyleSheet(theme_.styleSheet);
     view_->setTheme(theme_);
+    Model3DView::setGlobalTheme(theme_.canvasBg, theme_.accent);
     for (auto it = act_.cbegin(); it != act_.cend(); ++it) it.value()->setIcon(icon(it.value()->data().toString(), it.key()));
     for (const char* k : {"pnlayers", "pnprops", "pncmd", "grid"}) act_[k]->setProperty("stateToggle", true);
     if (searchBtn_) searchBtn_->setIcon(makeIcon("search", theme_.lightCanvas ? QColor("#7A6A58") : QColor("#8FA2CF")));
@@ -1391,7 +1478,18 @@ void MainWindow::retranslate() {
         QAction* a = act_[d.key];
         a->setText(t(d.label));
         const QString sc = a->shortcut().toString(QKeySequence::NativeText);
-        a->setToolTip(sc.isEmpty() ? t(d.label) : QStringLiteral("%1  (%2)").arg(t(d.label), sc));
+        QString tip = QStringLiteral("<b>%1</b>").arg(t(d.label).toHtmlEscaped());
+        if (!sc.isEmpty()) tip += QStringLiteral("&nbsp;&nbsp;<span style='color:#E0A526'>%1</span>").arg(sc);
+        const QString canon = canonOf(QString::fromLatin1(d.key));
+        if (!canon.isEmpty() && hasCommand(loc_, canon)) {
+            const QString nm = QString::fromStdString(loc_.commandName(canon.toStdString()));
+            tip += QStringLiteral("<br><span style='color:#8FA2CF'>%1: %2%3</span>").arg(t("gui.tip.command"), nm, nm == canon ? QString() : QStringLiteral(" · ") + canon);
+        }
+        if (actPath_.contains(QString::fromLatin1(d.key))) {
+            const auto pth = actPath_.value(QString::fromLatin1(d.key));
+            tip += QStringLiteral("<br><span style='color:#8FA2CF'>%1 › %2</span>").arg(t(pth.first), t(pth.second));
+        }
+        a->setToolTip(tip);
     }
     if (searchBtn_) {
         searchBtn_->setText(t("gui.search.placeholder"));
@@ -1406,9 +1504,10 @@ void MainWindow::retranslate() {
     }
     for (auto* b : ribbon_->findChildren<QToolButton*>())
         if (b->property("ribbonBtn").toBool())
-            b->setMinimumWidth(std::max(58, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 24));
+            b->setMinimumWidth(std::max(52, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 20));
         else if (b->property("ribbonSmall").toBool() && b->toolButtonStyle() == Qt::ToolButtonTextBesideIcon)
-            b->setMinimumWidth(std::max(112, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 52));
+            b->setMinimumWidth(std::max(100, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 30));
+    applyRibbonDensity();
     for (auto* a : rail_->actions()) a->setText(t(a->property("i18n").toByteArray().constData()));
     for (QWidget* w : findChildren<QWidget*>())
         if (auto* b = qobject_cast<QPushButton*>(w); b && b->property("i18n").isValid()) b->setText(t(b->property("i18n").toByteArray().constData()));
@@ -1557,9 +1656,14 @@ bool MainWindow::selectTag(const QString& tag) {
 
 void MainWindow::refreshTitle() {
     const QString file = QString::fromStdString(interp_->currentFile());
+    if (!file.isEmpty() && (recent_.isEmpty() || recent_.front() != QFileInfo(file).absoluteFilePath())) noteRecent(file);
     const QString name = file.isEmpty() ? t("gui.untitled") : QFileInfo(file).fileName();
     setWindowTitle(QStringLiteral("%1%2 — AsiaCAD").arg(name, stack_.isDirty() ? " *" : ""));
-    if (appTitle_) appTitle_->setText(name + (stack_.isDirty() ? QStringLiteral("  •") : QString()));
+    if (appTitle_) {
+        appTitle_->setProperty("full", name + (stack_.isDirty() ? QStringLiteral("  •") : QString()));
+        appTitle_->setToolTip(file.isEmpty() ? name : QDir::toNativeSeparators(file));
+        appTitle_->setText(appTitle_->fontMetrics().elidedText(appTitle_->property("full").toString(), Qt::ElideMiddle, std::max(40, appTitle_->width())));
+    }
 }
 
 void MainWindow::appendHistory(const QString& text, const QColor& color) {
@@ -2641,6 +2745,11 @@ void MainWindow::activateTool(const QString& key) {
 }
 
 void MainWindow::startCommand(const QString& canonical) {
+    if (canonical.startsWith("act:")) {   // qidiruvdan lenta amali
+        const QString k = canonical.mid(4);
+        if (act_.contains(k)) act_[k]->trigger();
+        return;
+    }
     static const QHash<QString, QString> tools = {
         {"LINE", "line"}, {"PLINE", "pline"}, {"CIRCLE", "circle"}, {"ARC", "arc"}, {"POINT", "point"},
         {"TEXT", "text"}, {"MOVE", "move"}, {"COPY", "copy"}, {"ROTATE", "rotate"},
@@ -2782,6 +2891,9 @@ void MainWindow::exportDxf() {
 }
 
 bool MainWindow::eventFilter(QObject* o, QEvent* e) {
+    if (o == ribbon_ && e->type() == QEvent::Resize) applyRibbonDensity();
+    if (o == appTitle_ && e->type() == QEvent::Resize)
+        appTitle_->setText(appTitle_->fontMetrics().elidedText(appTitle_->property("full").toString(), Qt::ElideMiddle, std::max(40, appTitle_->width())));
     if (e->type() == QEvent::KeyPress) {
         auto* k = static_cast<QKeyEvent*>(e);
         if (o == cmdEdit_) {
@@ -2807,7 +2919,49 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {
-    if (maybeSave()) e->accept(); else e->ignore();
+    if (maybeSave()) {
+        saveUiState();
+        e->accept();
+    } else {
+        e->ignore();
+    }
+}
+
+void MainWindow::restoreUiState(bool restoreMode) {
+    persist_ = true;
+    QSettings st;
+    if (restoreMode && st.contains("ui/mode")) setMode(modeFromKey(st.value("ui/mode").toString()));
+    if (st.contains("ui/geometry")) restoreGeometry(st.value("ui/geometry").toByteArray());
+    if (st.contains("ui/docks")) restoreState(st.value("ui/docks").toByteArray(), 31);
+    layersWanted_ = !layersDock_->isHidden() || !st.contains("ui/docks");
+    steelDock_->hide();
+    steelAuto_ = false;
+    const int tab = st.value("ui/ribbonTab", 1).toInt();
+    if (tab >= 0 && tab < ribbon_->count()) ribbon_->setCurrentIndex(tab);
+    coordDecimals_ = std::clamp(st.value("ui/coordDecimals", 3).toInt(), 0, 4);
+    recent_ = st.value("files/recent").toStringList();
+    updateContextDocks();
+}
+
+void MainWindow::saveUiState() const {
+    if (!persist_) return;
+    QSettings st;
+    st.setValue("ui/geometry", saveGeometry());
+    st.setValue("ui/docks", saveState(31));
+    st.setValue("ui/mode", modeKey(mode_));
+    st.setValue("ui/lang", QString::fromStdString(loc_.language()));
+    st.setValue("ui/ribbonTab", ribbon_->currentIndex());
+    st.setValue("ui/coordDecimals", coordDecimals_);
+    st.setValue("files/recent", recent_);
+}
+
+void MainWindow::noteRecent(const QString& file) {
+    if (file.isEmpty()) return;
+    const QString abs = QFileInfo(file).absoluteFilePath();
+    recent_.removeAll(abs);
+    recent_.prepend(abs);
+    while (recent_.size() > 10) recent_.removeLast();
+    if (persist_) QSettings().setValue("files/recent", recent_);
 }
 
 // ---------------------------------------------------------------- v0.31: kontekstli panellar, bo'sh 3D holati, loyiha sozlamalari
@@ -3152,6 +3306,33 @@ void MainWindow::fillViewContext(QMenu* m, const Vec3& at) {
     helpers(m);
     m->addSeparator();
     m->addAction(ic("search"), key(t("gui.act.palette"), "Ctrl+K"), this, [this] { palette_->open(view_); });
+}
+
+
+void MainWindow::applyRibbonDensity() {
+    // Joriy sahifa sig'masa — kichik tugmalardan matn olib tashlanadi (maslahat qoladi); baribir sig'masa — gorizontal surish
+    if (!ribbon_ || ribbonDensityBusy_) return;
+    auto* sc = qobject_cast<QScrollArea*>(ribbon_->currentWidget());
+    if (!sc || !sc->widget()) return;
+    QWidget* page = sc->widget();
+    auto setCompact = [page](bool on) {
+        for (auto* b : page->findChildren<QToolButton*>())
+            if (b->property("ribbonSmall").toBool() && b->property("textSmall").toBool()) {
+                b->setToolButtonStyle(on ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+                b->setMinimumWidth(on ? 0 : std::max(100, static_cast<int>(b->fontMetrics().horizontalAdvance(b->text())) + 30));
+                b->setSizePolicy(on ? QSizePolicy::Minimum : QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+            }
+        page->setProperty("compact", on);
+    };
+    ribbonDensityBusy_ = true;
+    setCompact(false);
+    // joylashuv o'rnashgach haqiqiy kenglik tekshiriladi (uslub jadvali, shrift hisobga olinadi)
+    QTimer::singleShot(0, this, [this, sc, page, setCompact] {
+        sc->widget()->layout()->activate();
+        const bool tooWide = page->sizeHint().width() > sc->viewport()->width() || sc->horizontalScrollBar()->maximum() > 0;
+        if (tooWide) setCompact(true);
+        ribbonDensityBusy_ = false;
+    });
 }
 
 } // namespace asiacad::gui

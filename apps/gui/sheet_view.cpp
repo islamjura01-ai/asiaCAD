@@ -89,7 +89,7 @@ void SheetCanvas::paintSheet(QPainter& p, const Sheet& s, int number, int total,
 
 void SheetCanvas::paintEvent(QPaintEvent*) {
     QPainter p(this);
-    p.fillRect(rect(), QColor(118, 124, 134));
+    p.fillRect(rect(), QColor(46, 56, 82));   // varaq stoli — to'q ko'k-kulrang (oq varaq ajralib turadi, interfeys bilan uyg'un)
     const Sheet* s = sheet();
     if (!s) {
         p.setPen(QColor(240, 240, 240));

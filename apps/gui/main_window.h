@@ -71,6 +71,8 @@ public:
     // Faqat dastur ishga tushganda chaqiriladi (sinovlar va skrinshotlar toza holatda qoladi).
     void restoreUiState(bool restoreMode);
     void saveUiState() const;
+    // kichik ekran (≤1440×900): yon panellar va buyruq satri ixchamroq — chizma maydoni kattaroq
+    void adaptToScreen(const QSize& available);
     QStringList recentFiles() const { return recent_; }
     UiMode mode() const { return mode_; }
     void setLanguage(const QString& code);
@@ -204,6 +206,7 @@ private:
     QMenu* layerSubmenu(QMenu* parent, const QString& title, bool forSelection);
     void copyText(const QString& s);
     int coordDecimals_ = 3;
+    bool zoomPending_ = false;   // "Z" dan keyin variant kutilmoqda
     bool persist_ = false;
     QStringList recent_;
     void noteRecent(const QString& file);

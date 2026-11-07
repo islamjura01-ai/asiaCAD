@@ -105,7 +105,7 @@ void SewerDialog::buildUi() {
     leftScroll->setFrameShape(QFrame::NoFrame);
     leftScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     leftScroll->setObjectName("sewerLeft");
-    leftScroll->setMinimumWidth(340);
+    leftScroll->setMinimumWidth(390);   // forma qatorlari (yorliq + maydon) to'liq sig'sin — gorizontal surilmasin
     auto* left = new QWidget;
     left->setObjectName("sewerLeftBody");
     leftScroll->setWidget(left);
@@ -246,7 +246,7 @@ void SewerDialog::buildUi() {
     split->setStretchFactor(1, 0);
     split->setStretchFactor(2, 3);
     split->setStretchFactor(3, 2);
-    split->setSizes({260, 360, 700, 400});
+    split->setSizes({260, 400, 660, 400});
 
     // ---- past: holat va tugmalar
     auto* bottom = new QHBoxLayout;

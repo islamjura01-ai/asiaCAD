@@ -168,7 +168,16 @@ int main(int argc, char** argv) {
     if (size.isEmpty() && !persist) size = QStringLiteral("1440x900");
     const auto wh = size.split('x');
     if (wh.size() == 2) w.resize(wh[0].toInt(), wh[1].toInt());
-    w.show();
+    // birinchi ishga tushish (saqlangan o'lcham yo'q) yoki ekran oynadan kichik — oyna ekranni to'liq egallaydi
+    const QRect av = w.screen() ? w.screen()->availableGeometry() : QRect();
+    const bool tooBig = av.isValid() && (w.frameGeometry().width() > av.width() || w.frameGeometry().height() > av.height());
+    if (persist && (!QSettings().contains("ui/geometry") || tooBig)) {
+        if (av.isValid()) w.setGeometry(av);   // oyna boshqaruvchisi bo'lmasa ham ekranga sig'adi
+        w.showMaximized();
+        if (av.isValid() && !QSettings().contains("ui/docks")) w.adaptToScreen(av.size());
+    }
+    else if (tooBig) { w.resize(av.size() - QSize(16, 40)); w.move(av.topLeft()); w.show(); }
+    else w.show();
     if (!file.isEmpty()) w.runLine(QStringLiteral("OPEN \"%1\" !").arg(QFileInfo(file).absoluteFilePath()));
     for (const auto& c : cmds) w.runLine(c);
 

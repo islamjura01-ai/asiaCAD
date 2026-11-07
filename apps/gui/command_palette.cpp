@@ -64,12 +64,28 @@ void CommandPalette::refill(const QString& filter) {
     list_->clear();
     const std::string f = asiacad::utf8::foldKey(filter.trimmed().toStdString());
     std::set<std::string> seenCanon;
-    // 1) lenta amallari — joyi va tezkor tugmasi bilan (lentani o'rgatadi)
-    for (const auto& e : entries_) {
+    // 1) lenta amallari — joyi va tezkor tugmasi bilan (lentani o'rgatadi).
+    //    Tartib: nomi so'rov bilan boshlanadi > nomida bor > buyruq/kalit so'zda > faqat joyida (varaq/guruh)
+    struct Hit { int score; int order; const Entry* e; };
+    std::vector<Hit> hits;
+    for (int i = 0; i < entries_.size(); ++i) {
+        const Entry& e = entries_[i];
+        int score = 0;
         if (!f.empty()) {
-            const std::string hay = asiacad::utf8::foldKey((e.label + " " + e.path + " " + e.keywords).toStdString());
-            if (hay.find(f) == std::string::npos) continue;
+            const std::string lab = asiacad::utf8::foldKey(e.label.toStdString());
+            const std::string kw = asiacad::utf8::foldKey(e.keywords.toStdString());
+            const std::string pth = asiacad::utf8::foldKey(e.path.toStdString());
+            if (lab.rfind(f, 0) == 0) score = 4;
+            else if (lab.find(f) != std::string::npos) score = 3;
+            else if (kw.find(f) != std::string::npos) score = 2;
+            else if (pth.find(f) != std::string::npos) score = 1;
+            else continue;
         }
+        hits.push_back({score, i, &e});
+    }
+    std::stable_sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.score > b.score; });
+    for (const auto& h : hits) {
+        const Entry& e = *h.e;
         QString text = e.label;
         if (!e.path.isEmpty()) text += QStringLiteral("    ·    ") + e.path;
         if (!e.shortcut.isEmpty()) text += QStringLiteral("    [") + e.shortcut + ']';

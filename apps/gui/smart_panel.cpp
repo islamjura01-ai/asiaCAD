@@ -447,7 +447,11 @@ void SmartPanel::buildGeneric(const std::vector<EntityId>& sel) {
         if (e->type() != es.front()->type()) return;
     const auto f0 = entityProps(*es.front());
     if (f0.empty()) return;
-    addSection(t("gui.pp.geom", {QString::fromStdString(std::string(toString(es.front()->type()))), QString::number(es.size())}));
+    {   // tur nomi — faol tilda (Aylana, Chiziq …)
+        const std::string tk = std::string(toString(es.front()->type()));
+        const QString kind = t(("gui.ent." + tk).c_str());
+        addSection(t("gui.pp.geom", {kind.startsWith("gui.") ? QString::fromStdString(tk) : kind, QString::number(es.size())}));
+    }
     QStringList ids;
     for (EntityId id : sel) ids << QString::number(id);
     const QString selArg = ids.join(',');

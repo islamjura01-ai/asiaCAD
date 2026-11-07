@@ -59,6 +59,9 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QStyle>
+#include <QSplitter>
+#include <QScreen>
 #include <QScrollBar>
 #include <QTimer>
 #include <QSettings>
@@ -158,6 +161,77 @@ const ActDef kActs[] = {
     {"pncmd", "cmdline", "gui.act.pncmd", false},
     {"dist", "dist", "gui.act.dist", false},      {"area", "area", "gui.act.area", false},
     {"list", "list", "gui.act.list", false},      {"steelspec", "report", "gui.act.steelspec", false},
+};
+
+// Qt standart tugmalari (OK, Cancel, Save, Discard, Yes, No …) o'zbek/qozoq/qirg'iz tilida Qt tarjimasi yo'q —
+// har bir dialog ko'rsatilganda tugmalar faol tilga o'giriladi, eski uslubdagi ikonkalar olib tashlanadi.
+class DialogLocalizer : public QObject {
+public:
+    DialogLocalizer(std::function<QString(const char*)> tr, QObject* parent) : QObject(parent), tr_(std::move(tr)) {}
+protected:
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (e->type() == QEvent::Show && o->isWidgetType() && static_cast<QWidget*>(o)->isWindow()) {
+            auto* w = static_cast<QWidget*>(o);
+            for (auto* bb : w->findChildren<QDialogButtonBox*>()) localize(bb);
+            // katta dialog kichik ekranda (1366×768) chetidan chiqib ketmasin: ekranga sig'diriladi va markazlanadi
+            if (qobject_cast<QDialog*>(w) && w->windowType() != Qt::Popup && !w->property("fitDone").toBool()) {
+                w->setProperty("fitDone", true);
+                if (QScreen* sc = w->screen()) {
+                    const QRect av = sc->availableGeometry();
+                    const QSize fr = w->frameGeometry().size() - w->size();   // sarlavha/ramka
+                    const int maxW = av.width() - fr.width() - 16, maxH = av.height() - fr.height() - 16;
+                    // juda tor ekran: shablonlar yon paneli yashiriladi (shablon tanlovi forma ichida ham bor)
+                    if (w->minimumSizeHint().width() > maxW)
+                        for (auto* side : w->findChildren<QWidget*>())
+                            if (side->inherits("asiacad::gui::TemplateSidebar")) side->hide();
+                    if (w->layout()) { w->layout()->invalidate(); w->layout()->activate(); }
+                    // uzun bir qatorli yozuvlar (holat, xulosa) dialogni kengaytirmasin — ikki qatorga o'raladi
+                    if (w->minimumSizeHint().width() > maxW) {
+                        for (auto* l : w->findChildren<QLabel*>())
+                            if (!l->wordWrap() && l->minimumSizeHint().width() > 260) l->setWordWrap(true);
+                        if (w->layout()) { w->layout()->invalidate(); w->layout()->activate(); }
+                    }
+                    // hali ham sig'masa — gorizontal bo'luvchi (QSplitter) panellari mutanosib toraytiriladi
+                    if (const int minW = w->minimumSizeHint().width(); minW > maxW) {
+                        const double r = 0.97 * maxW / minW;
+                        for (auto* sp : w->findChildren<QSplitter*>())
+                            if (sp->orientation() == Qt::Horizontal)
+                                for (int i = 0; i < sp->count(); ++i)
+                                    if (QWidget* c = sp->widget(i); c && c->isVisibleTo(w))
+                                        c->setMinimumWidth(std::max(140, static_cast<int>(std::max(c->minimumWidth(), c->minimumSizeHint().width()) * r)));
+                        for (auto* sp : w->findChildren<QSplitter*>()) sp->updateGeometry();
+                        if (w->layout()) { w->layout()->invalidate(); w->layout()->activate(); }
+                    }
+                    if (w->width() > maxW || w->height() > maxH) {
+                        w->resize(std::min(w->width(), maxW), std::min(w->height(), maxH));
+                        w->move(av.left() + (av.width() - w->frameGeometry().width()) / 2, av.top() + (av.height() - w->frameGeometry().height()) / 2);
+                    }
+                }
+            }
+        }
+        return false;
+    }
+private:
+    void localize(QDialogButtonBox* bb) {
+        static const struct { QDialogButtonBox::StandardButton b; const char* k; } map[] = {
+            {QDialogButtonBox::Ok, "gui.btn.ok"},         {QDialogButtonBox::Cancel, "gui.btn.cancel"},
+            {QDialogButtonBox::Save, "gui.btn.save"},     {QDialogButtonBox::Discard, "gui.btn.discard"},
+            {QDialogButtonBox::Yes, "gui.btn.yes"},       {QDialogButtonBox::No, "gui.btn.no"},
+            {QDialogButtonBox::Close, "gui.btn.close"},   {QDialogButtonBox::Apply, "gui.btn.apply"},
+            {QDialogButtonBox::Open, "gui.btn.open"},     {QDialogButtonBox::Reset, "gui.btn.reset"},
+            {QDialogButtonBox::Help, "gui.btn.help"},     {QDialogButtonBox::YesToAll, "gui.btn.yesall"},
+            {QDialogButtonBox::NoToAll, "gui.btn.noall"}, {QDialogButtonBox::Abort, "gui.btn.abort"},
+            {QDialogButtonBox::Retry, "gui.btn.retry"},   {QDialogButtonBox::Ignore, "gui.btn.ignore"}};
+        for (const auto& m : map)
+            if (QPushButton* b = bb->button(m.b)) {
+                b->setText(tr_(m.k));
+                b->setIcon(QIcon());
+                if (m.b == QDialogButtonBox::Ok || m.b == QDialogButtonBox::Save || m.b == QDialogButtonBox::Yes) b->setProperty("accent", true);
+                b->style()->unpolish(b);
+                b->style()->polish(b);
+            }
+    }
+    std::function<QString(const char*)> tr_;
 };
 
 // Lenta amali -> CLI kanonik buyruq (qidiruv va maslahatda buyruq nomi/aliasini ko'rsatish uchun)
@@ -342,6 +416,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
 
     connect(view_, &Viewport::runCommand, this, [this](const QString& l) { runLine(l); });
     view_->setContextHook([this](QMenu* m, const Vec3& at) { fillViewContext(m, at); });
+    qApp->installEventFilter(new DialogLocalizer([this](const char* k) { return t(k); }, this));
     connect(view_, &Viewport::pointsPicked, this, [this](const std::vector<Vec3>& pts) {
         if (auto cb = std::move(pickCb_)) { pickCb_ = {}; cb(pts); }
     });
@@ -478,7 +553,7 @@ void MainWindow::buildActions() {
     act_["open"]->setShortcut(QKeySequence::Open);
     act_["save"]->setShortcut(QKeySequence::Save);
     act_["undo"]->setShortcut(QKeySequence::Undo);
-    act_["redo"]->setShortcut(QKeySequence::Redo);
+    act_["redo"]->setShortcuts({QKeySequence(Qt::CTRL | Qt::Key_Y), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z)});   // Windows va Linux odatlari
     act_["grid"]->setCheckable(true);
     act_["grid"]->setChecked(true);
     act_["grid"]->setShortcut(QKeySequence(Qt::Key_F7));
@@ -973,10 +1048,12 @@ void MainWindow::buildDocks() {
     layers_->header()->setStretchLastSection(false);
     layers_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     layers_->setTextElideMode(Qt::ElideMiddle);
-    layers_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    layers_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    layers_->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    layers_->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    // holat ustunlari ixcham va qat'iy — tor panelda ham qatlam nomi to'liq ko'rinsin
+    layers_->header()->setMinimumSectionSize(24);
+    for (int c = 1; c <= 4; ++c) {
+        layers_->header()->setSectionResizeMode(c, QHeaderView::Fixed);
+        layers_->setColumnWidth(c, c == 4 ? 34 : 28);
+    }
     lv->addWidget(layers_);
     auto* addLayer = new QPushButton(lw);
     addLayer->setObjectName("layerAdd");   // ikkinchi darajali amal — sariq emas
@@ -1539,7 +1616,13 @@ void MainWindow::retranslate() {
 void MainWindow::refreshLayers() {
     if (!layers_) return;
     updatingUi_ = true;
-    layers_->setHeaderLabels({t("gui.layers.h.name"), QString::fromUtf8("👁"), QString::fromUtf8("❄"), QString::fromUtf8("🔒"), t("gui.layers.h.color")});
+    layers_->setHeaderLabels({t("gui.layers.h.name"), QString::fromUtf8("👁"), QString::fromUtf8("❄"), QString::fromUtf8("🔒"), QString::fromUtf8("◼")});
+    if (auto* hi = layers_->headerItem()) {   // ustun ma'nosi — maslahatda
+        hi->setToolTip(1, t("gui.layers.tip.on"));
+        hi->setToolTip(2, t("gui.layers.tip.frz"));
+        hi->setToolTip(3, t("gui.layers.tip.lck"));
+        hi->setToolTip(4, t("gui.layers.h.color"));
+    }
     layers_->clear();
     const std::string cur = interp_->currentLayer();
     for (const auto& [name, l] : doc_.layers()) {
@@ -2807,9 +2890,53 @@ void MainWindow::submitCommandLine() {
     }
     cmdHistory_ << text;
     cmdHistoryPos_ = cmdHistory_.size();
+    // ZOOM (Z): E/H — hammasi, W/O — oyna (2 nuqta), son — kattalashtirish koeffitsiyenti; "Z" yolg'iz — variant so'raladi
+    {
+        const QStringList zt = text.toUpper().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+        static const QStringList zoomNames = {"Z", "ZOOM", QStringLiteral("ЗУМ"), QStringLiteral("ПОКАЗАТЬ"), QStringLiteral("YAQINLASH")};
+        const bool isZoom = zoomNames.contains(zt.value(0));
+        if (isZoom || zoomPending_) {
+            const QString opt = isZoom ? zt.value(1) : zt.value(0);
+            zoomPending_ = false;
+            appendHistory("› " + text, theme_.accent);
+            bool num = false;
+            const double f = QString(opt).remove('X').toDouble(&num);
+            if (opt.isEmpty()) { zoomPending_ = true; appendHistory(t("gui.zoom.prompt"), theme_.accent); return; }
+            if (opt == "E" || opt == "A" || opt == "H" || opt == QStringLiteral("Г")) { if (is3D()) view3d_->fit(); else view_->zoomExtents(); return; }
+            if (opt == "W" || opt == "O" || opt == QStringLiteral("Р")) {
+                show3D(false);
+                pickCb_ = [this](const std::vector<Vec3>& pts) {
+                    if (pts.size() != 2) return;
+                    const double w = std::max(std::abs(pts[1].x - pts[0].x), 1e-6), h = std::max(std::abs(pts[1].y - pts[0].y), 1e-6);
+                    view_->setView((pts[0] + pts[1]) * 0.5, std::min(view_->width() / w, view_->height() / h) * 0.95);
+                };
+                view_->startPick(2, {QStringLiteral("gui.zoom.w1"), QStringLiteral("gui.zoom.w2")});
+                view_->setFocus();
+                return;
+            }
+            if (num && f > 0) { view_->zoomBy(f); return; }
+            appendHistory(t("gui.prompt.badopt", {opt}), QColor("#E5484D"));
+            return;
+        }
+    }
     // Asbob faol bo'lsa: "x,y" yoki "@dx,dy" — nuqta sifatida
     static const QRegularExpression pt(R"(^(@)?\s*(-?[0-9.]+)\s*,\s*(-?[0-9.]+)$)");
+    // qutbiy kiritish: "@uzunlik<burchak" (nisbiy) yoki "uzunlik<burchak" (mutlaq), burchak — X o'qidan soat millariga teskari
+    static const QRegularExpression polar(R"(^(@)?\s*(-?[0-9.]+)\s*<\s*(-?[0-9.]+)$)");
     if (view_->tool() != Tool::Select) {
+        if (const auto m = polar.match(text); m.hasMatch()) {
+            const double len = m.captured(2).toDouble(), ang = m.captured(3).toDouble() * M_PI / 180.0;
+            Vec3 p{len * std::cos(ang), len * std::sin(ang), 0};
+            const auto last = view_->lastPoint();
+            if (!m.captured(1).isEmpty() && last) p = {last->x + p.x, last->y + p.y, 0};
+            appendHistory("› " + text, theme_.accent);
+            view_->feedPoint(p);
+            return;
+        }
+        if (view_->toolOption(text)) {   // C / U / D va tildagi kalit so'zlar
+            appendHistory("› " + text, theme_.accent);
+            return;
+        }
         if (const auto m = pt.match(text); m.hasMatch()) {
             Vec3 p{m.captured(2).toDouble(), m.captured(3).toDouble(), 0};
             if (!m.captured(1).isEmpty()) {
@@ -2834,6 +2961,10 @@ void MainWindow::submitCommandLine() {
         }
         if (ok && d > 0 && view_->feedDistance(d)) {
             appendHistory("› " + text, theme_.accent);
+            return;
+        }
+        if (text.size() <= 2 && !ok) {   // asbob ichida noma'lum qisqa variant — asbobni almashtirmaymiz (AutoCAD kabi)
+            appendHistory(t("gui.prompt.badopt", {text}), QColor("#E5484D"));
             return;
         }
     }
@@ -2941,6 +3072,11 @@ void MainWindow::restoreUiState(bool restoreMode) {
     coordDecimals_ = std::clamp(st.value("ui/coordDecimals", 3).toInt(), 0, 4);
     recent_ = st.value("files/recent").toStringList();
     updateContextDocks();
+}
+
+void MainWindow::adaptToScreen(const QSize& av) {
+    if (av.width() <= 1500) resizeDocks({layersDock_, propsDock_}, {220, 240}, Qt::Horizontal);
+    if (av.height() <= 900) resizeDocks({cmdDock_}, {av.height() <= 800 ? 92 : 110}, Qt::Vertical);
 }
 
 void MainWindow::saveUiState() const {

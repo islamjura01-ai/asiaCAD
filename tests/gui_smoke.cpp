@@ -235,6 +235,25 @@ int main(int argc, char** argv) {
         CHECK(!drawPage->property("compact").toBool());
         w.resize(1440, 900);
         QApplication::processEvents();
+        // Asbob variantlari (AutoCAD odati): CHIZIQ ... C — yopish, U — orqaga; aylana D — diametr
+        Viewport* vv = w.viewport();
+        const std::size_t before = w.document().ids().size();
+        vv->setTool(Tool::Line);
+        vv->feedPoint({1000, 1000, 0});
+        vv->feedPoint({1010, 1000, 0});
+        vv->feedPoint({1010, 1005, 0});
+        CHECK(!vv->toolOption("Q"));
+        CHECK(vv->toolOption("C"));
+        CHECK(w.document().ids().size() == before + 3 && vv->tool() == Tool::Select);
+        vv->setTool(Tool::Circle);
+        vv->feedPoint({1100, 1000, 0});
+        CHECK(vv->toolOption("D"));
+        vv->feedDistance(20);
+        bool r10 = false;
+        for (EntityId id : w.document().ids())
+            if (const auto* c = dynamic_cast<const CircleEntity*>(w.document().find(id)); c && std::abs(c->radius() - 10) < 1e-9) r10 = true;
+        CHECK(r10);
+        vv->setTool(Tool::Select);
     }
 
     // 11. Nuqta formati: katta UTM koordinatalari aniqligi yo'qolmaydi

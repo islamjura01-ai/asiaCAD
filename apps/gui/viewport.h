@@ -82,6 +82,9 @@ public:
     QPointF compassCenter() const;
     // To'g'ridan-to'g'ri masofa: kuzatuv yo'nalishi (yoki kursor tomoni) bo'yicha d masofadagi nuqta
     bool feedDistance(double d);
+    // Asbob variantlari buyruq satridan (AutoCAD kabi): C/YOPIQ — yopish, U — oxirgi nuqtani bekor qilish,
+    // D — aylana diametri. Qabul qilinsa true.
+    bool toolOption(const QString& word);
     double dimTextHeight() const;
     void setOffsetDistance(double d) { if (d > 0) offsetDist_ = d; emitPrompt(); update(); }
     double offsetDistance() const { return offsetDist_; }
@@ -189,6 +192,7 @@ private:
 
     Tool tool_ = Tool::Select;
     std::vector<Vec3> pts_;  // asbob uchun olingan nuqtalar
+    bool circleDiameter_ = false;  // aylana: keyingi son — diametr
     std::vector<EntityId> sel_;
 
     QPointF mouse_;

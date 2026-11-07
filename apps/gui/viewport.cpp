@@ -161,7 +161,8 @@ void Viewport::zoomExtents() {
     const BBox b = doc_.extents(true);
     if (!b.valid()) { setView({0, 0, 0}, 10.0); return; }
     const double w = std::max(b.max.x - b.min.x, 1e-6), h = std::max(b.max.y - b.min.y, 1e-6);
-    const double s = std::min((width() - 60.0) / w, (height() - 60.0) / h);
+    const double m = std::max(80.0, 0.12 * std::min(width(), height()));   // chetlarda havo (kompas, UCS belgisi ustiga chiqmasin)
+    const double s = std::min((width() - m) / w, (height() - m) / h);
     setView({(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, 0}, s > 0 ? s : 1.0);
 }
 
@@ -237,8 +238,59 @@ std::optional<Vec3> Viewport::trackBase() const {
     return pts_.back();
 }
 
+bool Viewport::toolOption(const QString& word) {
+    const QString w = word.trimmed().toUpper();
+    if (w.isEmpty()) return false;
+    // istalgan tildagi kalit so'z (YOPIQ, ЗАМКНУТЬ, KAPAT…) yoki AutoCAD qisqartmasi
+    const bool close = w == "C" || w == "Y" || loc_.isKeyword(word.trimmed().toStdString(), "CLOSE");
+    const bool undo = w == "U" || w == "UNDO" || w == QStringLiteral("ORQAGA") || w == QStringLiteral("O");
+    if (tool_ == Tool::Line) {
+        if (close && pts_.size() >= 3) {
+            emit runCommand("LINE " + fmtPoint(pts_.back()) + " " + fmtPoint(pts_.front()));
+            pts_.clear();
+            tool_ = Tool::Select;
+            emitPrompt();
+            update();
+            return true;
+        }
+        if (undo && !pts_.empty()) {   // oxirgi segment va nuqta
+            if (pts_.size() >= 2) emit runCommand(QStringLiteral("UNDO"));
+            pts_.pop_back();
+            emitPrompt();
+            update();
+            return true;
+        }
+    }
+    if (tool_ == Tool::Pline || tool_ == Tool::Spline || tool_ == Tool::PipeDraw || tool_ == Tool::Leader) {
+        if (close && tool_ == Tool::Pline && pts_.size() >= 3) {
+            QStringList parts{QStringLiteral("PLINE")};
+            for (const auto& q : pts_) parts << fmtPoint(q);
+            parts << QString::fromStdString(loc_.keywordName("CLOSE"));
+            emit runCommand(parts.join(' '));
+            pts_.clear();
+            tool_ = Tool::Select;
+            emitPrompt();
+            update();
+            return true;
+        }
+        if (undo && !pts_.empty()) {
+            pts_.pop_back();
+            emitPrompt();
+            update();
+            return true;
+        }
+    }
+    if (tool_ == Tool::Circle && !pts_.empty() && (w == "D" || w == "DIAMETR" || w == "DIAMETER" || w == QStringLiteral("Д"))) {
+        circleDiameter_ = true;
+        emit promptChanged(QString::fromStdString(loc_.tr("gui.prompt.diameter")));
+        return true;
+    }
+    return false;
+}
+
 bool Viewport::feedDistance(double d) {
     if (tool_ == Tool::Select) return false;
+    if (tool_ == Tool::Circle && circleDiameter_) { d *= 0.5; circleDiameter_ = false; }
     const auto base = trackBase();
     if (!base) return false;
     Vec3 dir;
@@ -363,7 +415,7 @@ void Viewport::emitPrompt() {
     const char* key = "gui.prompt.idle";
     switch (tool_) {
     case Tool::Select: key = "gui.prompt.idle"; break;
-    case Tool::Line: case Tool::Pline: key = pts_.empty() ? "gui.prompt.first" : "gui.prompt.next"; break;
+    case Tool::Line: case Tool::Pline: key = pts_.empty() ? "gui.prompt.first" : (pts_.size() >= 2 ? "gui.prompt.nextclose" : "gui.prompt.nextundo"); break;
     case Tool::PipeDraw: key = pts_.empty() ? "gui.prompt.pipe1" : "gui.prompt.pipen"; break;
     case Tool::Circle: key = pts_.empty() ? "gui.prompt.center" : "gui.prompt.radius"; break;
     case Tool::Arc: key = pts_.empty() ? "gui.prompt.first" : (pts_.size() == 1 ? "gui.prompt.arc2" : "gui.prompt.arc3"); break;
@@ -1631,10 +1683,12 @@ void Viewport::drawCompass(QPainter& p) {
     p.setPen(QPen(ink, 1));
     p.setBrush(face);
     p.drawRect(top);
+    const QString topTxt = QString::fromStdString(loc_.tr("gui.vc.top"));
     f.setPixelSize(10);
+    while (f.pixelSize() > 6 && QFontMetricsF(f).horizontalAdvance(topTxt) > top.width() - 4) f.setPixelSize(f.pixelSize() - 1);   // СВЕРХУ, ÜSTTEN sig'sin
     p.setFont(f);
     p.setPen(hotTop ? QColor(255, 255, 255) : ink);
-    p.drawText(top, Qt::AlignCenter, QString::fromStdString(loc_.tr("gui.vc.top")));
+    p.drawText(top, Qt::AlignCenter, topTxt);
     f.setBold(false);
     p.setFont(f);
     p.setPen(ink);

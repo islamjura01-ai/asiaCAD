@@ -3335,7 +3335,7 @@ TEST(survey_cli) {
     CHECK(s.find("3 ta nuqta import qilindi (Z: 10.000 … 13.000") != std::string::npos);
     CHECK(s.find("Reja / fasad: 3 ta nuqta — ruxsatda 2, oshgan 1; max 12.0 mm") != std::string::npos);
     CHECK(s.find("1: +12.0 mm (ruxsat 10.0 mm)") != std::string::npos);
-    CHECK(s.find("og'ish belgisi o'chirildi") != std::string::npos && s.find("Noma'lum tahlil turi: FOO") != std::string::npos);
+    CHECK(s.find("ogʻish belgisi oʻchirildi") != std::string::npos && s.find("Nomaʼlum tahlil turi: FOO") != std::string::npos);
     CHECK(std::filesystem::exists(xl) && xlsx::load(xl).sheets.size() == 2);
     std::ifstream f(out);
     std::stringstream b;
@@ -3463,10 +3463,10 @@ TEST(terrain_cli) {
     lines.push_back("CONTOUR ALL STEP=0.25 MAJOR=0.5");
     lines.push_back("XSECTIONS " + ax + " EG=ALL");
     const auto s = runScript("uz", lines);
-    CHECK(s.find("Kartogramma: 15 ta kvadrat (20 m), maydon 6000.0 m²; to'kma +750.0 m³, kesma −750.0 m³") != std::string::npos);
+    CHECK(s.find("Kartogramma: 15 ta kvadrat (20 m), maydon 6000.0 m²; toʻkma +750.0 m³, kesma −750.0 m³") != std::string::npos);
     CHECK(s.find("Balans tekisligi belgisi H0 = 100.500") != std::string::npos);
-    CHECK(s.find("Bo'ylama profil: L = 100.00 m, 6 ta piket") != std::string::npos);
-    CHECK(s.find("6 ta kesim (har 20 m): to'kma 2000.0 m³, kesma 0.0 m³") != std::string::npos);
+    CHECK(s.find("Boʻylama profil: L = 100.00 m, 6 ta piket") != std::string::npos);
+    CHECK(s.find("6 ta kesim (har 20 m): toʻkma 2000.0 m³, kesma 0.0 m³") != std::string::npos);
     CHECK(s.find("ta gorizontal (qadam 0.25 m") != std::string::npos);
     CHECK(s.find("Loyiha yuzasi berilmagan") != std::string::npos);
 }

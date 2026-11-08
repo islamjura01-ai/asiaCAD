@@ -2,6 +2,7 @@
 
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/kj_project.h>
+#include <asiacad/bim/ifc.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
@@ -120,6 +121,7 @@ const char* commandSyntax(const std::string& c) {
         {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD|WATERWAY|CORRIDOR in out"},
         {"UTIL", "[file.json] [+]"},
         {"KJ", "file.dxf [fTop|-] [fT] [abs±0.000]"},
+        {"IFCIMPORT", "file.ifc [{LOCAL}]"},
         {"ROAD", "[file.json] [+] [x,y]"},
         {"WATERWAY", "[file.json] [Q=m3/s] [SEC=n] [+] [x,y]"},
         {"CORRIDOR", "[file.json] [ASM=n] [+]"},
@@ -766,6 +768,36 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         } else {
             throw Error("xl.err.module", {a[0]});
         }
+    } else if (cmd == "IFCIMPORT") {
+        // IFC fayl tarkibi: qavatlar, element turlari bo'yicha soni va hajmi (PTO), armatura
+        need(a, 1, cmd);
+        bool georef = true;
+        for (std::size_t i = 1; i < a.size(); ++i)
+            if (loc_.isKeyword(a[i], "LOCAL")) georef = false;
+        bim::IfcModel m;
+        std::string err;
+        if (!bim::readIfc(a[0], m, err, georef)) throw Error(err, {a[0]});
+        say("ifc.msg.file", {m.schema, m.application.empty() ? std::string("—") : m.application, std::to_string(m.entityCount)});
+        if (!m.project.empty() || !m.building.empty()) say("ifc.msg.project", {m.project.empty() ? "—" : m.project, m.building.empty() ? "—" : m.building});
+        say("ifc.msg.elements", {std::to_string(m.elements.size()), std::to_string(m.triangleCount()), std::to_string(m.storeys.size())});
+        for (const auto& st : m.storeys)
+            say("ifc.msg.storey", {st.name.empty() ? "—" : st.name, std::format("{:+.3f}", st.elevation), std::to_string(st.elements)});
+        double vol = 0, bars = 0;
+        for (const auto& r : bim::ifcSummary(m)) {
+            const std::string name = loc_.tr("ifc.cat." + r.category);
+            if (r.barMass > 0) say("ifc.msg.rowbar", {name, std::to_string(r.count), std::format("{:.2f}", r.barLength), std::format("{:.1f}", r.barMass)});
+            else say("ifc.msg.row", {name, std::to_string(r.count), r.category == "SPACE" ? std::string("—") : std::format("{:.3f}", r.volume)});
+            if (r.category != "SPACE" && r.category != "SITE" && r.category != "REBAR") vol += r.volume;
+            bars += r.barMass;
+        }
+        say("ifc.msg.total", {std::format("{:.3f}", vol), std::format("{:.1f}", bars)});
+        const auto& b = m.box;
+        if (b.valid())
+            say("ifc.msg.extent", {std::format("{:.2f}", b.max.x - b.min.x), std::format("{:.2f}", b.max.y - b.min.y), std::format("{:.2f}", b.max.z - b.min.z),
+                                   std::format("{:.3f}", b.min.x), std::format("{:.3f}", b.min.y), std::format("{:.3f}", b.min.z)});
+        for (const auto& w : m.warnings)
+            out_ << "  " << loc_.tr("sewer.lvl.warning") << ": "
+                 << loc_.tr(w, {std::to_string(m.openings - m.openingsCut), std::to_string(m.openings), std::to_string(m.skipped)}) << '\n';
     } else if (cmd == "KJ") {
         // KJ fayl.dxf [fundament usti] [qalinligi] — bitta KJ fayldan (qolip + armatura) beton va armatura
         need(a, 1, cmd);

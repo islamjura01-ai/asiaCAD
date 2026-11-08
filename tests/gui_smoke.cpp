@@ -15,8 +15,13 @@
 #include "earthwork_dialog.h"
 #include "drive_dialog.h"
 #include "draft_panels.h"
+#include "ifc_panel.h"
+#include "model3d_view.h"
+#include <QTreeWidget>
 
 #include <QDir>
+#include <QTimer>
+#include <QMessageBox>
 #include <QElapsedTimer>
 #include <QThread>
 #include <asiacad/io/xlsx.h>
@@ -190,7 +195,7 @@ int main(int argc, char** argv) {
             const QString icon = it.key()->data().toString();
             if (icon == "undo" || icon == "redo" || icon == "search") undoInRibbon += it.value();
             const QString key = act_key(it.key());
-            if (it.value() > 1 && key != "text" && key != "kjimport" && key != "bimimport") ++dup;   // ataylab ikki joyda: matn; KJ/qolip importi (Fayl va Konstruksiya)
+            if (it.value() > 1 && key != "text" && key != "kjimport" && key != "bimimport" && key != "ifcimport" && key != "ifcpanel") ++dup;   // ataylab ikki joyda: matn; KJ/qolip/IFC importi (Fayl va Konstruksiya), IFC modellar (Konstruksiya va Tahlil)
         }
         CHECK(undoInRibbon == 0 && dup == 0);
         QStringList qat;
@@ -1389,6 +1394,69 @@ int main(int argc, char** argv) {
         w.runLine(QStringLiteral("SEWER \"%1/k1_kocha.kan.json\"").arg(ASIACAD_EXAMPLES_DIR));
         CHECK(w.selectTag("sewer:K1:seg:0") && sp->findChild<QPushButton*>("netXlsx"));
         CHECK(w.findChild<QAction*>() != nullptr);
+    }
+    // 35. IFC import: 3D obyektlar, IFC paneli (qavatlar filtri, PTO jadvali, Excel), olib tashlash
+    {
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        const QString f = QStringLiteral("%1/../tests/data/revit_sinov.ifc").arg(ASIACAD_EXAMPLES_DIR);
+        CHECK(w.importIfc({f}) == 1);
+        QApplication::processEvents();
+        CHECK(w.is3D() && w.ifcModels().size() == 1);
+        Model3DView* v = w.view3d();
+        CHECK(v->objectCount() == 6);
+        CHECK(v->categories().contains(QString::fromStdString(loc.tr("ifc.cat.WALL"))));
+        IfcPanel* p = w.findChild<IfcPanel*>("ifcPanel");
+        CHECK(p && p->isVisible() && p->tree()->topLevelItemCount() == 1);
+        CHECK(p && p->summaryTable()->rowCount() == 7);   // 6 tur + jami
+        if (p) {
+            bool wall = false;
+            for (int r = 0; r < p->summaryTable()->rowCount(); ++r)
+                if (p->summaryTable()->item(r, 0)->text() == QString::fromStdString(loc.tr("ifc.cat.WALL")) && p->summaryTable()->item(r, 2)->text() == "3.060") wall = true;
+            CHECK(wall);
+            // 2-qavatni yashirish -> 4 obyekt
+            QTreeWidgetItem* top = p->tree()->topLevelItem(0);
+            CHECK(top->childCount() == 2);
+            top->child(1)->setCheckState(0, Qt::Unchecked);
+            QApplication::processEvents();
+            CHECK(v->objectCount() == 4);
+            // qavat tanlansa — jadval shu qavat bo'yicha (ustun + plita + jami)
+            p->tree()->setCurrentItem(top->child(1));
+            QApplication::processEvents();
+            CHECK(p->summaryTable()->rowCount() == 3);
+            top->child(1)->setCheckState(0, Qt::Checked);
+            QApplication::processEvents();
+            CHECK(v->objectCount() == 6);
+            const QString xl = QDir::tempPath() + "/asiacad_ifc_pto.xlsx";
+            CHECK(p->exportXlsx(xl));
+            const auto wb = xlsx::load(xl.toStdString());
+            CHECK(wb.sheets.size() == 3 && wb.sheets[2].rows.size() == 7);
+            QFile::remove(xl);
+            // tanlash: element xossalari
+            v->setView(Model3DView::Top);
+            v->fit();
+            QApplication::processEvents();
+            bool picked = false;
+            for (int k = 0; k < 9 && !picked; ++k) {
+                const QPoint at(v->width() * (2 + k % 3) / 6, v->height() * (2 + k / 3) / 6);
+                picked = v->selectAt(at) && v->selectionInfo().contains("GUID:");
+            }
+            CHECK(picked);
+            // xuddi shu fayl qayta yuklansa — almashtiriladi, ikkinchi nusxa qo'shilmaydi
+            CHECK(w.importIfc({f}, false) == 1 && w.ifcModels().size() == 1);
+            emit p->removeRequested(0);
+            QApplication::processEvents();
+            CHECK(w.ifcModels().empty() && p->tree()->topLevelItemCount() == 0);
+        }
+        // xato fayl — ogohlantirish, model qo'shilmaydi (QMessageBox — darhol yopiladi)
+        QTimer::singleShot(200, [] {
+            for (auto* tw : QApplication::topLevelWidgets())
+                if (auto* mb = qobject_cast<QMessageBox*>(tw)) mb->accept();
+        });
+        CHECK(w.importIfc({QStringLiteral("%1/yoq.ifc").arg(ASIACAD_EXAMPLES_DIR)}) == 0 && w.ifcModels().empty());
+        CHECK(w.findChild<QAction*>("act_ifcimport") && w.findChild<QAction*>("act_ifcpanel"));
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

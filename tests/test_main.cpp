@@ -5,6 +5,7 @@
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
 #include <asiacad/bim/templates.h>
+#include <asiacad/bim/ifc.h>
 #include <asiacad/civil/survey.h>
 #include <asiacad/civil/terrain.h>
 #include <asiacad/civil/excel.h>
@@ -354,7 +355,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 109);
+    CHECK(loc.canonicalCommands().size() == 110);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2576,6 +2577,142 @@ TEST(corridor_example_road_and_excel) {
     // assembly JSON
     const auto a2 = civil::assemblyFromJson(civil::assemblyToJson(civil::builtinAssemblies()[5]));
     CHECK(!a2.symmetric && a2.right.size() == 3 && a2.left.size() == 3 && a2.right[2].kind == civil::SubKind::RetainingWall);
+}
+
+// ---------------------------------------------------------------- IFC o'quvchi
+static std::string slurp(const std::string& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+
+TEST(ifc_revit_style_sample) {
+    bim::IfcModel m;
+    std::string err;
+    CHECK(bim::readIfc(dataPath("revit_sinov.ifc"), m, err));
+    CHECK(m.schema == "IFC4" && m.application == "Autodesk Revit 2024 (sinov)");
+    CHECK(std::abs(m.unitScale - 0.001) < 1e-12);
+    CHECK(m.project == "Sinov loyiha" && m.building == "Bino A");
+    CHECK(m.storeys.size() == 2);
+    CHECK(m.storeys[0].name == "\xD0\xAD\xD1\x82\xD0\xB0\xD0\xB6 1");   // \X2\ -> "Этаж 1"
+    CHECK(m.storeys[1].name == "2-qavat" && std::abs(m.storeys[1].elevation - 3.0) < 1e-9);
+    CHECK(m.storeys[0].elements == 4 && m.storeys[1].elements == 2);
+    CHECK(m.elements.size() == 6 && m.openings == 1 && m.openingsCut == 1);
+    std::map<std::string, const bim::IfcElement*> by;
+    for (const auto& e : m.elements) by[e.type] = &e;
+    // devor: 6×0.2×3 -> yarim fazo bilan 2.8 m gacha kesilgan, 1×0.2×1.5 teshik ayirilgan
+    const auto* w = by["IFCWALL"];
+    CHECK(w && std::abs(w->volume - (6 * 0.2 * 2.8 - 0.3)) < 1e-6);
+    CHECK(w && std::abs(w->box.max.z - 2.8) < 1e-9 && w->material == "Beton B25" && w->parts.size() == 1 && w->parts[0].rgb == 0x808080);
+    CHECK(w && w->tag == "W1" && w->storey == 0);
+    // deraza: tip geometriyasi (IfcMappedItem) teshik joylashuvi bo'yicha, shisha uslubi
+    const auto* win = by["IFCWINDOW"];
+    CHECK(win && std::abs(win->volume - 0.075) < 1e-9 && win->parts.size() == 1 && win->parts[0].rgb == 0x6699cc && std::abs(win->parts[0].alpha - 0.4) < 1e-9);
+    CHECK(win && std::abs(win->box.min.x - 2.0) < 1e-9 && std::abs(win->box.min.z - 0.9) < 1e-9);
+    // I-ustun: 2-qavatda, kesim yuzasi × balandlik
+    const auto* col = by["IFCCOLUMN"];
+    const double aI = 2 * 0.135 * 0.0102 + (0.3 - 2 * 0.0102) * 0.0065;
+    CHECK(col && std::abs(col->volume - aI * 3.0) < 1e-9 && col->storey == 1 && std::abs(col->box.min.z - 3.0) < 1e-9);
+    // plita: IfcIndexedPolyCurve kontur, doira teshik, pastga ekstruziya, material rangi va xossalar
+    const auto* sl = by["IFCSLAB"];
+    CHECK(sl && std::abs(sl->volume - 0.2 * (24 - 0.5 * 62 * 0.25 * std::sin(2 * 3.14159265358979 / 62))) < 1e-6);
+    CHECK(sl && std::abs(sl->box.min.z - 2.8) < 1e-9 && std::abs(sl->box.max.z - 3.0) < 1e-9);
+    bool ext = false, refp = false;
+    if (sl)
+        for (const auto& [k, v] : sl->props) {
+            if (k == "Pset_SlabCommon.IsExternal" && v == "FALSE") ext = true;
+            if (k == "Pset_SlabCommon.Reference" && v == "P-1 \xD1\x88 'A'") refp = true;
+        }
+    CHECK(ext && refp);
+    // armatura: IfcSweptDiskSolid, o'q — chiziq + yoy (IfcArcIndex) + chiziq
+    const auto* bar = by["IFCREINFORCINGBAR"];
+    CHECK(bar && bar->bars.size() == 1 && std::abs(bar->bars[0].second - 0.006) < 1e-12);
+    CHECK(bar && std::abs(bar->barLength - (2.0 + 3.14159265358979 * 0.1)) < 0.002);
+    CHECK(bar && std::abs(bar->barMass - 3.14159265358979 * 0.006 * 0.006 * bar->barLength * 7850) < 1e-9);
+    // marsh: IfcFacetedBrep, qavat — IfcRelAggregates (zina) orqali
+    const auto* fl = by["IFCSTAIRFLIGHT"];
+    CHECK(fl && std::abs(fl->volume - 1.0) < 1e-9 && fl->storey == 0 && fl->triangleCount() == 12);
+    // jamlama
+    const auto rows = bim::ifcSummary(m);
+    double rebar = 0;
+    for (const auto& r : rows)
+        if (r.category == "REBAR") rebar = r.barMass;
+    CHECK(rows.size() == 6 && std::abs(rebar - bar->barMass) < 1e-12);
+    CHECK(std::string(bim::ifcCategory("IFCWALLSTANDARDCASE")) == "WALL" && std::string(bim::ifcCategory("IFCFLOWSEGMENT")) == "PIPE");
+}
+
+TEST(ifc_strings_units_errors) {
+    CHECK(bim::ifcDecodeString("\\X2\\041F0440043E0435043A0442\\X0\\") == "\xD0\x9F\xD1\x80\xD0\xBE\xD0\xB5\xD0\xBA\xD1\x82");   // Проект
+    CHECK(bim::ifcDecodeString("Gr\\X\\FC\\S\\_n") == "Gr\xC3\xBC\xC3\x9Fn");   // \X\FC = ü, \S\_ = ß
+    CHECK(bim::ifcDecodeString("a\\X4\\0001F600\\X0\\b") == "a\xF0\x9F\x98\x80" "b");
+    bim::IfcModel m;
+    std::string err;
+    CHECK(!bim::parseIfc("hello", m, err) && err == "ifc.err.format");
+    CHECK(!bim::parseIfc("ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n", m, err) && err == "ifc.err.empty");
+    CHECK(!bim::readIfc(dataPath("yoq.ifc"), m, err) && err == "ifc.err.open");
+    // fut, xarita koordinatalari (IfcMapConversion: 30° burilish), IfcBlock, IfcTriangulatedFaceSet (Closed=$, suv o'tkazmaydi)
+    const std::string base = slurp(dataPath("revit_sinov.ifc"));
+    const std::string mini = R"(ISO-10303-21;
+HEADER;FILE_DESCRIPTION((''),'2;1');FILE_NAME('m.ifc','',(''),(''),'','Sinov','');FILE_SCHEMA(('IFC4'));ENDSEC;
+DATA;
+#1=IFCPROJECT('P',$,'Map',$,$,$,$,(#20),#10);
+#10=IFCUNITASSIGNMENT((#11));
+#11=IFCCONVERSIONBASEDUNIT(#12,.LENGTHUNIT.,'FOOT',#13);
+#12=IFCDIMENSIONALEXPONENTS(1,0,0,0,0,0,0);
+#13=IFCMEASUREWITHUNIT(IFCLENGTHMEASURE(0.3048),#14);
+#14=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);
+#20=IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,#21,$);
+#21=IFCAXIS2PLACEMENT3D(#22,$,$);
+#22=IFCCARTESIANPOINT((0.,0.,0.));
+#30=IFCMAPCONVERSION(#20,#31,500000.,4500000.,400.,0.8660254037844387,0.5,$);
+#31=IFCPROJECTEDCRS('EPSG:32642',$,$,$,$,$,#14);
+#40=IFCBUILDINGELEMENTPROXY('B',$,'Quti',$,$,#41,#42,$,$);
+#41=IFCLOCALPLACEMENT($,#21);
+#42=IFCPRODUCTDEFINITIONSHAPE($,$,(#43));
+#43=IFCSHAPEREPRESENTATION(#20,'Body','CSG',(#44));
+#44=IFCBLOCK(#21,10.,5.,2.);
+#50=IFCPLATE('T',$,'Tor',$,$,#41,#52,$,$);
+#52=IFCPRODUCTDEFINITIONSHAPE($,$,(#53));
+#53=IFCSHAPEREPRESENTATION(#20,'Body','Tessellation',(#54));
+#54=IFCTRIANGULATEDFACESET(#55,$,$,((1,3,2),(1,2,4),(2,3,4),(3,1,4)),$);
+#55=IFCCARTESIANPOINTLIST3D(((0.,0.,0.),(1.,0.,0.),(0.,1.,0.),(0.,0.,1.)));
+ENDSEC;
+END-ISO-10303-21;
+)";
+    CHECK(bim::parseIfc(mini, m, err));
+    CHECK(std::abs(m.unitScale - 0.3048) < 1e-12 && m.georef && m.elements.size() == 2);
+    const double ft = 0.3048;
+    const auto& box = m.elements[0];
+    CHECK(std::abs(box.volume - 10 * 5 * 2 * ft * ft * ft) < 1e-9);
+    // (10 ft, 0) nuqta: 30° burilib, E/N ga siljigan (xarita birligi — metr)
+    bool corner = false;
+    for (const auto& t : box.parts[0].tris)
+        for (const auto& q : t)
+            if (q.equals({500000 + 10 * ft * 0.8660254037844387, 4500000 + 10 * ft * 0.5, 400}, 1e-6)) corner = true;
+    CHECK(corner);
+    CHECK(std::abs(m.elements[1].volume - ft * ft * ft / 6.0) < 1e-9);   // tetraedr — Closed berilmagan, lekin yopiq
+    CHECK(bim::parseIfc(mini, m, err, false) && !m.georef && m.box.min.equals({0, 0, 0}, 1e-9));
+    (void)base;
+}
+
+TEST(ifc_cli_and_ifczip) {
+    const auto s = runScript("uz", {"IFC \"" + dataPath("revit_sinov.ifc") + "\""});
+    CHECK(s.find("IFC IFC4, dastur: Autodesk Revit 2024 (sinov), yozuvlar: 144") != std::string::npos);
+    CHECK(s.find("Qavat \xC2\xAB\xD0\xAD\xD1\x82\xD0\xB0\xD0\xB6 1\xC2\xBB +0.000 m \xE2\x80\x94 4 ta element") != std::string::npos);
+    CHECK(s.find("Devor: 1 ta \xE2\x80\x94 3.060 m\xC2\xB3") != std::string::npos);
+    CHECK(s.find("Armatura: 1 ta \xE2\x80\x94 2.31 m, 2.1 kg") != std::string::npos);
+    const auto r = runScript("ru", {"IFC \"" + dataPath("yoq.ifc") + "\""});
+    CHECK(r.find("Не удалось открыть файл IFC") != std::string::npos);
+    // .ifczip (deflate)
+    const std::string zip = xlsx::zip::build({{"model/a.ifc", slurp(dataPath("revit_sinov.ifc"))}});
+    const auto tmp = std::filesystem::temp_directory_path() / "asiacad_sinov.ifczip";
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        f << zip;
+    }
+    bim::IfcModel m;
+    std::string err;
+    CHECK(bim::readIfc(tmp.string(), m, err) && m.elements.size() == 6);
+    std::filesystem::remove(tmp);
 }
 
 int main() {

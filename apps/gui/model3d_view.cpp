@@ -1,5 +1,7 @@
 #include "model3d_view.h"
 
+#include <unordered_map>
+
 #include <QContextMenuEvent>
 #include <QFileDialog>
 #include <QHBoxLayout>
@@ -526,6 +528,54 @@ void Model3DView::addTriangles(const civil::DriveScene& sc, double alpha) {
         seg(line_, L({s.a.x, s.a.y, s.a.z}), L({s.b.x, s.b.y, s.b.z}), c, 255);
     }
     faces_ += static_cast<int>(sc.tris.size() / 2 + 1);
+    if (autoObj) endObject();
+}
+
+void Model3DView::addMesh(const std::vector<std::array<Vec3, 3>>& tris, const QColor& c, int alpha, bool edges) {
+    if (tris.empty()) return;
+    if (!haveOrigin_) {
+        const auto& p = tris.front()[0];
+        ox_ = p.x; oy_ = p.y; oz_ = p.z;
+        haveOrigin_ = true;
+    }
+    const bool autoObj = cur_ < 0;
+    if (autoObj) beginObject({}, {});
+    struct EdgeInfo { QVector3D a, b, n; int count = 0; bool sharp = false; };
+    std::unordered_map<std::uint64_t, EdgeInfo> em;
+    auto vkey = [](const QVector3D& v) {
+        auto q = [](float f) { return static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(double(f) * 2000.0)) & 0x1FFFFF); };
+        return (q(v.x()) << 42) | (q(v.y()) << 21) | q(v.z());
+    };
+    const bool doEdges = edges && tris.size() < 400000;
+    if (doEdges) em.reserve(tris.size() * 2);
+    for (const auto& t : tris) {
+        const QVector3D a = L({t[0].x, t[0].y, t[0].z}), b = L({t[1].x, t[1].y, t[1].z}), cc = L({t[2].x, t[2].y, t[2].z});
+        QVector3D n = QVector3D::crossProduct(b - a, cc - a);
+        if (n.lengthSquared() < 1e-20f) continue;
+        n.normalize();
+        tri(a, b, cc, c, alpha);
+        if (!doEdges) continue;
+        const QVector3D* v[3] = {&a, &b, &cc};
+        for (int i = 0; i < 3; ++i) {
+            const QVector3D& p = *v[i];
+            const QVector3D& q = *v[(i + 1) % 3];
+            std::uint64_t k1 = vkey(p), k2 = vkey(q);
+            if (k1 == k2) continue;
+            if (k1 > k2) std::swap(k1, k2);
+            const std::uint64_t key = k1 * 0x9E3779B97F4A7C15ull ^ (k2 + 0x632BE59BD9B4E019ull + (k1 << 6) + (k1 >> 2));
+            auto& e = em[key];
+            if (e.count == 0) { e.a = p; e.b = q; e.n = n; }
+            else if (std::abs(QVector3D::dotProduct(e.n, n)) < 0.906f) e.sharp = true;   // ~25°
+            ++e.count;
+        }
+    }
+    if (doEdges) {
+        const QColor edgeC = dark_ ? QColor(15, 18, 24) : QColor(40, 44, 52);
+        const int ea = alpha < 255 ? std::max(40, alpha / 2) : 200;
+        for (const auto& [k, e] : em)
+            if (e.count == 1 || e.sharp) seg(edge_, e.a, e.b, edgeC, ea);
+    }
+    faces_ += static_cast<int>(tris.size() / 2 + 1);
     if (autoObj) endObject();
 }
 

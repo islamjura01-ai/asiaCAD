@@ -1,5 +1,5 @@
 // AsiaCAD — grafik interfeys (Qt 6)
-//   asiacad-gui [fayl.acad|fayl.dxf] [--lang uz] [--mode classic|module|focus] [--i18n papka]
+//   asiacad-gui [fayl.acad|fayl.dxf|model.ifc] [--ifc model.ifc]... [--lang uz] [--mode classic|module|focus] [--i18n papka]
 // Sinov/hujjat uchun:
 //   --screenshot out.png [--size 1440x900] [--select-all] [--tool line] [--point x,y]... [--cursor x,y]
 //   [--cmd "LINE 0,0 10,10"]...
@@ -95,6 +95,8 @@ int main(int argc, char** argv) {
     bool ortho = false, polar = false;
     QStringList points;
     QStringList cmds;
+    QStringList ifcFiles;
+    bool ifcPanelShot = false;
     bool selectAll = false;
     const QStringList args = app.arguments();
     for (int i = 1; i < args.size(); ++i) {
@@ -148,6 +150,9 @@ int main(int argc, char** argv) {
         else if (a == "--sewer-tpl") sewerTpl = next();
         else if (a == "--ortho") ortho = true;
         else if (a == "--polar") polar = true;
+        else if (a == "--ifc") ifcFiles << next();              // IFC model(lar) -> 3D (bir necha marta)
+        else if (a == "--ifc-panel") ifcPanelShot = true;        // skrinshot: IFC modellar oynasi
+        else if (a.endsWith(".ifc", Qt::CaseInsensitive) || a.endsWith(".ifczip", Qt::CaseInsensitive)) ifcFiles << a;   // "Bilan ochish"
         else file = a;
     }
     const bool persist = shot.isEmpty();   // skrinshot/avtomatik ishga tushirishda saqlangan holat ishlatilmaydi
@@ -180,10 +185,15 @@ int main(int argc, char** argv) {
     else w.show();
     if (!file.isEmpty()) w.runLine(QStringLiteral("OPEN \"%1\" !").arg(QFileInfo(file).absoluteFilePath()));
     for (const auto& c : cmds) w.runLine(c);
+    if (!ifcFiles.isEmpty()) {
+        QStringList abs;
+        for (const auto& f : ifcFiles) abs << QFileInfo(f).absoluteFilePath();
+        QTimer::singleShot(0, &w, [&w, abs, show = shot.isEmpty() || ifcPanelShot] { w.importIfc(abs, show); });
+    }
 
     if (!shot.isEmpty()) {
-        QTimer::singleShot(300, &w, [&] {
-            w.viewport()->zoomExtents();
+        QTimer::singleShot(ifcFiles.isEmpty() ? 300 : 1500, &w, [&] {
+            if (ifcFiles.isEmpty()) w.viewport()->zoomExtents();
             if (const auto v = viewArg.split(','); v.size() == 3) w.viewport()->setView({v[0].toDouble(), v[1].toDouble(), 0}, v[2].toDouble());
             if (selectAll) w.viewport()->setSelection(w.document().ids());
             if (select.contains(':')) w.selectTag(select);  // masalan: sewer:K1:seg:1
@@ -304,7 +314,8 @@ int main(int argc, char** argv) {
                     (surveyKind >= 0 && tl->isVisible() && tl->inherits("asiacad::gui::SurveyDialog")) ||
                     (earthTab >= 0 && tl->isVisible() && tl->inherits("asiacad::gui::EarthworkDialog")) ||
                     (drive && tl->isVisible() && tl->inherits("asiacad::gui::DriveDialog")) ||
-                    ((!scratch.isEmpty() || tplPage >= 0 || geoDlg) && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")))
+                    ((!scratch.isEmpty() || tplPage >= 0 || geoDlg) && tl->isVisible() && tl->inherits("asiacad::gui::GenBase")) ||
+                    (ifcPanelShot && tl->isVisible() && tl->inherits("asiacad::gui::IfcPanel")))
                     target = tl;
             QPixmap pm = target->grab();
             {   // OpenGL 3D oynalar: grab() ustki chizmani (ViewCube, yozuvlar) olmaydi — framebuffer + tugmalar paneli ustidan

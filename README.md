@@ -612,3 +612,22 @@ tests/gui_smoke.cpp        ekransiz tutun testi (ctest: gui)
   Lenta "Tahrir" guruhida kichik tugmalar; o'lchamlar alohida "O'lcham" varag'ida; lenta butun oyna kengligida.
 - Skrinshot/sinov rejimi: `asiacad-gui fayl.acad --mode focus --lang ru --tool line --point 0,0 --cursor 10,5 --screenshot out.png`
   (`--select 8 --grip 8,3 --polar --ortho --value 3` ham bor).
+
+## IFC import (v0.32) — `src/bim/ifc.*`, `apps/gui/ifc_panel.*`, `IFC` buyrug'i
+
+Revit, ArchiCAD, Tekla, SketchUp, Allplan, Renga eksportlari (IFC2X3, IFC4, IFC4X3; `.ifc`, `.ifczip`) tashqi kutubxonasiz o'qiladi.
+
+* **Ochish:** Fayl › Almashinuv › *IFC import*, Konstruksiya › BIM model, «Fayl ochish» oynasi (`.ifc`), bo'sh 3D sahnadagi
+  *IFC modelni ochish* tugmasi, buyruq satri: `IFC model.ifc [MAHALLIY]`, `asiacad-gui model.ifc` (Windows «Bilan ochish»).
+* **Geometriya:** ekstruziya (to'rtburchak, doira, I/L/U/T/C/Z profillar, ixtiyoriy kontur + teshiklar, IfcIndexedPolyCurve yoylari),
+  aylanish jismi, IfcFacetedBrep / AdvancedBrep (tekis qirralar), sirt modellari, IfcTriangulatedFaceSet / IfcPolygonalFaceSet,
+  IfcMappedItem (tip geometriyasi), IfcBlock / silindr, armatura — IfcSweptDiskSolid (quvur sifatida).
+* **Kesishlar:** IfcBooleanClippingResult (yarim fazo, chegaralangan yarim fazo — Revit/ArchiCAD tom ostidagi devorlar) va
+  teshiklar (IfcRelVoidsElement) — qavariq bo'laklar usuli bilan aniq ayiriladi: tirqish yuzalari quriladi, hajm netto
+  (AC20-FZK-Haus: 17 teshikning hammasi kesiladi; 13 devordan 9 tasi hajmi ArchiCAD NetVolume bilan aynan mos, qolganlarida farq ≤ 0.011 m³).
+* **Ma'lumotlar:** qavatlar (belgisi), material (qatlamlar to'plami, profil, tarkib), rang/shaffoflik (IfcStyledItem,
+  material ko'rinishi), Pset/Qto xossalari, GUID, Tag; birliklar mm / m / fut; IfcMapConversion — xarita (UTM) koordinatalari.
+* **3D:** har element alohida obyekt (tanlash — xossalar), toifalar (Devor, Plita, Ustun, ...) bo'yicha yashirish, xonalar boshida yashirin.
+* **IFC modellar oynasi:** modellar va qavatlar (belgilash — ko'rinish), tur bo'yicha soni / hajm / armatura (PTO), qavat tanlansa —
+  shu qavat bo'yicha; *Excelga (PTO)* — Jamlama, Qavatlar, Elementlar varaqlari.
+* Tezlik: 41 MB, 36 000 element, 2.3 mln uchburchak — 1.7 s (o'qish fon oqimida, oyna qotmaydi).

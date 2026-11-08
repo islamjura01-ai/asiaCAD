@@ -13,6 +13,7 @@
 #include "survey_dialog.h"
 #include "earthwork_dialog.h"
 #include "model3d_view.h"
+#include "ifc_panel.h"
 #include "sheet_view.h"
 #include "smart_panel.h"
 #include <QStackedWidget>
@@ -27,6 +28,8 @@
 #include <asiacad/core/entities.h>
 
 #include <functional>
+#include <atomic>
+#include <thread>
 
 #include <QAction>
 #include <QActionGroup>
@@ -56,6 +59,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -155,6 +159,7 @@ const ActDef kActs[] = {
     {"projset", "projset", "gui.act.projset", false},
     {"recent", "recent", "gui.act.recent", false},
     {"kjimport", "rebar+imp", "gui.act.kjimport", false}, {"bimimport", "bim+imp", "gui.act.bimimport", false},
+    {"ifcimport", "ifc+imp", "gui.act.ifcimport", false}, {"ifcpanel", "ifctree", "gui.act.ifcpanel", false},
     {"view2d", "view2d", "gui.act.view2d", false},
     {"cam3d", "camera", "gui.act.cam3d", false},  {"cut3d", "cut", "gui.act.cut3d", false},
     {"cats3d", "cats", "gui.act.cats3d", false},
@@ -605,6 +610,14 @@ void MainWindow::buildActions() {
             bd->drawings()->addFile(f, foundRx.match(base).hasMatch() ? QStringLiteral("FOUND") : QStringLiteral("PLAN"), from, to);
         }
     });
+    // IFC: Revit / ArchiCAD / Tekla / SketchUp modeli -> 3D (qavatlar, materiallar, xossalar, PTO)
+    connect(act_["ifcimport"], &QAction::triggered, this, [this] {
+        const QStringList files = QFileDialog::getOpenFileNames(this, t("gui.act.ifcimport"), lastDir_, t("gui.ifc.filter"));
+        if (files.isEmpty()) return;
+        lastDir_ = QFileInfo(files.front()).absolutePath();
+        importIfc(files);
+    });
+    connect(act_["ifcpanel"], &QAction::triggered, this, [this] { openIfcPanel(); });
     connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
     connect(act_["road"], &QAction::triggered, this, [this] { openRoad(); });
     connect(act_["waterway"], &QAction::triggered, this, [this] { openWaterway(); });
@@ -811,7 +824,7 @@ void MainWindow::buildRibbon() {
     struct Page { const char* title; std::vector<Group> groups; };
     const std::vector<Page> pages = {
         {"gui.tab.file", {{"gui.grp.document", {"new", "open", "recent", "save", "saveas"}},
-                          {"gui.grp.exchange", {"import", "export"}, {"bimimport", "kjimport"}},
+                          {"gui.grp.exchange", {"import", "export"}, {"ifcimport", "bimimport", "kjimport"}},
                           {"gui.grp.project", {"projset"}}}},
         {"gui.tab.draw", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch"}, true},
                           {"gui.grp.textsym", {"text", "symbols"}},
@@ -832,6 +845,7 @@ void MainWindow::buildRibbon() {
         {"gui.tab.struct", {{"gui.grp.steelkm", {"steelframe", "steel"}},
                             {"gui.grp.elements", {"stairtpl", "ramptpl", "rwalltpl"}},
                             {"gui.grp.concrete", {"building", "rebar"}},
+                            {"gui.grp.bim", {"ifcimport", "ifcpanel"}},
                             {"gui.grp.import", {"bimimport", "kjimport"}},
                             {"gui.grp.district", {"city"}}}},
         {"gui.tab.view", {{"gui.grp.model", {"view2d", "view3d"}},
@@ -842,7 +856,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
         {"gui.tab.analyze", {{"gui.grp.volume", {"ewvolume"}},
                              {"gui.grp.check", {"dist", "area", "list"}},
-                             {"gui.grp.reports", {"steelspec"}}}},
+                             {"gui.grp.reports", {"steelspec", "ifcpanel"}}}},
     };
     // Ochiladigan menyuli tugmalar (3D kamera, kesim, toifalar)
     auto menuFor = [this](const QString& key, QToolButton* b) {
@@ -855,10 +869,14 @@ void MainWindow::buildRibbon() {
                 if (recent_.isEmpty()) m->addAction(t("gui.recent.none"))->setEnabled(false);
                 for (const QString& f : recent_) {
                     const QFileInfo fi(f);
-                    auto* a = m->addAction(makeIcon("open", theme_.lightCanvas ? QColor("#2B2118") : QColor("#D5DEF3")),
+                    const bool isIfc = f.endsWith(".ifc", Qt::CaseInsensitive) || f.endsWith(".ifczip", Qt::CaseInsensitive);
+                    auto* a = m->addAction(makeIcon(isIfc ? "ifc" : "open", theme_.lightCanvas ? QColor("#2B2118") : QColor("#D5DEF3")),
                                            fi.fileName() + QStringLiteral("    ") + fi.absolutePath());
                     a->setEnabled(fi.exists());
-                    connect(a, &QAction::triggered, this, [this, f] { if (maybeSave()) runLine(QStringLiteral("OPEN \"%1\" !").arg(f)); });
+                    connect(a, &QAction::triggered, this, [this, f, isIfc] {
+                        if (isIfc) importIfc({f});
+                        else if (maybeSave()) runLine(QStringLiteral("OPEN \"%1\" !").arg(f));
+                    });
                 }
                 if (!recent_.isEmpty()) {
                     m->addSeparator();
@@ -2489,6 +2507,46 @@ void MainWindow::rebuild3D(bool keepView) {
             view3d_->endObject();
         }
     }
+    // IFC modellari (har element — alohida obyekt: tanlash, xossalar, toifa bo'yicha yashirish)
+    for (const auto& L : ifc_) {
+        if (!L.visible || !L.model) continue;
+        const auto& m = *L.model;
+        std::size_t total = 0;
+        for (const auto& e : m.elements) total += e.triangleCount();
+        const bool edges = total < 1500000;   // juda katta modelda qirralar o'chiriladi (tezlik)
+        for (const auto& e : m.elements) {
+            if (L.hiddenStoreys.count(e.storey)) continue;
+            const QString cat = t((std::string("ifc.cat.") + bim::ifcCategory(e.type)).c_str());
+            QStringList props;
+            props << t("gui.ifc.p.type", {QString::fromStdString(e.type)});
+            if (e.storey >= 0 && e.storey < static_cast<int>(m.storeys.size())) {
+                const auto& st = m.storeys[static_cast<std::size_t>(e.storey)];
+                props << t("gui.ifc.p.storey", {QString::fromStdString(st.name), QString::number(st.elevation, 'f', 3)});
+            }
+            if (!e.material.empty()) props << t("gui.ifc.p.material", {QString::fromStdString(e.material)});
+            if (e.volume > 0 && bim::ifcCategory(e.type) != std::string("SPACE")) props << t("gui.v3d.p.volume", {QString::number(e.volume, 'f', 3)});
+            if (e.barMass > 0) props << t("gui.ifc.p.rebar", {QString::number(e.barLength, 'f', 2), QString::number(e.barMass, 'f', 2)});
+            if (!e.tag.empty()) props << t("gui.ifc.p.tag", {QString::fromStdString(e.tag)});
+            props << QStringLiteral("GUID: ") + QString::fromStdString(e.guid);
+            int np = 0;
+            for (const auto& [k, v] : e.props) {
+                if (++np > 24) break;
+                props << QString::fromStdString(k + ": " + v);
+            }
+            view3d_->beginObject(ifcElementName(loc_, e), cat, props);
+            for (const auto& part : e.parts) {
+                const QColor c(int((part.rgb >> 16) & 255), int((part.rgb >> 8) & 255), int(part.rgb & 255));
+                view3d_->addMesh(part.tris, c, std::clamp(int(std::lround(part.alpha * 255)), 20, 255), edges);
+            }
+            for (const auto& b : e.bars) {
+                std::vector<P3> pts;
+                for (const auto& q : b.first) pts.push_back({q.x, q.y, q.z});
+                const int mm = int(std::lround(b.second * 2000));
+                view3d_->addTube(pts, std::max(0.003, b.second), QColor::fromHsv((mm * 23) % 360, 150, 220), false, 6);
+            }
+            view3d_->endObject();
+        }
+    }
     // koridor
     if (corridor_ && corridor_->model().sec.size() >= 2) {
         view3d_->beginObject(t("gui.act.corridor"), t("gui.act.corridor"));
@@ -3019,9 +3077,96 @@ bool MainWindow::maybeSave() {
 }
 
 void MainWindow::openFile() {
+    // IFC ham shu oynadan: chizma emas — 3D modelga qo'shiladi (joriy chizma yopilmaydi)
+    const QString filter = t("gui.filter.open") + ";;" + t("gui.filter.drawings") + ";;" + t("gui.ifc.filter");
+    const QString f = QFileDialog::getOpenFileName(this, t("gui.act.open"), lastDir_, filter);
+    if (f.isEmpty()) return;
+    lastDir_ = QFileInfo(f).absolutePath();
+    if (f.endsWith(".ifc", Qt::CaseInsensitive) || f.endsWith(".ifczip", Qt::CaseInsensitive)) {
+        importIfc({f});
+        return;
+    }
     if (!maybeSave()) return;
-    const QString f = QFileDialog::getOpenFileName(this, t("gui.act.open"), {}, t("gui.filter.drawings"));
-    if (!f.isEmpty()) runLine(QStringLiteral("OPEN \"%1\" !").arg(f));
+    runLine(QStringLiteral("OPEN \"%1\" !").arg(f));
+}
+
+int MainWindow::importIfc(const QStringList& files, bool showPanel) {
+    int ok = 0;
+    QStringList errors;
+    for (const QString& f : files) {
+        auto model = std::make_shared<bim::IfcModel>();
+        std::string err;
+        std::atomic<bool> done{false};
+        bool res = false;
+        // katta fayl (100+ MB) — o'qish fon oqimida, oyna qotmaydi
+        std::thread th([&] {
+            res = bim::readIfc(f.toStdString(), *model, err);
+            done = true;
+        });
+        QProgressDialog pd(t("gui.ifc.reading", {QFileInfo(f).fileName()}), QString(), 0, 0, this);
+        pd.setWindowTitle(t("gui.act.ifcimport"));
+        pd.setWindowModality(Qt::WindowModal);
+        pd.setMinimumDuration(400);
+        pd.setCancelButton(nullptr);
+        while (!done) {
+            QApplication::processEvents(QEventLoop::AllEvents, 30);
+            std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        }
+        th.join();
+        pd.close();
+        if (!res) {
+            errors << t(err.c_str(), {QDir::toNativeSeparators(f)});
+            continue;
+        }
+        // shu fayl qayta ochilsa — almashtiriladi
+        const QString abs = QFileInfo(f).absoluteFilePath();
+        auto it = std::find_if(ifc_.begin(), ifc_.end(), [&](const IfcLoaded& L) { return QFileInfo(L.path).absoluteFilePath() == abs; });
+        IfcLoaded L;
+        L.path = abs;
+        L.model = model;
+        if (it != ifc_.end()) *it = L;
+        else ifc_.push_back(L);
+        noteRecent(abs);
+        statusBar()->showMessage(t("gui.ifc.loaded", {QFileInfo(f).fileName(), QString::number(model->elements.size()), QString::number(model->storeys.size())}), 8000);
+        ++ok;
+    }
+    if (!errors.isEmpty()) QMessageBox::warning(this, t("gui.act.ifcimport"), errors.join("\n\n"));
+    if (ok == 0) return 0;
+    show3D(true);
+    rebuild3D(false);
+    view3d_->setCategoryVisible(t("ifc.cat.SPACE"), false);   // xonalar (shaffof hajmlar) — boshida yashirin
+    view3d_->fit();
+    if (ifcPanel_) ifcPanel_->refresh();
+    if (showPanel) {
+        IfcPanel* p = openIfcPanel();
+        p->setCurrent(static_cast<int>(ifc_.size()) - 1);
+    }
+    return ok;
+}
+
+IfcPanel* MainWindow::openIfcPanel() {
+    if (!ifcPanel_) {
+        ifcPanel_ = new IfcPanel(loc_, ifc_, this);
+        ifcPanel_->setStyleSheet(theme_.styleSheet);
+        connect(ifcPanel_, &IfcPanel::addRequested, this, [this] { act_["ifcimport"]->trigger(); });
+        connect(ifcPanel_, &IfcPanel::visibilityChanged, this, [this] { if (is3D()) rebuild3D(true); });
+        connect(ifcPanel_, &IfcPanel::show3DRequested, this, [this] {
+            show3D(true);
+            view3d_->fit();
+        });
+        connect(ifcPanel_, &IfcPanel::removeRequested, this, [this](int i) {
+            if (i < 0 || i >= static_cast<int>(ifc_.size())) return;
+            ifc_.erase(ifc_.begin() + i);
+            ifcPanel_->refresh();
+            if (is3D()) rebuild3D(true);
+        });
+    } else {
+        ifcPanel_->refresh();
+    }
+    ifcPanel_->show();
+    ifcPanel_->raise();
+    ifcPanel_->activateWindow();
+    return ifcPanel_;
 }
 
 void MainWindow::saveFile(bool saveAs) {
@@ -3185,8 +3330,9 @@ void MainWindow::refreshEmpty3D() {
         auto* grid = new QGridLayout;
         grid->setSpacing(8);
         const struct { const char* name; const char* key; const char* icon; } btns[] = {
-            {"emptySample", "gui.empty3d.sample", "bim"}, {"emptyPoints", "gui.empty3d.points", "ptimport"},
-            {"emptyOpen", "gui.empty3d.open", "open"},   {"empty2d", "gui.empty3d.back", "view2d"}};
+            {"emptySample", "gui.empty3d.sample", "bim"}, {"emptyIfc", "gui.empty3d.ifc", "ifc+imp"},
+            {"emptyPoints", "gui.empty3d.points", "ptimport"}, {"emptyOpen", "gui.empty3d.open", "open"},
+            {"empty2d", "gui.empty3d.back", "view2d"}};
         int i = 0;
         for (const auto& b : btns) {
             auto* pb = new QPushButton(empty3d_);
@@ -3203,6 +3349,7 @@ void MainWindow::refreshEmpty3D() {
         lay->addWidget(empty3d_, 0, 0, Qt::AlignCenter);
         connect(empty3d_->findChild<QPushButton*>("emptySample"), &QPushButton::clicked, this, [this] { makeSampleBuilding(); });
         connect(empty3d_->findChild<QPushButton*>("emptyPoints"), &QPushButton::clicked, this, [this] { act_["ptimport"]->trigger(); });
+        connect(empty3d_->findChild<QPushButton*>("emptyIfc"), &QPushButton::clicked, this, [this] { act_["ifcimport"]->trigger(); });
         connect(empty3d_->findChild<QPushButton*>("emptyOpen"), &QPushButton::clicked, this, [this] { openFile(); });
         connect(empty3d_->findChild<QPushButton*>("empty2d"), &QPushButton::clicked, this, [this] { show3D(false); });
     }

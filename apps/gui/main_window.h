@@ -12,6 +12,7 @@
 #include <asiacad/core/document.h>
 #include <asiacad/i18n/localizer.h>
 #include "interpreter.h"
+#include "ifc_panel.h"
 
 #include <QHash>
 #include <QMainWindow>
@@ -44,6 +45,7 @@ class CommandPalette;
 class SewerDialog;
 class BuildingDialog;
 class RebarDialog;
+class IfcPanel;
 class UtilityDialog;
 class RoadDialog;
 class WaterwayDialog;
@@ -85,6 +87,10 @@ public:
     SewerDialog* openSewer();               // "Kanalizatsiya" menyusi (bitta nusxa, modal emas)
     BuildingDialog* openBuilding();         // "Monolit bino" menyusi
     RebarDialog* openRebar();               // "Armatura 3D" menyusi
+    // IFC (Revit, ArchiCAD, Tekla, SketchUp...): fayllarni o'qib 3D ga qo'shish; muvaffaqiyatli yuklanganlar soni
+    int importIfc(const QStringList& files, bool showPanel = true);
+    IfcPanel* openIfcPanel();
+    const std::vector<IfcLoaded>& ifcModels() const { return ifc_; }
     UtilityDialog* openUtility();           // "Yer osti tarmoqlari 3D" menyusi
     RoadDialog* openRoad();                 // "Yo'l 3D" menyusi
     WaterwayDialog* openWaterway();         // "Suv yo'li" menyusi (quvur, kanal, ariq, lotok)
@@ -170,6 +176,8 @@ private:
     SewerDialog* sewer_ = nullptr;
     BuildingDialog* building_ = nullptr;
     RebarDialog* rebar_ = nullptr;
+    std::vector<IfcLoaded> ifc_;
+    IfcPanel* ifcPanel_ = nullptr;
     UtilityDialog* util_ = nullptr;
     RoadDialog* road_ = nullptr;
     WaterwayDialog* waterway_ = nullptr;

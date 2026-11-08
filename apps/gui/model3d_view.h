@@ -18,6 +18,7 @@
 #include <QOpenGLShaderProgram>
 #include <QOpenGLWidget>
 
+#include <array>
 #include <functional>
 #include <map>
 #include <memory>
@@ -54,6 +55,8 @@ public:
     void addPolyline(const std::vector<P3>& pts, const QColor& c, double widthPx, bool closed = false);
     void addTube(const std::vector<P3>& pts, double radius, const QColor& c, bool closed = false, int sides = 6);
     void addTriangles(const civil::DriveScene& sc, double alpha = 1.0);   // Haydash sahnasi (yuzalar + chiziqlar)
+    // Uchburchaklar to'ri (IFC elementlari): qirralar — chegara va burilish > ~25° (tekis yuza diagonallari ko'rsatilmaydi)
+    void addMesh(const std::vector<std::array<Vec3, 3>>& tris, const QColor& c, int alpha = 255, bool edges = true);
     void addLabel(const P3& at, const QString& text);
     void endScene(bool keepView = false);
     void setEmptyText(const QString& t) { empty_ = t; update(); }

@@ -953,7 +953,7 @@
     "gui.ds.scale": "Единицы",
     "gui.ds.add": "+ Добавить чертёж…",
     "gui.ds.remove": "− Убрать",
-    "gui.ds.filter": "Чертежи (*.dxf *.acad)",
+    "gui.ds.filter": "Чертежи (*.dwg *.dxf *.acad)",
     "gui.ds.auto": "Авто",
     "gui.ds.none": "Отдельные чертежи не добавлены — используется текущий чертёж",
     "gui.ds.status": "Загружено чертежей: {0}, ошибок {1}",
@@ -2395,6 +2395,9 @@
     "gui.btn.ignore": "Пропустить",
     "gui.layers.tip.on": "Видимость",
     "gui.layers.tip.frz": "Заморожен",
-    "gui.layers.tip.lck": "Заблокирован (не редактируется)"
+    "gui.layers.tip.lck": "Заблокирован (не редактируется)",
+    "gui.act.kjimport": "Импорт КЖ",
+    "gui.act.bimimport": "Импорт опалубки",
+    "gui.grp.import": "Из чертежей"
   }
 }

@@ -1,4 +1,5 @@
 #include <asiacad/civil/drawset.h>
+#include <asiacad/io/dwg_bridge.h>
 
 #include <asiacad/core/entities.h>
 #include <asiacad/core/error.h>
@@ -46,7 +47,10 @@ LoadedSheet loadSheet(const SheetFile& f) {
         } else {
             DxfImportOptions opt;
             opt.explodeInserts = true;
-            auto r = readDxfFile(f.path, opt);
+            // DWG (KJ, qolip planlari ko'pincha DWG da) — ODA File Converter / LibreDWG orqali vaqtinchalik DXF ga
+            std::string src = f.path;
+            if (ext.size() == 5 && ext.substr(1) == ".dwg") src = dwg::toDxf(f.path);
+            auto r = readDxfFile(src, opt);
             ins = r.insUnits;
             textH = r.medianTextHeight;
             ls.dims = std::move(r.dims);

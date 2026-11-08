@@ -953,7 +953,7 @@
     "gui.ds.scale": "Бирдик",
     "gui.ds.add": "+ Чийме кошуу…",
     "gui.ds.remove": "− Алып салуу",
-    "gui.ds.filter": "Чиймелер (*.dxf *.acad)",
+    "gui.ds.filter": "Чиймелер (*.dwg *.dxf *.acad)",
     "gui.ds.auto": "Авто",
     "gui.ds.none": "Өзүнчө чиймелер жок — учурдагы чийме",
     "gui.ds.status": "{0} чийме, ката {1}",
@@ -2395,6 +2395,9 @@
     "gui.btn.ignore": "Көңүл бурбоо",
     "gui.layers.tip.on": "Көрүнөт / жашыруун",
     "gui.layers.tip.frz": "Тоңдурулган",
-    "gui.layers.tip.lck": "Кулпуланган (оңдолбойт)"
+    "gui.layers.tip.lck": "Кулпуланган (оңдолбойт)",
+    "gui.act.kjimport": "КЖ импорт",
+    "gui.act.bimimport": "Калып импорту",
+    "gui.grp.import": "Чиймеден"
   }
 }

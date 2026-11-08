@@ -953,7 +953,7 @@
     "gui.ds.scale": "Бірлік",
     "gui.ds.add": "+ Сызба қосу…",
     "gui.ds.remove": "− Алып тастау",
-    "gui.ds.filter": "Сызбалар (*.dxf *.acad)",
+    "gui.ds.filter": "Сызбалар (*.dwg *.dxf *.acad)",
     "gui.ds.auto": "Авто",
     "gui.ds.none": "Бөлек сызбалар жоқ — ағымдағы сызба",
     "gui.ds.status": "{0} сызба, қате {1}",
@@ -2395,6 +2395,9 @@
     "gui.btn.ignore": "Елемеу",
     "gui.layers.tip.on": "Көрінеді / жасырын",
     "gui.layers.tip.frz": "Мұздатылған",
-    "gui.layers.tip.lck": "Құлыпталған (өңделмейді)"
+    "gui.layers.tip.lck": "Құлыпталған (өңделмейді)",
+    "gui.act.kjimport": "КЖ импорт",
+    "gui.act.bimimport": "Қалып импорты",
+    "gui.grp.import": "Сызбадан"
   }
 }

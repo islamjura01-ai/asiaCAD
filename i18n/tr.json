@@ -953,7 +953,7 @@
     "gui.ds.scale": "Birim",
     "gui.ds.add": "+ Çizim ekle…",
     "gui.ds.remove": "− Kaldır",
-    "gui.ds.filter": "Çizimler (*.dxf *.acad)",
+    "gui.ds.filter": "Çizimler (*.dwg *.dxf *.acad)",
     "gui.ds.auto": "Otomatik",
     "gui.ds.none": "Ayrı çizim eklenmedi — mevcut çizim kullanılır",
     "gui.ds.status": "{0} çizim yüklendi, hata {1}",
@@ -2395,6 +2395,9 @@
     "gui.btn.ignore": "Yoksay",
     "gui.layers.tip.on": "Görünür / gizli",
     "gui.layers.tip.frz": "Dondurulmuş",
-    "gui.layers.tip.lck": "Kilitli (düzenlenemez)"
+    "gui.layers.tip.lck": "Kilitli (düzenlenemez)",
+    "gui.act.kjimport": "KJ (betonarme) içe aktar",
+    "gui.act.bimimport": "Kalıp planı içe aktar",
+    "gui.grp.import": "Çizimden"
   }
 }

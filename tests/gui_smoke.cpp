@@ -181,6 +181,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < rb->count(); ++i) pages << rb->widget(i)->property("i18n").toString();
         CHECK(pages == QStringList({"gui.tab.file", "gui.tab.draw", "gui.tab.annot", "gui.tab.survey", "gui.tab.networks",
                                     "gui.tab.struct", "gui.tab.view", "gui.tab.analyze"}));
+        auto act_key = [](QAction* a) { return a->objectName().mid(4); };   // "act_kjimport" -> "kjimport"
         QHash<QAction*, int> uses;
         for (auto* b : rb->findChildren<QToolButton*>())
             if (b->defaultAction()) uses[b->defaultAction()]++;
@@ -188,7 +189,8 @@ int main(int argc, char** argv) {
         for (auto it = uses.cbegin(); it != uses.cend(); ++it) {
             const QString icon = it.key()->data().toString();
             if (icon == "undo" || icon == "redo" || icon == "search") undoInRibbon += it.value();
-            if (it.value() > 1 && icon != "text") ++dup;   // matn: Chizish va Annotatsiyada (ataylab)
+            const QString key = act_key(it.key());
+            if (it.value() > 1 && key != "text" && key != "kjimport" && key != "bimimport") ++dup;   // ataylab ikki joyda: matn; KJ/qolip importi (Fayl va Konstruksiya)
         }
         CHECK(undoInRibbon == 0 && dup == 0);
         QStringList qat;

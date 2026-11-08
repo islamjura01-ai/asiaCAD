@@ -953,7 +953,7 @@
     "gui.ds.scale": "Birlik",
     "gui.ds.add": "+ Chizma qoʻshish…",
     "gui.ds.remove": "− Olib tashlash",
-    "gui.ds.filter": "Chizmalar (*.dxf *.acad)",
+    "gui.ds.filter": "Chizmalar (*.dwg *.dxf *.acad)",
     "gui.ds.auto": "Avto",
     "gui.ds.none": "Alohida chizmalar qoʻshilmagan — joriy chizma ishlatiladi",
     "gui.ds.status": "{0} ta chizma yuklandi, xato {1}",
@@ -2395,6 +2395,9 @@
     "gui.btn.ignore": "Eʼtiborsiz qoldirish",
     "gui.layers.tip.on": "Koʻrinadi / yashirin",
     "gui.layers.tip.frz": "Muzlatilgan",
-    "gui.layers.tip.lck": "Qulflangan (tahrirlab boʻlmaydi)"
+    "gui.layers.tip.lck": "Qulflangan (tahrirlab boʻlmaydi)",
+    "gui.act.kjimport": "KJ import",
+    "gui.act.bimimport": "Qolip import",
+    "gui.grp.import": "Chizmadan"
   }
 }

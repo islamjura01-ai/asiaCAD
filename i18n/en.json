@@ -953,7 +953,7 @@
     "gui.ds.scale": "Units",
     "gui.ds.add": "+ Add drawing…",
     "gui.ds.remove": "− Remove",
-    "gui.ds.filter": "Drawings (*.dxf *.acad)",
+    "gui.ds.filter": "Drawings (*.dwg *.dxf *.acad)",
     "gui.ds.auto": "Auto",
     "gui.ds.none": "No separate drawings — the current drawing is used",
     "gui.ds.status": "{0} drawings loaded, errors {1}",
@@ -2395,6 +2395,9 @@
     "gui.btn.ignore": "Ignore",
     "gui.layers.tip.on": "Visible / hidden",
     "gui.layers.tip.frz": "Frozen",
-    "gui.layers.tip.lck": "Locked (not editable)"
+    "gui.layers.tip.lck": "Locked (not editable)",
+    "gui.act.kjimport": "Import KJ",
+    "gui.act.bimimport": "Import formwork",
+    "gui.grp.import": "From drawings"
   }
 }

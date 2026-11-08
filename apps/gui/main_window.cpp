@@ -154,6 +154,7 @@ const ActDef kActs[] = {
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
     {"projset", "projset", "gui.act.projset", false},
     {"recent", "recent", "gui.act.recent", false},
+    {"kjimport", "rebar+imp", "gui.act.kjimport", false}, {"bimimport", "bim+imp", "gui.act.bimimport", false},
     {"view2d", "view2d", "gui.act.view2d", false},
     {"cam3d", "camera", "gui.act.cam3d", false},  {"cut3d", "cut", "gui.act.cut3d", false},
     {"cats3d", "cats", "gui.act.cats3d", false},
@@ -536,6 +537,7 @@ void MainWindow::buildActions() {
     for (const auto& d : kActs) {
         auto* a = new QAction(this);
         a->setData(QString::fromLatin1(d.icon));
+        a->setObjectName(QStringLiteral("act_") + QString::fromLatin1(d.key));
         act_.insert(d.key, a);
         if (d.tool) {
             a->setCheckable(true);
@@ -578,6 +580,31 @@ void MainWindow::buildActions() {
     connect(act_["asbuilt"], &QAction::triggered, this, [this] { asBuiltDialog(); });
     connect(act_["building"], &QAction::triggered, this, [this] { openBuilding(); });
     connect(act_["rebar"], &QAction::triggered, this, [this] { openRebar(); });
+    // KJ import: bitta KJ fayl (qolip + armatura, barcha varaqlar) yoki alohida KJ varaqlari → Armatura 3D, KJ manbai
+    connect(act_["kjimport"], &QAction::triggered, this, [this] {
+        const QStringList files = QFileDialog::getOpenFileNames(this, t("gui.act.kjimport"), lastDir_, t("gui.ds.filter"));
+        if (files.isEmpty()) return;
+        lastDir_ = QFileInfo(files.front()).absolutePath();
+        RebarDialog* rd = openRebar();
+        rd->setSourceKj(true);
+        for (const QString& f : files) rd->drawings()->addFile(f, files.size() == 1 ? QStringLiteral("PROJECT") : QStringLiteral("SLAB"));
+        rd->recomputeNow();
+    });
+    // Bino qolip chizmalari: fundament plani + qavat qolip planlari → Monolit bino 3D (fayl nomidan rol taxmin qilinadi)
+    connect(act_["bimimport"], &QAction::triggered, this, [this] {
+        const QStringList files = QFileDialog::getOpenFileNames(this, t("gui.act.bimimport"), lastDir_, t("gui.ds.filter"));
+        if (files.isEmpty()) return;
+        lastDir_ = QFileInfo(files.front()).absolutePath();
+        BuildingDialog* bd = openBuilding();
+        static const QRegularExpression foundRx(QStringLiteral("fund|фунд|temel|found"), QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression floorRx(QStringLiteral("(\\d+)\\D+(\\d+)"));
+        for (const QString& f : files) {
+            const QString base = QFileInfo(f).completeBaseName();
+            int from = 1, to = 1;
+            if (const auto m = floorRx.match(base); m.hasMatch()) { from = m.captured(1).toInt(); to = std::max(from, m.captured(2).toInt()); }
+            bd->drawings()->addFile(f, foundRx.match(base).hasMatch() ? QStringLiteral("FOUND") : QStringLiteral("PLAN"), from, to);
+        }
+    });
     connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
     connect(act_["road"], &QAction::triggered, this, [this] { openRoad(); });
     connect(act_["waterway"], &QAction::triggered, this, [this] { openWaterway(); });
@@ -784,7 +811,7 @@ void MainWindow::buildRibbon() {
     struct Page { const char* title; std::vector<Group> groups; };
     const std::vector<Page> pages = {
         {"gui.tab.file", {{"gui.grp.document", {"new", "open", "recent", "save", "saveas"}},
-                          {"gui.grp.exchange", {"import", "export"}},
+                          {"gui.grp.exchange", {"import", "export"}, {"bimimport", "kjimport"}},
                           {"gui.grp.project", {"projset"}}}},
         {"gui.tab.draw", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch"}, true},
                           {"gui.grp.textsym", {"text", "symbols"}},
@@ -805,6 +832,7 @@ void MainWindow::buildRibbon() {
         {"gui.tab.struct", {{"gui.grp.steelkm", {"steelframe", "steel"}},
                             {"gui.grp.elements", {"stairtpl", "ramptpl", "rwalltpl"}},
                             {"gui.grp.concrete", {"building", "rebar"}},
+                            {"gui.grp.import", {"bimimport", "kjimport"}},
                             {"gui.grp.district", {"city"}}}},
         {"gui.tab.view", {{"gui.grp.model", {"view2d", "view3d"}},
                           {"gui.grp.camera", {"cam3d", "cut3d", "drive"}},

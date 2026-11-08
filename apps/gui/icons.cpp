@@ -219,7 +219,21 @@ QIcon makeIcon(const QString& name, const QColor& fg, const QColor& bg, int size
     QPen pen(fg, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     p.setPen(pen);
     p.setBrush(Qt::NoBrush);
-    glyph(p, name);
+    if (name.endsWith(QLatin1String("+imp"))) {
+        // import belgisi: asosiy glif kichraytirilib, o'ng pastda "kirish" strelkasi (fayldan olish)
+        p.save();
+        p.scale(0.78, 0.78);
+        glyph(p, name.chopped(4));
+        p.restore();
+        QPen ap = p.pen();
+        ap.setWidthF(2.4);
+        p.setPen(ap);
+        p.drawLine(QPointF(19, 12.5), QPointF(19, 22));
+        p.drawLine(QPointF(15.5, 18.5), QPointF(19, 22));
+        p.drawLine(QPointF(22.5, 18.5), QPointF(19, 22));
+    } else {
+        glyph(p, name);
+    }
     p.end();
     return QIcon(pm);
 }

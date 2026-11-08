@@ -32,6 +32,7 @@ QToolButton:checked { background: %7; color: %8; border-color: %7; }
 QToolButton[ribbonSmall="true"] { padding: 1px 4px; border-radius: 5px; }
 QTabWidget#ribbon::pane { background: %9; border: 0; border-bottom: 1px solid %6; }
 QWidget#ribbonPage { background: %9; }
+QFileDialog QListView, QFileDialog QTreeView, QFileDialog QSidebar { background: %11; color: %4; selection-background-color: %3; }
 QScrollArea#ribbonScroll, QScrollArea#ribbonScroll > QWidget, QScrollArea#ribbonScroll > QWidget > QWidget#ribbonPage { background: %9; border: 0; }
 QScrollArea#ribbonScroll QScrollBar:horizontal { height: 6px; background: transparent; }
 QListWidget#paletteList::item { padding: 7px 8px; border-radius: 6px; }

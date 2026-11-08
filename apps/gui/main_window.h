@@ -207,6 +207,7 @@ private:
     void copyText(const QString& s);
     int coordDecimals_ = 3;
     bool zoomPending_ = false;   // "Z" dan keyin variant kutilmoqda
+    QString lastDir_;            // import oynalari oxirgi papkadan ochiladi
     bool persist_ = false;
     QStringList recent_;
     void noteRecent(const QString& file);

@@ -2398,6 +2398,22 @@
     "gui.layers.tip.lck": "Qulflangan (tahrirlab boʻlmaydi)",
     "gui.act.kjimport": "KJ import",
     "gui.act.bimimport": "Qolip import",
-    "gui.grp.import": "Chizmadan"
+    "gui.grp.import": "Chizmadan",
+    "gui.bim.vis": "Koʻrsatish:",
+    "gui.bim.vis.all": "Hammasi",
+    "gui.bim.vis.frame": "Karkas (beton)",
+    "gui.bim.vis.rebar": "Faqat armatura",
+    "gui.bim.g.found": "Fundament",
+    "gui.bim.g.column": "Ustun",
+    "gui.bim.g.wall": "Devor",
+    "gui.bim.g.slab": "Plita",
+    "gui.bim.g.stair": "Zina",
+    "gui.bim.g.infill": "Fasad",
+    "gui.bim.g.glass": "Derazalar",
+    "gui.bim.g.concrete": "Beton",
+    "gui.bim.g.rebar": "Armatura",
+    "gui.bim.g.tip": "Shu turdagi elementlarni (beton va armaturasi bilan) koʻrsatish yoki yashirish",
+    "gui.bim.g.concrete_tip": "Beton elementlar. Armatura yoqilganda — shaffof",
+    "gui.bim.g.rebar_tip": "Armatura 3D — standart shablonlar boʻyicha. Diametr va qadamni sozlash: «Armatura (3D)» oynasi"
   }
 }

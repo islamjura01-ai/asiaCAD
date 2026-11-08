@@ -2398,6 +2398,22 @@
     "gui.layers.tip.lck": "Kilitli (düzenlenemez)",
     "gui.act.kjimport": "KJ (betonarme) içe aktar",
     "gui.act.bimimport": "Kalıp planı içe aktar",
-    "gui.grp.import": "Çizimden"
+    "gui.grp.import": "Çizimden",
+    "gui.bim.vis": "Göster:",
+    "gui.bim.vis.all": "Tümü",
+    "gui.bim.vis.frame": "Karkas (beton)",
+    "gui.bim.vis.rebar": "Yalnız donatı",
+    "gui.bim.g.found": "Temel",
+    "gui.bim.g.column": "Kolonlar",
+    "gui.bim.g.wall": "Perdeler",
+    "gui.bim.g.slab": "Döşemeler",
+    "gui.bim.g.stair": "Merdiven",
+    "gui.bim.g.infill": "Cephe",
+    "gui.bim.g.glass": "Boşluklar",
+    "gui.bim.g.concrete": "Beton",
+    "gui.bim.g.rebar": "Donatı",
+    "gui.bim.g.tip": "Bu türdeki elemanları göster/gizle",
+    "gui.bim.g.concrete_tip": "Beton elemanlar; donatı açıkken saydam",
+    "gui.bim.g.rebar_tip": "Standart şablonlarla donatı 3D. Ayar: «Donatı (3D)» penceresi"
   }
 }

@@ -18,6 +18,8 @@
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QToolButton>
+#include <cmath>
 #include <QVBoxLayout>
 
 #include <fstream>
@@ -32,6 +34,15 @@ namespace {
 const ElemKind kKinds[] = {ElemKind::Ignore, ElemKind::Outline, ElemKind::Column, ElemKind::Wall, ElemKind::Slab,
                            ElemKind::Opening, ElemKind::Stair, ElemKind::Shaft, ElemKind::FoundationSlab, ElemKind::Lean, ElemKind::StripFooting,
                            ElemKind::Infill};
+QColor rebarColor(double d) {   // Armatura oynasidagi bilan bir xil: diametr bo'yicha rang
+    switch (static_cast<int>(std::lround(d * 1000))) {
+        case 6: return QColor(150, 150, 160);  case 8: return QColor(120, 200, 120);  case 10: return QColor(80, 190, 220);
+        case 12: return QColor(70, 130, 240);  case 14: return QColor(150, 100, 240); case 16: return QColor(230, 90, 200);
+        case 18: return QColor(240, 90, 120);  case 20: return QColor(240, 130, 50);  case 22: return QColor(230, 180, 40);
+        case 25: return QColor(220, 60, 50);   default: return QColor(200, 70, 70);
+    }
+}
+
 QColor kindColor(ElemKind k) {
     switch (k) {
         case ElemKind::Lean: return QColor(128, 126, 120);
@@ -181,6 +192,46 @@ void BuildingDialog::buildUi() {
     auto* mid = new QWidget(split);
     auto* mv = new QVBoxLayout(mid);
     mv->setContentsMargins(6, 0, 6, 0);
+    // Ko'rsatish: tayyor ko'rinishlar + qatlamlar (har biri yoqib-o'chiriladi)
+    {
+        auto* pr = new QHBoxLayout;
+        pr->setSpacing(4);
+        auto* lbl = new QLabel(t("gui.bim.vis"), mid);
+        lbl->setObjectName("muted");
+        pr->addWidget(lbl);
+        const char* presets[3] = {"gui.bim.vis.all", "gui.bim.vis.frame", "gui.bim.vis.rebar"};
+        for (int i = 0; i < 3; ++i) {
+            auto* b = new QPushButton(t(presets[i]), mid);
+            b->setObjectName(QStringLiteral("visPreset%1").arg(i));
+            b->setCursor(Qt::PointingHandCursor);
+            connect(b, &QPushButton::clicked, this, [this, i] { applyPreset(i); });
+            pr->addWidget(b);
+        }
+        pr->addStretch(1);
+        mv->addLayout(pr);
+        auto* cr = new QHBoxLayout;
+        cr->setSpacing(3);
+        const char* keys[GCount] = {"gui.bim.g.found", "gui.bim.g.column", "gui.bim.g.wall", "gui.bim.g.slab",
+                                    "gui.bim.g.stair", "gui.bim.g.infill", "gui.bim.g.glass", "gui.bim.g.concrete", "gui.bim.g.rebar"};
+        for (int g = 0; g < GCount; ++g) {
+            auto* c = new QToolButton(mid);
+            c->setText(t(keys[g]));
+            c->setCheckable(true);
+            c->setChecked(g != GRebar);
+            c->setToolTip(g == GRebar ? t("gui.bim.g.rebar_tip") : g == GConcrete ? t("gui.bim.g.concrete_tip") : t("gui.bim.g.tip"));
+            c->setObjectName("visChip");
+            c->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            c->setCursor(Qt::PointingHandCursor);
+            c->setStyleSheet(QStringLiteral("QToolButton#visChip { padding: 3px 7px; border-radius: 11px; border: 1px solid rgba(140,160,210,90); }"
+                                            "QToolButton#visChip:checked { background: rgba(224,165,38,46); border-color: #E0A526; color: #F1C35A; }"));
+            connect(c, &QToolButton::toggled, this, [this] { render(); });
+            showChip_[g] = c;
+            if (g == GConcrete) cr->addSpacing(10);   // ajratgich: element turlari | beton, armatura qatlamlari
+            cr->addWidget(c);
+        }
+        cr->addStretch(1);
+        mv->addLayout(cr);
+    }
     view_ = new Model3DView(mid);
     mv->addWidget(view_, 1);
     auto* sh = new QHBoxLayout;
@@ -414,6 +465,7 @@ bim::PlanInput BuildingDialog::typicalPlan() const { return bim::readPlan(doc_, 
 
 void BuildingDialog::recompute() {
     const auto p = params();
+    rebarDirty_ = true;
     fp_ = civil::floorPlansFrom(set_->loaded());
     model_ = bim::buildModel(typicalPlan(), p, fp_);
     // PTO
@@ -462,14 +514,51 @@ void BuildingDialog::recompute() {
     render();
 }
 
+int BuildingDialog::groupOf(ElemKind k) {
+    switch (k) {
+        case ElemKind::Lean: case ElemKind::FoundationSlab: case ElemKind::StripFooting: return GFound;
+        case ElemKind::Column: return GColumn;
+        case ElemKind::Wall: case ElemKind::Shaft: return GWall;
+        case ElemKind::Slab: case ElemKind::Roof: return GSlab;
+        case ElemKind::Stair: return GStair;
+        case ElemKind::Infill: return GInfill;
+        default: return -1;
+    }
+}
+
+void BuildingDialog::setGroupVisible(int g, bool on) {
+    if (g >= 0 && g < GCount && showChip_[g]) showChip_[g]->setChecked(on);
+}
+
+bool BuildingDialog::groupVisible(int g) const { return g >= 0 && g < GCount && showChip_[g] && showChip_[g]->isChecked(); }
+
+void BuildingDialog::applyPreset(int preset) {
+    for (int g = 0; g < GCount; ++g) {
+        if (!showChip_[g]) continue;
+        const QSignalBlocker block(showChip_[g]);
+        bool on = true;
+        if (preset == 0) on = g != GRebar;                                    // hammasi (armaturasiz)
+        if (preset == 1) on = g != GInfill && g != GGlass && g != GRebar;      // karkas: monolit beton
+        if (preset == 2) on = g != GInfill && g != GGlass && g != GConcrete;   // toza armatura (betonni "Beton" bilan qaytarish mumkin)
+        showChip_[g]->setChecked(on);
+    }
+    render();
+}
+
 void BuildingDialog::render() {
     const int upTo = showUpTo_->value();
     showLbl_->setText(t("gui.bim.show") + QString::number(upTo));
     view_->beginScene(t("gui.bim.title").section(QString::fromUtf8(" —"), 0, 0),
                       t("gui.bim.summary", {QString::number(floors_->value()), QString::number(model_.prisms.size()), f2(model_.totalVolume),
                                             f2(model_.totalFormwork), QString::number(model_.heightTop, 'f', 3)}));
+    const bool rebarOn = groupVisible(GRebar);
+    if (rebarOn && rebarDirty_) {   // armatura — joriy bino va standart shablonlar bo'yicha (sozlash: "Armatura (3D)")
+        rebar_ = bim::buildRebar(model_, params(), bim::defaultRebarSettings());
+        rebarDirty_ = false;
+    }
     for (const auto& pr : model_.prisms) {
         if (pr.level > upTo) continue;
+        if (const int g = groupOf(pr.kind); (g >= 0 && !groupVisible(g)) || !groupVisible(GConcrete)) continue;
         std::vector<P3> o;
         for (const auto& q : pr.outline) o.push_back({q.x, q.y, 0});
         std::vector<std::vector<P3>> hs;
@@ -484,18 +573,37 @@ void BuildingDialog::render() {
         view_->beginObject(kind + " · " + lvl, kind,
                            {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)}), t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
                             t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})});
-        view_->addPrism(o, hs, pr.z0, pr.z1, kindColor(pr.kind), slab && pr.level == upTo && upTo < floors_->value() ? 140 : 255);
+        // armatura yoqilgan bo'lsa beton shaffof — sterjenlar ko'rinadi
+        view_->addPrism(o, hs, pr.z0, pr.z1, kindColor(pr.kind), rebarOn ? 40 : (slab && pr.level == upTo && upTo < floors_->value() ? 140 : 255));
         view_->endObject();
     }
     // derazalar va eshiklar (shisha)
     for (const auto& g : model_.glass) {
-        if (g.level > upTo) continue;
+        if (g.level > upTo || !groupVisible(GGlass)) continue;
         std::vector<P3> q;
         for (const auto& v : g.quad) q.push_back({v.x, v.y, v.z});
         const QString nm = t(g.door ? "gui.v3d.door" : "gui.v3d.window");
         view_->beginObject(nm + " · " + t("gui.bim.level", {QString::number(g.level)}), nm, {});
         view_->addFace(q, g.door ? QColor(70, 110, 150) : QColor(120, 170, 215), g.door ? 170 : 120, true);
         view_->endObject();
+    }
+    if (rebarOn) {
+        std::size_t nseg = 0;
+        for (const auto& b : rebar_.bars) if (b.level <= upTo) nseg += b.pts.size();
+        const bool tubes = nseg < 120000;
+        for (const auto& b : rebar_.bars) {
+            if (b.level > upTo) continue;
+            if (const int g = groupOf(b.kind); g >= 0 && !groupVisible(g)) continue;   // turi o'chirilgan — sterjenlari ham
+            std::vector<P3> pts;
+            pts.reserve(b.pts.size());
+            for (const auto& q : b.pts) pts.push_back({q.x, q.y, q.z});
+            const QString dia = QString::fromUtf8("\xC3\x98") + QString::number(std::lround(b.d * 1000)) + " " + QString::fromStdString(b.cls);
+            view_->beginObject(dia, t("gui.v3d.cat.rebar", {dia}), {t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})});
+            const QColor c = rebarColor(b.d);
+            if (tubes) view_->addTube(pts, std::max(0.003, b.d / 2), c, b.role == bim::BarRole::Stirrup, b.role == bim::BarRole::Stirrup ? 4 : 6);
+            else view_->addPolyline(pts, c, 1.0, b.role == bim::BarRole::Stirrup);
+            view_->endObject();
+        }
     }
     view_->setEmptyText(t("gui.bim.empty"));
     if (sample_) {   // bino bor — tugma oddiy ko'rinishda

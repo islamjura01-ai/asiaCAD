@@ -2398,6 +2398,22 @@
     "gui.layers.tip.lck": "Locked (not editable)",
     "gui.act.kjimport": "Import KJ",
     "gui.act.bimimport": "Import formwork",
-    "gui.grp.import": "From drawings"
+    "gui.grp.import": "From drawings",
+    "gui.bim.vis": "Show:",
+    "gui.bim.vis.all": "Everything",
+    "gui.bim.vis.frame": "Frame (concrete)",
+    "gui.bim.vis.rebar": "Rebar only",
+    "gui.bim.g.found": "Foundation",
+    "gui.bim.g.column": "Columns",
+    "gui.bim.g.wall": "Walls",
+    "gui.bim.g.slab": "Slabs",
+    "gui.bim.g.stair": "Stairs",
+    "gui.bim.g.infill": "Facade",
+    "gui.bim.g.glass": "Openings",
+    "gui.bim.g.concrete": "Concrete",
+    "gui.bim.g.rebar": "Rebar",
+    "gui.bim.g.tip": "Show or hide this element type (concrete and its rebar)",
+    "gui.bim.g.concrete_tip": "Concrete elements; transparent when rebar is shown",
+    "gui.bim.g.rebar_tip": "Rebar 3D from standard templates. Adjust in the “Rebar (3D)” window"
   }
 }

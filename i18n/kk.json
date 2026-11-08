@@ -2398,6 +2398,22 @@
     "gui.layers.tip.lck": "Құлыпталған (өңделмейді)",
     "gui.act.kjimport": "КЖ импорт",
     "gui.act.bimimport": "Қалып импорты",
-    "gui.grp.import": "Сызбадан"
+    "gui.grp.import": "Сызбадан",
+    "gui.bim.vis": "Көрсету:",
+    "gui.bim.vis.all": "Барлығы",
+    "gui.bim.vis.frame": "Қаңқа (бетон)",
+    "gui.bim.vis.rebar": "Тек арматура",
+    "gui.bim.g.found": "Іргетас",
+    "gui.bim.g.column": "Бағаналар",
+    "gui.bim.g.wall": "Қабырғалар",
+    "gui.bim.g.slab": "Плиталар",
+    "gui.bim.g.stair": "Баспалдақ",
+    "gui.bim.g.infill": "Қасбет",
+    "gui.bim.g.glass": "Ойықтар",
+    "gui.bim.g.concrete": "Бетон",
+    "gui.bim.g.rebar": "Арматура",
+    "gui.bim.g.tip": "Осы түрдегі элементтерді көрсету/жасыру",
+    "gui.bim.g.concrete_tip": "Бетон элементтер; арматурамен бірге — мөлдір",
+    "gui.bim.g.rebar_tip": "Арматура 3D стандарт үлгілер бойынша. Баптау — «Арматура (3D)» терезесі"
   }
 }

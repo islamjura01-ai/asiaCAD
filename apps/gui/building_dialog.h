@@ -8,6 +8,7 @@
 #include "excel_link.h"
 
 #include <asiacad/bim/building.h>
+#include <asiacad/bim/rebar.h>
 #include <asiacad/i18n/localizer.h>
 
 #include <QDialog>
@@ -19,6 +20,7 @@ class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
 class QSlider;
+class QToolButton;
 class QSpinBox;
 class QTableWidget;
 
@@ -51,6 +53,17 @@ signals:
     void sampleRequested();                     // namuna bino (o'qlar to'ri) — MainWindow GRID bajaradi
     void open3DRequested();                     // asosiy oynadagi 3D ko'rinish
 
+private:
+    // 3D qatlamlari (ko'rinish): element turlari (beton va armaturaga birdek) + beton, armatura qatlamlari
+    enum ShowGroup { GFound, GColumn, GWall, GSlab, GStair, GInfill, GGlass, GConcrete, GRebar, GCount };
+    QToolButton* showChip_[GCount] = {};
+    static int groupOf(bim::ElemKind k);
+    bool rebarDirty_ = true;
+    bim::RebarModel rebar_;
+    void applyPreset(int preset);   // 0 — hammasi, 1 — karkas (beton), 2 — faqat armatura
+public:
+    void setGroupVisible(int g, bool on);   // sinov va menyu uchun
+    bool groupVisible(int g) const;
 private:
     QPushButton* sample_ = nullptr;
     QString t(const char* key, const QStringList& args = {}) const;

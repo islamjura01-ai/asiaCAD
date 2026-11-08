@@ -2398,6 +2398,22 @@
     "gui.layers.tip.lck": "Заблокирован (не редактируется)",
     "gui.act.kjimport": "Импорт КЖ",
     "gui.act.bimimport": "Импорт опалубки",
-    "gui.grp.import": "Из чертежей"
+    "gui.grp.import": "Из чертежей",
+    "gui.bim.vis": "Показать:",
+    "gui.bim.vis.all": "Всё",
+    "gui.bim.vis.frame": "Каркас (бетон)",
+    "gui.bim.vis.rebar": "Только арматура",
+    "gui.bim.g.found": "Фундамент",
+    "gui.bim.g.column": "Колонны",
+    "gui.bim.g.wall": "Стены",
+    "gui.bim.g.slab": "Плиты",
+    "gui.bim.g.stair": "Лестницы",
+    "gui.bim.g.infill": "Фасад",
+    "gui.bim.g.glass": "Проёмы",
+    "gui.bim.g.concrete": "Бетон",
+    "gui.bim.g.rebar": "Арматура",
+    "gui.bim.g.tip": "Показать или скрыть элементы этого типа (бетон и арматуру)",
+    "gui.bim.g.concrete_tip": "Бетонные элементы; при показе арматуры — прозрачные",
+    "gui.bim.g.rebar_tip": "Арматура 3D по стандартным шаблонам. Настройка — окно «Арматура (3D)»"
   }
 }

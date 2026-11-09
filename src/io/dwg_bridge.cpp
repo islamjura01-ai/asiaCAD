@@ -1,5 +1,11 @@
 #include <asiacad/io/dwg_bridge.h>
 
+#ifdef _WIN32
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include <asiacad/core/error.h>
 
 #include <algorithm>
@@ -52,7 +58,22 @@ std::string quote(const std::string& s) { return "\"" + s + "\""; }
 
 int run(const std::string& cmd) {
 #ifdef _WIN32
-    return std::system(("\"" + cmd + "\"").c_str());   // cmd.exe tashqi qo'shtirnoqni olib tashlaydi
+    // konsol oynasisiz (GUI dan chaqirilganda qora oyna chiqmaydi), chiqishi ko'rinmaydi; UTF-8 -> UTF-16
+    const int n = MultiByteToWideChar(CP_UTF8, 0, cmd.c_str(), -1, nullptr, 0);
+    std::wstring w(static_cast<std::size_t>(std::max(n, 1)), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, cmd.c_str(), -1, w.data(), n);
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(nullptr, w.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) return -1;
+    WaitForSingleObject(pi.hProcess, 10 * 60 * 1000);   // eng ko'pi 10 daqiqa
+    DWORD code = 0;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return static_cast<int>(code);
 #else
     return std::system((cmd + " >/dev/null 2>&1").c_str());
 #endif

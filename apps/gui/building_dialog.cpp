@@ -207,6 +207,15 @@ void BuildingDialog::buildUi() {
             connect(b, &QPushButton::clicked, this, [this, i] { applyPreset(i); });
             pr->addWidget(b);
         }
+        pr->addSpacing(12);
+        normBtn_ = new QPushButton(t("gui.bim.norm"), mid);
+        normBtn_->setObjectName("visNorm");
+        normBtn_->setCheckable(true);
+        normBtn_->setCursor(Qt::PointingHandCursor);
+        normBtn_->setToolTip(t("gui.bim.norm.tip"));
+        normBtn_->setStyleSheet(QStringLiteral("QPushButton#visNorm:checked { background: rgba(229,72,77,60); border-color: #E5484D; color: #FF9A9E; }"));
+        connect(normBtn_, &QPushButton::toggled, this, [this](bool on) { runNormCheck(on); });
+        pr->addWidget(normBtn_);
         pr->addStretch(1);
         mv->addLayout(pr);
         auto* cr = new QHBoxLayout;
@@ -466,6 +475,7 @@ bim::PlanInput BuildingDialog::typicalPlan() const { return bim::readPlan(doc_, 
 void BuildingDialog::recompute() {
     const auto p = params();
     rebarDirty_ = true;
+    normDirty_ = true;
     fp_ = civil::floorPlansFrom(set_->loaded());
     model_ = bim::buildModel(typicalPlan(), p, fp_);
     // PTO
@@ -548,14 +558,19 @@ void BuildingDialog::applyPreset(int preset) {
 void BuildingDialog::render() {
     const int upTo = showUpTo_->value();
     showLbl_->setText(t("gui.bim.show") + QString::number(upTo));
-    view_->beginScene(t("gui.bim.title").section(QString::fromUtf8(" —"), 0, 0),
-                      t("gui.bim.summary", {QString::number(floors_->value()), QString::number(model_.prisms.size()), f2(model_.totalVolume),
-                                            f2(model_.totalFormwork), QString::number(model_.heightTop, 'f', 3)}));
+    if (normOn_ && normDirty_) computeNorms();
+    QString sub = t("gui.bim.summary", {QString::number(floors_->value()), QString::number(model_.prisms.size()), f2(model_.totalVolume),
+                                        f2(model_.totalFormwork), QString::number(model_.heightTop, 'f', 3)});
+    if (normOn_ && !model_.prisms.empty())   // ShNQ natijasi 3D sarlavhasida ham (xato bo'lmasa ham ko'rinadi)
+        sub += "\n" + QString::fromUtf8(normRep_.errors || normRep_.warnings ? "⛔ " : "✔ ") +
+               t("gui.bim.norm.head", {QString::number(normRep_.errors), QString::number(normRep_.warnings), QString::number(normRep_.subjects)});
+    view_->beginScene(t("gui.bim.title").section(QString::fromUtf8(" —"), 0, 0), sub);
     const bool rebarOn = groupVisible(GRebar);
     if (rebarOn && rebarDirty_) {   // armatura — joriy bino va standart shablonlar bo'yicha (sozlash: "Armatura (3D)")
         rebar_ = bim::buildRebar(model_, params(), bim::defaultRebarSettings());
         rebarDirty_ = false;
     }
+    const QColor errC(229, 60, 60), warnC(245, 165, 36);
     for (const auto& pr : model_.prisms) {
         if (pr.level > upTo) continue;
         if (const int g = groupOf(pr.kind); (g >= 0 && !groupVisible(g)) || !groupVisible(GConcrete)) continue;
@@ -574,7 +589,19 @@ void BuildingDialog::render() {
                            {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)}), t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
                             t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})});
         // armatura yoqilgan bo'lsa beton shaffof — sterjenlar ko'rinadi
-        view_->addPrism(o, hs, pr.z0, pr.z1, kindColor(pr.kind), rebarOn ? 40 : (slab && pr.level == upTo && upTo < floors_->value() ? 140 : 255));
+        QColor pc = kindColor(pr.kind);
+        int pa = rebarOn ? 40 : (slab && pr.level == upTo && upTo < floors_->value() ? 140 : 255);
+        if (normOn_) {   // ShNQ: buzilgan — qizil / sariq, qolganlari xira
+            const auto it = normPrism_.find(static_cast<int>(&pr - model_.prisms.data()));
+            if (it != normPrism_.end()) {
+                pc = it->second >= 2 ? errC : warnC;
+                pa = std::max(pa, rebarOn ? 120 : 235);
+            } else {
+                pc = QColor::fromHsv(pc.hsvHue(), pc.hsvSaturation() / 3, std::min(255, pc.value() + 20));
+                pa = std::min(pa, 45);
+            }
+        }
+        view_->addPrism(o, hs, pr.z0, pr.z1, pc, pa);
         view_->endObject();
     }
     // derazalar va eshiklar (shisha)
@@ -592,6 +619,7 @@ void BuildingDialog::render() {
         for (const auto& b : rebar_.bars) if (b.level <= upTo) nseg += b.pts.size();
         const bool tubes = nseg < 120000;
         for (const auto& b : rebar_.bars) {
+            const int bi = static_cast<int>(&b - rebar_.bars.data());
             if (b.level > upTo) continue;
             if (const int g = groupOf(b.kind); g >= 0 && !groupVisible(g)) continue;   // turi o'chirilgan — sterjenlari ham
             std::vector<P3> pts;
@@ -599,7 +627,11 @@ void BuildingDialog::render() {
             for (const auto& q : b.pts) pts.push_back({q.x, q.y, q.z});
             const QString dia = QString::fromUtf8("\xC3\x98") + QString::number(std::lround(b.d * 1000)) + " " + QString::fromStdString(b.cls);
             view_->beginObject(dia, t("gui.v3d.cat.rebar", {dia}), {t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})});
-            const QColor c = rebarColor(b.d);
+            QColor c = rebarColor(b.d);
+            if (normOn_) {
+                const auto it = normBar_.find(bi);
+                c = it != normBar_.end() ? (it->second >= 2 ? errC : warnC) : QColor(150, 158, 175, 110);
+            }
             if (tubes) view_->addTube(pts, std::max(0.003, b.d / 2), c, b.role == bim::BarRole::Stirrup, b.role == bim::BarRole::Stirrup ? 4 : 6);
             else view_->addPolyline(pts, c, 1.0, b.role == bim::BarRole::Stirrup);
             view_->endObject();
@@ -615,6 +647,88 @@ void BuildingDialog::render() {
         }
     }
     view_->endScene(true);
+}
+
+void BuildingDialog::setNormRules(const std::vector<bim::NormRule>* rules) {
+    normRules_ = rules;
+    normDirty_ = true;
+    if (normOn_) render();
+}
+
+void BuildingDialog::runNormCheck(bool on) {
+    if (normBtn_ && normBtn_->isChecked() != on) {
+        const QSignalBlocker b(normBtn_);
+        normBtn_->setChecked(on);
+    }
+    normOn_ = on;
+    if (on) {
+        normDirty_ = true;
+        computeNorms();
+        // armatura xatolari bo'lsa — sterjenlar ko'rinsin
+        if (!normBar_.empty() && !groupVisible(GRebar)) {
+            const QSignalBlocker b(showChip_[GRebar]);
+            showChip_[GRebar]->setChecked(true);
+        }
+    } else {
+        // ro'yxatdan ShNQ qatorlarini olib tashlash
+        for (int i = checks_->count() - 1; i >= 0; --i)
+            if (checks_->item(i)->data(Qt::UserRole).toBool()) delete checks_->takeItem(i);
+    }
+    render();
+}
+
+void BuildingDialog::computeNorms() {
+    normDirty_ = false;
+    normPrism_.clear();
+    normBar_.clear();
+    normRep_ = {};
+    if (!normRules_ || model_.prisms.empty()) return;
+    if (rebarDirty_) {
+        rebar_ = bim::buildRebar(model_, params(), bim::defaultRebarSettings());
+        rebarDirty_ = false;
+    }
+    std::vector<std::vector<int>> prismsOf;
+    std::vector<int> barOf;
+    auto m = bim::buildingAsIfc(model_, params(), &rebar_, &prismsOf, &barOf);
+    // nomlar (ro'yxat va hisobot uchun)
+    auto lvlName = [&](int lv) { return lv == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(lv)}); };
+    for (std::size_t i = 0; i < m.elements.size(); ++i) {
+        auto& e = m.elements[i];
+        const QString kind = QString::fromStdString(loc_.tr(std::string("bim.kind.") + e.objectType));
+        e.name = (barOf[i] >= 0 ? kind + " · " + lvlName(e.storey) + " · " + QString::fromStdString(e.name) : kind + " · " + lvlName(e.storey)).toStdString();
+    }
+    normRulesUsed_ = *normRules_;
+    normRep_ = bim::normCheck(m, normRulesUsed_);
+    for (const auto& v : normRep_.items) {
+        if (v.element < 0 || v.element >= static_cast<int>(m.elements.size())) continue;
+        for (int p : prismsOf[static_cast<std::size_t>(v.element)]) normPrism_[p] = std::max(normPrism_[p], v.severity);
+        if (const int b = barOf[static_cast<std::size_t>(v.element)]; b >= 0) normBar_[b] = std::max(normBar_[b], v.severity);
+    }
+    // tekshiruv ro'yxati: ShNQ qatorlari (avvalgilari olib tashlanadi)
+    for (int i = checks_->count() - 1; i >= 0; --i)
+        if (checks_->item(i)->data(Qt::UserRole).toBool()) delete checks_->takeItem(i);
+    auto* head = new QListWidgetItem(t("gui.bim.norm.head", {QString::number(normRep_.errors), QString::number(normRep_.warnings),
+                                                             QString::number(normRep_.subjects)}));
+    head->setData(Qt::UserRole, true);
+    QFont f = head->font();
+    f.setBold(true);
+    head->setFont(f);
+    checks_->insertItem(0, head);
+    const std::string lang = loc_.language();
+    int row = 1;
+    for (const auto& v : normRep_.items) {
+        if (row > 300) break;
+        const auto& r = normRulesUsed_[static_cast<std::size_t>(v.rule)];
+        const auto& e = m.elements[static_cast<std::size_t>(v.element)];
+        auto* it = new QListWidgetItem(QString::fromUtf8(v.severity >= 2 ? "⛔ " : "⚠ ") + QString::fromStdString(e.name) + " — " +
+                                       QString::fromStdString(r.titleFor(lang)) + ": " + QString::fromStdString(bim::normFormat(v.value, r.unit)) +
+                                       (v.belowMin ? " < " : " > ") + QString::fromStdString(bim::normFormat(v.limit, r.unit)) + "  (" +
+                                       QString::fromStdString(r.norm + (r.clause.empty() ? std::string() : ", " + r.clause)) +
+                                       (r.verified ? QString() : QStringLiteral(" · ") + t("gui.norm.unverified")) + ")");
+        it->setForeground(v.severity >= 2 ? QColor(232, 70, 80) : QColor(230, 160, 30));
+        it->setData(Qt::UserRole, true);
+        checks_->insertItem(row++, it);
+    }
 }
 
 } // namespace asiacad::gui

@@ -16,6 +16,9 @@
 #include "drive_dialog.h"
 #include "draft_panels.h"
 #include "ifc_panel.h"
+#include "norm_rules_dialog.h"
+#include <QCheckBox>
+#include <QComboBox>
 #include "model3d_view.h"
 #include <QTreeWidget>
 
@@ -1445,7 +1448,7 @@ int main(int argc, char** argv) {
             }
             CHECK(picked);
             // Elementlar varag'i: qidiruv, 3D da topish
-            CHECK(p->tabs()->count() == 3 && p->elementTable()->rowCount() == 6);
+            CHECK(p->tabs()->count() == 4 && p->elementTable()->rowCount() == 6);
             p->searchEdit()->setText(QString::fromStdString(loc.tr("ifc.cat.WALL")));
             CHECK(p->elementTable()->rowCount() == 1);
             p->searchEdit()->setText("W1");   // Tag bo'yicha
@@ -1494,6 +1497,64 @@ int main(int argc, char** argv) {
         });
         CHECK(w.importIfc({QStringLiteral("%1/yoq.ifc").arg(ASIACAD_EXAMPLES_DIR)}) == 0 && w.ifcModels().empty());
         CHECK(w.findChild<QAction*>("act_ifcimport") && w.findChild<QAction*>("act_ifcpanel"));
+    }
+    // 36. ShNQ tekshiruvi: IFC armatura (4 ta xato), 3D da qizil va belgilar, jadvaldan topish, dalolatnoma, filtr
+    {
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        CHECK(w.findChild<QAction*>("act_normcheck") && w.findChild<QAction*>("act_normrules"));
+        CHECK(w.importIfc({QStringLiteral("%1/../tests/data/armatura_sinov.ifc").arg(ASIACAD_EXAMPLES_DIR)}) == 1);
+        w.runIfcNormCheck(0);
+        QApplication::processEvents();
+        const auto& L = w.ifcModels().front();
+        CHECK(L.norms && L.norms->errors == 4 && L.norms->warnings == 0);
+        IfcPanel* p = w.findChild<IfcPanel*>("ifcPanel");
+        CHECK(p && p->tabs()->count() == 4 && p->tabs()->currentIndex() == 3);
+        Model3DView* v = w.view3d();
+        if (p) {
+            CHECK(p->normTable()->rowCount() == 4);
+            CHECK(v->labelCount() == 3);   // ustun bo'ylama, xomut (2 xato — bitta belgi), F1
+            emit p->normTable()->cellDoubleClicked(0, 1);
+            QApplication::processEvents();
+            CHECK(v->selected() >= 0 && v->selectionInfo().contains(QString::fromUtf8("⛔")));
+            auto* filter = p->findChild<QComboBox*>("ifcNormFilter");
+            filter->setCurrentIndex(2);   // faqat ogohlantirishlar
+            CHECK(p->normTable()->rowCount() == 0);
+            filter->setCurrentIndex(0);
+            CHECK(p->normTable()->rowCount() == 4);
+            const QString xl = QDir::tempPath() + "/asiacad_shnq.xlsx";
+            CHECK(p->exportNorms(xl));
+            const auto wb = xlsx::load(xl.toStdString());
+            CHECK(wb.sheets.size() == 2 && wb.sheets[0].rows.size() == 5);
+            QFile::remove(xl);
+            p->findChild<QCheckBox*>("ifcNormLabels")->setChecked(false);
+            QApplication::processEvents();
+            CHECK(v->labelCount() == 0);
+            p->findChild<QCheckBox*>("ifcNormColor")->setChecked(false);
+            QApplication::processEvents();
+            CHECK(!w.ifcModels().front().normColors);
+        }
+        // qoidalar oynasi: jadval, sintaksis xatosi ushlanadi
+        NormRulesDialog d(loc, bim::defaultNormRules());
+        CHECK(d.table()->rowCount() == static_cast<int>(bim::defaultNormRules().size()));
+        CHECK(d.collect().isEmpty() && d.rules().size() == bim::defaultNormRules().size());
+        d.table()->item(0, 7)->setText("max(15mm, ");
+        CHECK(!d.collect().isEmpty());
+        // "Monolit bino": standart shablonlar bilan ShNQ xatosiz; tugma — 3D ranglash
+        w.runLine("NEW !");
+        w.runLine("GRID 6x5,4.5 6.6x3");
+        BuildingDialog* bd = w.openBuilding();
+        bd->runNormCheck(true);
+        QApplication::processEvents();
+        CHECK(bd->normOn() && bd->normReport().subjects > 50 && bd->normReport().errors == 0);
+        if (bd->normReport().errors > 0)
+            for (const auto& it : bd->normReport().items) std::printf("  bino ShNQ: rule %d el %d val %.4f lim %.4f\n", it.rule, it.element, it.value, it.limit);
+        CHECK(bd->findChild<QPushButton*>("visNorm") && bd->findChild<QPushButton*>("visNorm")->isChecked());
+        bd->runNormCheck(false);
+        CHECK(!bd->normOn());
+        bd->close();
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

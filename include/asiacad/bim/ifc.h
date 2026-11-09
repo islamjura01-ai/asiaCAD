@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,6 +35,9 @@ struct IfcElement {
     int id = 0;                       // STEP #raqami
     std::string guid, type, name;     // type — "IFCWALL" (katta harf), name — UTF-8
     std::string tag, objectType;
+    std::string predefined;           // PredefinedType / BarRole (".FLOOR." -> "FLOOR"), bo'lmasa — bo'sh
+    std::map<std::string, double> num;   // sonli atributlar (m): OverallWidth, OverallHeight, RiserHeight, TreadLength,
+                                         // NumberOfRisers, NominalDiameter, BarLength
     int storey = -1;                  // IfcModel::storeys indeksi (-1 — qavatsiz)
     std::string material;             // materiallar nomi ("Beton B25; Armatura")
     std::vector<IfcPart> parts;       // ranglari hal qilingan (o'qishdan keyin rgb doim != 0)
@@ -112,6 +116,9 @@ struct IfcSectionLoop {
 };
 std::vector<IfcSectionLoop> ifcSection(const IfcModel& m, double z, const std::vector<int>& only = {},
                                        const std::vector<std::string>& skipCats = {"SPACE", "SITE"});
+
+// Gorizontal ko'pburchakni (teshiklar bilan) z0..z1 oralig'ida cho'zish -> yopiq jism uchburchaklari
+std::vector<std::array<Vec3, 3>> ifcExtrude(const std::vector<Vec3>& outer, const std::vector<std::vector<Vec3>>& holes, double z0, double z1);
 
 // STEP satridagi \X2\...\X0\, \X\hh, \S\c kodlarini UTF-8 ga
 std::string ifcDecodeString(const std::string& s);

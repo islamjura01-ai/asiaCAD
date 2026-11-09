@@ -91,6 +91,11 @@ public:
     int importIfc(const QStringList& files, bool showPanel = true, bool georef = true);
     // IFC -> chizma: qavat kesimi (toifa qatlamlari), o'qlar, razbivka nuqtalari. Qo'shilgan obyektlar soni
     int ifcPlanToDrawing(int model, const IfcPlanOptions& opt);
+    // ShNQ: qoidalar (AppData/shnq_rules.json yoki standart) va IFC modelni tekshirish (3D da ranglash, panelda ro'yxat)
+    const std::vector<bim::NormRule>& normRules();
+    void runIfcNormCheck(int model);
+    void openNormRules();
+    QString normRulesPath() const;
     IfcPanel* openIfcPanel();
     const std::vector<IfcLoaded>& ifcModels() const { return ifc_; }
     UtilityDialog* openUtility();           // "Yer osti tarmoqlari 3D" menyusi
@@ -183,7 +188,9 @@ private:
     std::vector<IfcLoaded> ifc_;
     IfcPanel* ifcPanel_ = nullptr;
     QString ifcDocFile_;                 // IFC havolalari shu chizmadan o'qilgan
-    bool ifcLinking_ = false;            // havolalardan yuklanmoqda — lug'at qayta yozilmaydi
+    bool ifcLinking_ = false;
+    std::vector<bim::NormRule> normRules_;
+    bool normRulesLoaded_ = false;            // havolalardan yuklanmoqda — lug'at qayta yozilmaydi
     void syncIfcLinks();                 // yuklangan IFC lar -> chizma lug'ati ("ifc:links"), loyiha bilan saqlanadi
     void loadIfcLinks();                 // chizma ochilganda — havoladagi IFC larni yuklash
     UtilityDialog* util_ = nullptr;

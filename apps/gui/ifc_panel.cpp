@@ -40,7 +40,7 @@ IfcPanel::IfcPanel(const i18n::Localizer& loc, std::vector<IfcLoaded>& models, Q
     : QDialog(parent), loc_(loc), models_(models) {
     setObjectName("ifcPanel");
     setWindowFlag(Qt::WindowContextHelpButtonHint, false);
-    resize(940, 620);
+    resize(1020, 640);
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(12, 12, 12, 12);
     root->setSpacing(8);
@@ -173,6 +173,53 @@ IfcPanel::IfcPanel(const i18n::Localizer& loc, std::vector<IfcLoaded>& models, Q
     pv->addLayout(pb);
     tabs_->addTab(pp, QString());
 
+    // ---- ShNQ tekshiruvi: qoidalar jadvali bo'yicha nomuvofiqliklar, 3D da ranglash, dalolatnoma
+    auto* pn = new QWidget(tabs_);
+    auto* nv = new QVBoxLayout(pn);
+    nv->setContentsMargins(8, 8, 8, 8);
+    nv->setSpacing(6);
+    auto* nr = new QHBoxLayout;
+    normRun_ = new QPushButton(pn);
+    normRun_->setObjectName("ifcNormRun");
+    normRun_->setProperty("accent", true);
+    normRulesBtn_ = new QPushButton(pn);
+    normRulesBtn_->setObjectName("ifcNormRules");
+    normExport_ = new QPushButton(pn);
+    normExport_->setObjectName("ifcNormExport");
+    nr->addWidget(normRun_);
+    nr->addWidget(normRulesBtn_);
+    nr->addWidget(normExport_);
+    nr->addStretch(1);
+    nv->addLayout(nr);
+    normSummary_ = new QLabel(pn);
+    normSummary_->setWordWrap(true);
+    normSummary_->setTextFormat(Qt::RichText);
+    nv->addWidget(normSummary_);
+    auto* nf = new QHBoxLayout;
+    normFilter_ = new QComboBox(pn);
+    normFilter_->setObjectName("ifcNormFilter");
+    normColor_ = new QCheckBox(pn);
+    normColor_->setObjectName("ifcNormColor");
+    normLabels_ = new QCheckBox(pn);
+    normLabels_->setObjectName("ifcNormLabels");
+    nf->addWidget(normFilter_);
+    nf->addWidget(normColor_);
+    nf->addWidget(normLabels_);
+    nf->addStretch(1);
+    nv->addLayout(nf);
+    normTable_ = new QTableWidget(pn);
+    normTable_->setObjectName("ifcNormTable");
+    normTable_->setColumnCount(7);
+    normTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    normTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    normTable_->setSelectionMode(QAbstractItemView::SingleSelection);
+    normTable_->verticalHeader()->setVisible(false);
+    normTable_->verticalHeader()->setDefaultSectionSize(24);
+    normTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    normTable_->horizontalHeader()->setStretchLastSection(true);
+    nv->addWidget(normTable_, 1);
+    tabs_->addTab(pn, QString());
+
     split->addWidget(tree_);
     split->addWidget(tabs_);
     split->setStretchFactor(0, 2);
@@ -244,6 +291,40 @@ IfcPanel::IfcPanel(const i18n::Localizer& loc, std::vector<IfcLoaded>& models, Q
         if (exportStakeout(f)) QMessageBox::information(this, t("gui.ifc.stake"), t("gui.ifc.exported", {QDir::toNativeSeparators(f)}));
         else QMessageBox::warning(this, t("gui.ifc.stake"), t("xlsx.err.write", {f}));
     });
+    connect(normRun_, &QPushButton::clicked, this, [this] {
+        const int i = current();
+        if (i >= 0) emit normCheckRequested(i);
+    });
+    connect(normRulesBtn_, &QPushButton::clicked, this, &IfcPanel::normRulesRequested);
+    connect(normFilter_, &QComboBox::currentIndexChanged, this, [this] { if (!filling_) fillNorms(); });
+    connect(normColor_, &QCheckBox::toggled, this, [this](bool on) {
+        const int i = current();
+        if (filling_ || i < 0) return;
+        models_[static_cast<std::size_t>(i)].normColors = on;
+        emit normViewChanged();
+    });
+    connect(normLabels_, &QCheckBox::toggled, this, [this](bool on) {
+        const int i = current();
+        if (filling_ || i < 0) return;
+        models_[static_cast<std::size_t>(i)].normLabels = on;
+        emit normViewChanged();
+    });
+    connect(normTable_, &QTableWidget::cellDoubleClicked, this, [this](int r, int) {
+        const int i = current();
+        if (i < 0 || r < 0) return;
+        if (auto* it = normTable_->item(r, 1)) emit elementActivated(i, it->data(Qt::UserRole).toString());
+    });
+    connect(normExport_, &QPushButton::clicked, this, [this] {
+        const int i = current();
+        if (i < 0 || !models_[static_cast<std::size_t>(i)].norms) return;
+        const QFileInfo fi(models_[static_cast<std::size_t>(i)].path);
+        QString f = QFileDialog::getSaveFileName(this, t("gui.norm.export"), fi.absolutePath() + "/" + fi.completeBaseName() + "_ShNQ.xlsx",
+                                                 QStringLiteral("Excel (*.xlsx)"));
+        if (f.isEmpty()) return;
+        if (!f.endsWith(".xlsx", Qt::CaseInsensitive)) f += ".xlsx";
+        if (exportNorms(f)) QMessageBox::information(this, t("gui.norm.export"), t("gui.ifc.exported", {QDir::toNativeSeparators(f)}));
+        else QMessageBox::warning(this, t("gui.norm.export"), t("xlsx.err.write", {f}));
+    });
     connect(georef_, &QCheckBox::toggled, this, [this](bool on) {
         const int i = current();
         if (!filling_ && i >= 0 && models_[static_cast<std::size_t>(i)].georef != on) emit reloadRequested(i, on);
@@ -272,6 +353,23 @@ void IfcPanel::retranslate() {
     tabs_->setTabText(0, t("gui.ifc.tab.summary"));
     tabs_->setTabText(1, t("gui.ifc.tab.elements"));
     tabs_->setTabText(2, t("gui.ifc.tab.plan"));
+    tabs_->setTabText(3, t("gui.norm.tab"));
+    normRun_->setText(t("gui.norm.run"));
+    normRulesBtn_->setText(t("gui.norm.rules"));
+    normExport_->setText(t("gui.norm.export"));
+    normColor_->setText(t("gui.norm.color"));
+    normLabels_->setText(t("gui.norm.labels"));
+    {
+        const bool was = filling_;
+        filling_ = true;
+        const int k = std::max(0, normFilter_->currentIndex());
+        normFilter_->clear();
+        normFilter_->addItems({t("gui.norm.f.all"), t("gui.norm.f.errors"), t("gui.norm.f.warnings")});
+        normFilter_->setCurrentIndex(k);
+        filling_ = was;
+    }
+    normTable_->setHorizontalHeaderLabels({t("gui.norm.col.sev"), t("gui.ifc.col.name"), t("gui.norm.col.rule"), t("gui.norm.col.value"),
+                                           t("gui.norm.col.limit"), t("gui.norm.col.ref"), t("gui.ifc.col.storey")});
     georef_->setText(t("gui.ifc.georef"));
     georef_->setToolTip(t("gui.ifc.georef.tip"));
     search_->setPlaceholderText(t("gui.ifc.search"));
@@ -446,6 +544,146 @@ IfcPlanOptions IfcPanel::planOptions() const {
     return o;
 }
 
+void IfcPanel::showNormTab() { tabs_->setCurrentIndex(3); }
+
+void IfcPanel::fillNorms() {
+    const int i = current();
+    normTable_->setRowCount(0);
+    const bool have = i >= 0;
+    normRun_->setEnabled(have);
+    const IfcLoaded* L = have ? &models_[static_cast<std::size_t>(i)] : nullptr;
+    const bool rep = L && L->norms;
+    normExport_->setEnabled(rep);
+    normColor_->setEnabled(rep);
+    normLabels_->setEnabled(rep);
+    {
+        const bool was = filling_;
+        filling_ = true;
+        normColor_->setChecked(L ? L->normColors : true);
+        normLabels_->setChecked(L ? L->normLabels : true);
+        filling_ = was;
+    }
+    if (!rep) {
+        normSummary_->setText(have ? t("gui.norm.notrun") : QString());
+        return;
+    }
+    const auto& R = *L->norms;
+    const auto& rules = L->normRules;
+    const auto& m = *L->model;
+    int enabled = 0, verified = 0;
+    for (const auto& r : rules) {
+        enabled += r.enabled;
+        verified += r.enabled && r.verified;
+    }
+    QString sum = t("gui.norm.summary", {QString::number(R.errors), QString::number(R.warnings), QString::number(R.subjects), QString::number(enabled),
+                                         QString::number(R.seconds, 'f', R.seconds < 0.1 ? 3 : 2)});
+    if (R.errors == 0 && R.warnings == 0) sum = QStringLiteral("<span style='color:#3fb950'>✔ </span>") + sum;
+    sum += "<br><span style='color:#8b96b0'>" + t("gui.norm.legend", {QString::number(verified), QString::number(enabled - verified)}) + "</span>";
+    for (const auto& e : R.ruleErrors) sum += "<br><span style='color:#E5484D'>" + t("gui.norm.ruleerr", {QString::fromStdString(e).toHtmlEscaped()}) + "</span>";
+    normSummary_->setText(sum);
+    const int filter = normFilter_->currentIndex();
+    const std::string lang = loc_.language();
+    int r = 0;
+    normTable_->setSortingEnabled(false);
+    normTable_->setRowCount(static_cast<int>(std::min<std::size_t>(R.items.size(), 5000)));
+    for (const auto& v : R.items) {
+        if (r >= 5000) break;
+        if ((filter == 1 && v.severity < 2) || (filter == 2 && v.severity >= 2)) continue;
+        if (v.rule < 0 || v.rule >= static_cast<int>(rules.size()) || v.element < 0 || v.element >= static_cast<int>(m.elements.size())) continue;
+        const auto& rule = rules[static_cast<std::size_t>(v.rule)];
+        const auto& e = m.elements[static_cast<std::size_t>(v.element)];
+        const QColor col = v.severity >= 2 ? QColor(229, 72, 77) : QColor(245, 165, 36);
+        auto* sev = new QTableWidgetItem(QStringLiteral("● ") + t(v.severity >= 2 ? "gui.norm.sev.error" : "gui.norm.sev.warning"));
+        sev->setForeground(col);
+        normTable_->setItem(r, 0, sev);
+        QString name = ifcElementName(loc_, e);
+        if (!v.where.empty()) name += QStringLiteral("  (") + QString::fromStdString(v.where) + ")";
+        auto* n = new QTableWidgetItem(name);
+        n->setData(Qt::UserRole, QString::fromStdString(e.guid));
+        n->setToolTip(QString::fromStdString(e.type + "\nGUID: " + e.guid));
+        normTable_->setItem(r, 1, n);
+        normTable_->setItem(r, 6, new QTableWidgetItem(e.storey >= 0 && e.storey < static_cast<int>(m.storeys.size())
+                                                           ? QString::fromStdString(m.storeys[static_cast<std::size_t>(e.storey)].name) : QString()));
+        auto* rt = new QTableWidgetItem(QString::fromStdString(rule.titleFor(lang)));
+        if (!rule.note.empty()) rt->setToolTip(QString::fromStdString(rule.note));
+        normTable_->setItem(r, 2, rt);
+        auto* val = new QTableWidgetItem(QString::fromStdString(bim::normFormat(v.value, rule.unit)));
+        val->setForeground(col);
+        val->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        normTable_->setItem(r, 3, val);
+        auto* lim = new QTableWidgetItem(QString::fromUtf8(v.belowMin ? "≥ " : "≤ ") + QString::fromStdString(bim::normFormat(v.limit, rule.unit)));
+        lim->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        normTable_->setItem(r, 4, lim);
+        QString ref = QString::fromStdString(rule.norm + (rule.clause.empty() ? std::string() : ", " + rule.clause));
+        if (!rule.verified) ref += QStringLiteral(" · ") + t("gui.norm.unverified");
+        auto* rf = new QTableWidgetItem(ref);
+        if (!rule.verified) {
+            rf->setForeground(QColor(139, 150, 176));
+            rf->setToolTip(t("gui.norm.unverified.tip"));
+        }
+        normTable_->setItem(r, 5, rf);
+        ++r;
+    }
+    normTable_->setRowCount(r);
+    normTable_->resizeColumnsToContents();
+    if (normTable_->columnWidth(1) > 190) normTable_->setColumnWidth(1, 190);
+    if (normTable_->columnWidth(2) > 230) normTable_->setColumnWidth(2, 230);
+    if (normTable_->columnWidth(5) > 170) normTable_->setColumnWidth(5, 170);
+}
+
+bool IfcPanel::exportNorms(const QString& path) const {
+    const int i = current();
+    if (i < 0 || !models_[static_cast<std::size_t>(i)].norms) return false;
+    const auto& L = models_[static_cast<std::size_t>(i)];
+    const auto& R = *L.norms;
+    const auto& rules = L.normRules;
+    const auto& m = *L.model;
+    const std::string lang = loc_.language();
+    using xlsx::Cell;
+    xlsx::Workbook wb;
+    auto tr = [&](const char* k) { return loc_.tr(k); };
+    // 1. Nomuvofiqliklar
+    auto& s1 = wb.add(tr("gui.norm.x.items"));
+    s1.widths = {6, 14, 32, 18, 18, 34, 12, 12, 20, 10, 14, 26, 40};
+    s1.add({Cell::s("№", 1), Cell::s(tr("gui.norm.col.sev"), 1), Cell::s(tr("gui.ifc.col.name"), 1), Cell::s(tr("gui.ifc.col.cat"), 1),
+            Cell::s(tr("gui.ifc.col.storey"), 1), Cell::s(tr("gui.norm.col.rule"), 1), Cell::s(tr("gui.norm.col.value"), 1),
+            Cell::s(tr("gui.norm.col.limit"), 1), Cell::s(tr("gui.norm.col.norm"), 1), Cell::s(tr("gui.norm.col.clause"), 1),
+            Cell::s(tr("gui.norm.col.verified"), 1), Cell::s("GUID", 1), Cell::s(tr("gui.norm.col.note"), 1)});
+    int n = 0;
+    for (const auto& v : R.items) {
+        if (v.rule < 0 || v.rule >= static_cast<int>(rules.size()) || v.element < 0 || v.element >= static_cast<int>(m.elements.size())) continue;
+        const auto& rule = rules[static_cast<std::size_t>(v.rule)];
+        const auto& e = m.elements[static_cast<std::size_t>(v.element)];
+        std::string name = ifcElementName(loc_, e).toStdString();
+        if (!v.where.empty()) name += " (" + v.where + ")";
+        s1.add({Cell::n(++n, 5), Cell::s(tr(v.severity >= 2 ? "gui.norm.sev.error" : "gui.norm.sev.warning")), Cell::s(name),
+                Cell::s(loc_.tr(std::string("ifc.cat.") + bim::ifcCategory(e.type))),
+                Cell::s(e.storey >= 0 && e.storey < static_cast<int>(m.storeys.size()) ? m.storeys[static_cast<std::size_t>(e.storey)].name : std::string()),
+                Cell::s(rule.titleFor(lang)), Cell::s(bim::normFormat(v.value, rule.unit)),
+                Cell::s(std::string(v.belowMin ? "≥ " : "≤ ") + bim::normFormat(v.limit, rule.unit)), Cell::s(rule.norm), Cell::s(rule.clause),
+                Cell::s(tr(rule.verified ? "gui.norm.yes" : "gui.norm.no")), Cell::s(e.guid), Cell::s(rule.note)});
+    }
+    // 2. Qoidalar bo'yicha jamlama
+    auto& s2 = wb.add(tr("gui.norm.x.rules"));
+    s2.widths = {20, 40, 20, 10, 12, 12, 14, 14};
+    s2.add({Cell::s("ID", 1), Cell::s(tr("gui.norm.col.rule"), 1), Cell::s(tr("gui.norm.col.norm"), 1), Cell::s(tr("gui.norm.col.clause"), 1),
+            Cell::s(tr("gui.norm.col.checked"), 1), Cell::s(tr("gui.norm.col.failed"), 1), Cell::s(tr("gui.norm.col.sev"), 1),
+            Cell::s(tr("gui.norm.col.verified"), 1)});
+    for (std::size_t k = 0; k < rules.size(); ++k) {
+        const auto& rule = rules[k];
+        if (!rule.enabled) continue;
+        s2.add({Cell::s(rule.id), Cell::s(rule.titleFor(lang)), Cell::s(rule.norm), Cell::s(rule.clause),
+                Cell::n(k < R.applicable.size() ? R.applicable[k] : 0, 5), Cell::n(k < R.failed.size() ? R.failed[k] : 0, 5),
+                Cell::s(tr(rule.severity >= 2 ? "gui.norm.sev.error" : "gui.norm.sev.warning")), Cell::s(tr(rule.verified ? "gui.norm.yes" : "gui.norm.no"))});
+    }
+    try {
+        xlsx::save(wb, path.toStdString());
+    } catch (const Error&) {
+        return false;
+    }
+    return true;
+}
+
 void IfcPanel::highlightGuid(const QString& guid) {
     for (int r = 0; r < elems_->rowCount(); ++r)
         if (auto* it = elems_->item(r, 0); it && it->data(Qt::UserRole).toString() == guid) {
@@ -482,6 +720,7 @@ void IfcPanel::fillDetails() {
         elems_->setRowCount(0);
         elemCount_->clear();
         fillPlan();
+        fillNorms();
         return;
     }
     const auto& m = *models_[static_cast<std::size_t>(i)].model;
@@ -499,6 +738,7 @@ void IfcPanel::fillDetails() {
         filling_ = false;
         fillElements();
         fillPlan();
+        fillNorms();
     }
     // qaysi qavat tanlangan bo'lsa — jadval shu qavat bo'yicha
     int onlyStorey = -100;

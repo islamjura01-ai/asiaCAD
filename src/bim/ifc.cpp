@@ -1254,7 +1254,22 @@ private:
                 if (p.empty()) continue;
                 const std::string& pt = T(pid);
                 std::string val;
-                if (pt == "IFCPROPERTYSINGLEVALUE" && p.size() > 2) val = valueText(p[2]);
+                if (pt == "IFCPROPERTYSINGLEVALUE" && p.size() > 2) {
+                    // uzunlik / yuza / hajm o'lchovlari — loyiha birligidan metrga
+                    const V& nv = p[2];
+                    double sc = 0;
+                    if (nv.k == V::Typed && nv.list.size() == 1 && nv.list[0].k == V::Num) {
+                        if (nv.s == "IFCLENGTHMEASURE" || nv.s == "IFCPOSITIVELENGTHMEASURE" || nv.s == "IFCNONNEGATIVELENGTHMEASURE") sc = L_;
+                        else if (nv.s == "IFCAREAMEASURE") sc = L_ * L_;
+                        else if (nv.s == "IFCVOLUMEMEASURE") sc = L_ * L_ * L_;
+                    }
+                    if (sc > 0) {
+                        std::ostringstream os;
+                        os.precision(8);
+                        os << nv.list[0].num * sc;
+                        val = os.str();
+                    } else val = valueText(nv);
+                }
                 else if (pt == "IFCPROPERTYENUMERATEDVALUE" && p.size() > 2) val = valueText(p[2]);
                 else if (pt == "IFCPROPERTYLISTVALUE" && p.size() > 2) val = valueText(p[2]);
                 else if (pt == "IFCPROPERTYBOUNDEDVALUE" && p.size() > 3) val = valueText(p[3]) + " … " + valueText(p[2]);
@@ -1553,7 +1568,8 @@ private:
         else dst.insert(dst.end(), t.begin(), t.end());
     }
 
-    void extrude(const std::vector<Region>& regs, const Xf& f, const Vec3& dir, double depth, std::vector<Tri>& out) const {
+public:
+    static void extrude(const std::vector<Region>& regs, const Xf& f, const Vec3& dir, double depth, std::vector<Tri>& out) {
         const Vec3 dv = dir * depth;
         for (const auto& r : regs) {
             std::vector<Vec3> P;
@@ -1604,6 +1620,7 @@ private:
         }
     }
 
+private:
     void revolve(const std::vector<Region>& regs, const Xf& f, const Vec3& ao, const Vec3& ad, double angle, std::vector<Tri>& out) const {
         const int seg = std::clamp(static_cast<int>(std::ceil(std::abs(angle) / (kPi / 12))), 3, 48);
         auto rot = [&](const Vec3& p, double t) {
@@ -2086,6 +2103,44 @@ private:
             el.name = str(a[2]);
             el.objectType = str(a[4]);
             if (a.size() > 7 && a[7].k == V::Str) el.tag = a[7].s;
+            // PredefinedType / BarRole: 8-argumentdan keyingi birinchi sanab o'tiladigan qiymat
+            for (std::size_t k = 8; k < a.size(); ++k)
+                if (a[k].k == V::Enum && a[k].s != "T" && a[k].s != "F" && a[k].s != "U" && a[k].s != "TRUE" && a[k].s != "FALSE" &&
+                    a[k].s != "ELEMENT" && a[k].s != "COMPLEX" && a[k].s != "PARTIAL") {
+                    el.predefined = a[k].s;
+                    break;
+                }
+            {
+                // sonli atributlar (metrda): eshik/deraza o'lchamlari, zina marshi, armatura
+                auto numAt = [&](std::size_t k, const char* key, double scale) {
+                    if (k >= a.size()) return;
+                    const V& v = a[k];
+                    if (v.k != V::Num && !(v.k == V::Typed && !v.list.empty())) return;
+                    el.num[key] = num(v) * scale;
+                };
+                if (t.rfind("IFCDOOR", 0) == 0 || t.rfind("IFCWINDOW", 0) == 0) {
+                    numAt(8, "OverallHeight", L_);
+                    numAt(9, "OverallWidth", L_);
+                } else if (t == "IFCSTAIRFLIGHT") {
+                    numAt(8, "NumberOfRisers", 1);
+                    numAt(9, "NumberOfTreads", 1);
+                    numAt(10, "RiserHeight", L_);
+                    numAt(11, "TreadLength", L_);
+                } else if (t == "IFCREINFORCINGBAR") {
+                    numAt(9, "NominalDiameter", L_);
+                    numAt(11, "BarLength", L_);
+                    if (a.size() > 8 && a[8].k == V::Str && !a[8].s.empty()) el.props.emplace_back("SteelGrade", a[8].s);
+                } else if (t == "IFCSPACE") {
+                    if (a.size() > 7 && a[7].k == V::Str && !a[7].s.empty()) el.props.emplace_back("LongName", a[7].s);
+                }
+                for (const auto& [k, v] : el.num) {
+                    std::ostringstream os;
+                    os.precision(6);
+                    os << v;
+                    el.props.emplace_back("Attr." + k, os.str());
+                }
+                if (!el.predefined.empty()) el.props.emplace_back("PredefinedType", el.predefined);
+            }
             el.storey = storeyOf(id);
             // material
             std::vector<std::string> mn;
@@ -2321,6 +2376,22 @@ std::vector<IfcSummaryRow> ifcSummary(const IfcModel& m) {
     std::vector<IfcSummaryRow> out;
     for (auto& [k, v] : rows) out.push_back(v);
     std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.count > b.count; });
+    return out;
+}
+
+std::vector<std::array<Vec3, 3>> ifcExtrude(const std::vector<Vec3>& outer, const std::vector<std::vector<Vec3>>& holes, double z0, double z1) {
+    Region r;
+    for (const auto& p : outer) r.outer.push_back({p.x, p.y, 0});
+    for (const auto& h : holes) {
+        std::vector<Vec3> hh;
+        for (const auto& p : h) hh.push_back({p.x, p.y, 0});
+        r.holes.push_back(std::move(hh));
+    }
+    std::vector<Tri> out;
+    if (r.outer.size() < 3 || z1 <= z0) return out;
+    Xf f;
+    f.m[2][3] = z0;
+    Reader::extrude({r}, f, {0, 0, 1}, z1 - z0, out);
     return out;
 }
 

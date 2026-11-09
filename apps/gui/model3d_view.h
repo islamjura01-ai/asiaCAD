@@ -58,6 +58,8 @@ public:
     // Uchburchaklar to'ri (IFC elementlari): qirralar — chegara va burilish > ~25° (tekis yuza diagonallari ko'rsatilmaydi)
     void addMesh(const std::vector<std::array<Vec3, 3>>& tris, const QColor& c, int alpha = 255, bool edges = true);
     void addLabel(const P3& at, const QString& text);
+    void addLabel(const P3& at, const QString& text, const QColor& color);   // ramkali rangli belgi
+    int labelCount() const { return static_cast<int>(labels_.size()); }
     void endScene(bool keepView = false);
     void setEmptyText(const QString& t) { empty_ = t; update(); }
 
@@ -115,7 +117,7 @@ private:
         QVector3D bmin{1e30f, 1e30f, 1e30f}, bmax{-1e30f, -1e30f, -1e30f};
         bool hidden = false;
     };
-    struct Label { QVector3D at; QString text; };
+    struct Label { QVector3D at; QString text; QColor color; };   // color — yaroqli bo'lsa: rangli belgi (ShNQ xatosi)
 
     QString tr_(const char* k) const;
     int curObj();

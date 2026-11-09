@@ -6,6 +6,7 @@
 #include <asiacad/bim/steel.h>
 #include <asiacad/bim/templates.h>
 #include <asiacad/bim/ifc.h>
+#include <asiacad/bim/norms.h>
 #include <asiacad/civil/survey.h>
 #include <asiacad/civil/terrain.h>
 #include <asiacad/civil/excel.h>
@@ -355,7 +356,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 110);
+    CHECK(loc.canonicalCommands().size() == 111);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -1796,7 +1797,7 @@ TEST(rebar_build_model) {
     add("USTUN", {{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.4, 0}, {0, 0.4, 0}});
     add("PLITA", {{-3, -3, 0}, {3, -3, 0}, {3, 3, 0}, {-3, 3, 0}});
     bim::BuildingParams p;
-    p.floors = 2;
+    p.floors = 3;   // 2-qavat sterjenlari: o'lchash nuqtasi aynan plita usti = ustun osti tutashuvida (z = 6.000)
     const auto bm = bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p);
     auto rs = bim::defaultRebarSettings();
     CHECK(rs.byKind.count(bim::ElemKind::Column) && rs.byKind.count(bim::ElemKind::Slab) && rs.byKind.count(bim::ElemKind::FoundationSlab));
@@ -1852,7 +1853,7 @@ TEST(rebar_shnq_2_03_01_24) {
     add("USTUN", {{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.4, 0}, {0, 0.4, 0}});
     add("PLITA", {{-3, -3, 0}, {3, -3, 0}, {3, 3, 0}, {-3, 3, 0}});
     bim::BuildingParams p;
-    p.floors = 2;
+    p.floors = 3;   // 2-qavat sterjenlari: o'lchash nuqtasi aynan plita usti = ustun osti tutashuvida (z = 6.000)
     const auto bm = bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p);
     auto rs = bim::defaultRebarSettings();
     auto has = [](const bim::RebarModel& m, const char* key) {
@@ -2732,6 +2733,224 @@ TEST(ifc_cli_and_ifczip) {
     std::string err;
     CHECK(bim::readIfc(tmp.string(), m, err) && m.elements.size() == 6);
     std::filesystem::remove(tmp);
+}
+
+// ---------------------------------------------------------------- ShNQ normativ tekshiruvi
+TEST(norms_expressions) {
+    bim::NormVars v{{"d", 0.025}, {"hostT", 0.2}, {"host", std::string("COLUMN")}, {"stirrup", 0.0}, {"lean", 1.0}};
+    auto num = [&](const char* e) {
+        const auto r = bim::normEval(e, v);
+        return r && std::holds_alternative<double>(*r) ? std::get<double>(*r) : -999.0;
+    };
+    NEAR(num("max(15mm, d)"), 0.025);
+    NEAR(num("if(hostT <= 100mm, 10mm, 15mm)"), 0.015);
+    NEAR(num("if(lean, 35mm, 70mm)"), 0.035);
+    NEAR(num("2.5cm + 1.2m"), 1.225);
+    NEAR(num("host == \"COLUMN\" && !stirrup"), 1.0);
+    NEAR(num("host == 'column'"), 1.0);   // katta-kichik harfsiz
+    NEAR(num("host != \"SLAB\" ? d / 4 : 0"), 0.00625);
+    NEAR(num("round(d * 1000 / 3, 1)"), 8.3);
+    NEAR(num("unknownVar > 1 || 1"), 1.0);   // o'ng tomon rost — noma'lum o'zgaruvchi muhim emas
+    CHECK(!bim::normEval("unknownVar + 1", v));   // qo'llanmaydi
+    bim::NormProps props{{"Pset_DoorCommon.FireExit", "TRUE"}};
+    const auto pr = bim::normEval("prop(\"pset_doorcommon.fireexit\") == \"TRUE\"", v, &props);
+    CHECK(pr && std::get<double>(*pr) == 1.0);
+    std::string err;
+    CHECK(!bim::normSyntaxOk("max(15mm, ", &err) && !err.empty());
+    CHECK(!bim::normSyntaxOk("15kg") && !bim::normSyntaxOk("foo(1)") && bim::normSyntaxOk("min(a, b, 3mm)"));
+    CHECK(bim::normFormat(0.016, "mm") == "16 mm" && bim::normFormat(0.00625, "mm") == "6.25 mm" && bim::normFormat(1.05, "m") == "1.050 m");
+    CHECK(bim::isConcreteMaterial("Beton B25") && bim::isConcreteMaterial("Бетон тяжёлый") && bim::isConcreteMaterial("Concrete, Cast-in-Place gray") &&
+          bim::isConcreteMaterial("C30/37") && !bim::isConcreteMaterial("Gazoblok D500") && !bim::isConcreteMaterial("Steel S355") &&
+          !bim::isConcreteMaterial("Bolt M10"));
+}
+
+TEST(norms_rules_json) {
+    const auto def = bim::defaultNormRules();
+    CHECK(def.size() >= 15);
+    int verified = 0;
+    std::set<std::string> ids;
+    for (const auto& r : def) {
+        verified += r.verified;
+        ids.insert(r.id);
+        for (const std::string* e : {&r.when, &r.param, &r.min, &r.max}) CHECK(e->empty() || bim::normSyntaxOk(*e));
+        CHECK(!r.titleFor("uz").empty() && !r.titleFor("kk").empty());
+        CHECK(!r.verified || r.severity == 2);   // tasdiqlanmagan qoida — faqat ogohlantirish
+    }
+    CHECK(ids.size() == def.size() && verified >= 9);
+    const auto back = bim::normRulesFromJson(bim::normRulesToJson(def));
+    CHECK(back.size() == def.size());
+    for (std::size_t i = 0; i < def.size() && i < back.size(); ++i)
+        CHECK(back[i].id == def[i].id && back[i].when == def[i].when && back[i].min == def[i].min && back[i].max == def[i].max &&
+              back[i].severity == def[i].severity && back[i].verified == def[i].verified && back[i].enabled == def[i].enabled &&
+              back[i].cats == def[i].cats && back[i].title == def[i].title && back[i].concreteOnly == def[i].concreteOnly);
+    bool threw = false;
+    try {
+        bim::normRulesFromJson("{\"rules\": 5}");
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    CHECK(threw);
+}
+
+TEST(norms_ifc_rebar_cover) {
+    bim::IfcModel m;
+    std::string err;
+    CHECK(bim::readIfc(dataPath("armatura_sinov.ifc"), m, err));
+    CHECK(m.elements.size() == 11);
+    const auto rules = bim::defaultNormRules();
+    const auto rep = bim::normCheck(m, rules);
+    CHECK(rep.errors == 4 && rep.warnings == 0 && rep.ruleErrors.empty());
+    std::map<std::string, std::pair<std::string, double>> got;   // qoida -> (element, qiymat)
+    for (const auto& v : rep.items) got[rules[static_cast<std::size_t>(v.rule)].id] = {m.elements[static_cast<std::size_t>(v.element)].name, v.value};
+    CHECK(got.count("rc.cover.col.long") && std::abs(got["rc.cover.col.long"].second - 0.016) < 1e-6);   // xomut 10 + Ø6
+    CHECK(got.count("rc.cover.col.tr") && std::abs(got["rc.cover.col.tr"].second - 0.010) < 1e-6);
+    CHECK(got.count("rc.stir.dmin") && std::abs(got["rc.stir.dmin"].second - 0.006) < 1e-9);     // < 0,25·25
+    CHECK(got.count("rc.cover.found") && got["rc.cover.found"].first.find("F1") != std::string::npos && std::abs(got["rc.cover.found"].second - 0.050) < 1e-6);
+    // F2 (padbetonka bilan) va ustun ustidagi shtir (plita bilan ichki tutashuv) — xatosiz
+    for (const auto& v : rep.items) {
+        const auto& n = m.elements[static_cast<std::size_t>(v.element)].name;
+        CHECK(n.find("F2") == std::string::npos && n.find("shtir") == std::string::npos);
+    }
+    // qoida o'chirilsa — tekshirilmaydi; chegarani o'zgartirish
+    auto r2 = rules;
+    for (auto& r : r2) {
+        if (r.id == "rc.cover.found") r.enabled = false;
+        if (r.id == "rc.cover.col.long") r.min = "max(15mm, d * 0.5)";
+    }
+    const auto rep2 = bim::normCheck(m, r2);
+    CHECK(rep2.errors == 2);
+    // element bo'yicha eng og'ir daraja
+    const auto worst = rep.worstByElement(m.elements.size());
+    CHECK(std::count(worst.begin(), worst.end(), 2) == 3);
+}
+
+TEST(norms_ifc_elements) {
+    bim::IfcModel m;
+    std::string err;
+    CHECK(bim::readIfc(dataPath("revit_sinov.ifc"), m, err));
+    int samples = 0;
+    const auto subs = bim::ifcNormSubjects(m, &samples);
+    auto var = [&](const char* type, const char* k) {
+        for (const auto& s : subs)
+            if (m.elements[static_cast<std::size_t>(s.element)].type == type)
+                if (auto it = s.vars.find(k); it != s.vars.end() && std::holds_alternative<double>(it->second)) return std::get<double>(it->second);
+        return -1.0;
+    };
+    NEAR(var("IFCWALL", "thickness"), 0.2);   // kesim — polosa eni (teshik bo'lsa ham)
+    NEAR(var("IFCSLAB", "thickness"), 0.2);   // 2V / gorizontal yuzalar
+    NEAR(var("IFCCOLUMN", "secArea"), 2 * 0.135 * 0.0102 + (0.3 - 2 * 0.0102) * 0.0065);   // I-profil kesimi
+    NEAR(var("IFCWINDOW", "width"), 1.0);
+    NEAR(var("IFCWINDOW", "sill"), 0.9);
+    NEAR(var("IFCSTAIRFLIGHT", "width"), 1.0);
+    const auto rep = bim::normCheck(m, bim::defaultNormRules());
+    CHECK(rep.errors == 0 && rep.warnings == 1);   // marsh eni 1.0 < 1.05 (tasdiqlanmagan — ogohlantirish)
+}
+
+TEST(norms_cli) {
+    const auto s = runScript("uz", {"SHNQ \"" + dataPath("armatura_sinov.ifc") + "\""});
+    CHECK(s.find("xatolar: 4, ogohlantirishlar: 0") != std::string::npos);
+    CHECK(s.find("Ustun: bo'ylama armatura himoya qatlami: 16 mm < 25 mm (ShNQ 2.03.01-24, 376b)") != std::string::npos);
+    CHECK(s.find("376v") != std::string::npos && s.find("434") != std::string::npos);
+    const auto out = (std::filesystem::temp_directory_path() / "asiacad_shnq_rules.json").string();
+    const auto e = runScript("ru", {"ШНК ПРАВИЛА \"" + out + "\""});
+    CHECK(e.find("Правила сохранены") != std::string::npos);
+    std::ifstream f(out, std::ios::binary);
+    const std::string js((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(bim::normRulesFromJson(js).size() == bim::defaultNormRules().size());
+    // o'zgartirilgan qoidalar fayli bilan: fundament talabi o'chirilgan
+    auto rules = bim::defaultNormRules();
+    for (auto& r : rules)
+        if (r.id == "rc.cover.found") r.enabled = false;
+    {
+        std::ofstream o(out, std::ios::binary | std::ios::trunc);
+        o << bim::normRulesToJson(rules);
+    }
+    const auto s2 = runScript("en", {"SHNQ \"" + dataPath("armatura_sinov.ifc") + "\" \"" + out + "\""});
+    CHECK(s2.find("errors: 3, warnings: 0") != std::string::npos);
+    std::filesystem::remove(out);
+}
+
+TEST(norms_cover_internal_interface) {
+    // Ustun - plita - ustun: sterjen tutashuv yuzasini kesib o'tadi, o'lchash nuqtalaridan biri aynan yuzada.
+    // Ichki tutashuv himoya qatlamini nolga tushirmasligi kerak.
+    bim::IfcModel m;
+    auto solid = [&](const char* type, double x0, double x1, double z0, double z1) {
+        bim::IfcElement e;
+        e.id = static_cast<int>(m.elements.size());
+        e.type = type;
+        e.material = "Beton B25";
+        e.storey = 0;
+        bim::IfcPart part;
+        part.tris = bim::ifcExtrude({{x0, x0, 0}, {x1, x0, 0}, {x1, x1, 0}, {x0, x1, 0}}, {}, z0, z1);
+        for (const auto& t : part.tris)
+            for (const auto& q : t) e.box.expand(q);
+        e.volume = (x1 - x0) * (x1 - x0) * (z1 - z0);
+        e.parts.push_back(std::move(part));
+        m.elements.push_back(std::move(e));
+    };
+    solid("IFCCOLUMN", -0.2, 0.2, 0.0, 2.8);
+    solid("IFCSLAB", -3.0, 3.0, 2.8, 3.0);
+    solid("IFCCOLUMN", -0.2, 0.2, 3.0, 5.8);
+    bim::IfcElement bar;
+    bar.type = "IFCREINFORCINGBAR";
+    bar.predefined = "MAIN";
+    bar.storey = 0;
+    // uzunlik 3.64: nuqtalar 0.05 + 0.1475·i, i = 20 -> z = 3.000 (plita usti / ustun osti)
+    bar.bars.push_back({{{-0.154, -0.154, 0.0}, {-0.154, -0.154, 3.64}}, 0.008});
+    for (const auto& q : bar.bars[0].first) bar.box.expand(q);
+    m.elements.push_back(std::move(bar));
+    const auto subs = bim::ifcNormSubjects(m);
+    bool found = false;
+    for (const auto& s : subs) {
+        if (s.cat != "REBAR") continue;
+        found = true;
+        const double cover = std::get<double>(s.vars.at("cover"));
+        CHECK(std::abs(cover - 0.038) < 0.0015);   // 200 - 154 - 8 = 38 mm
+    }
+    CHECK(found);
+    CHECK(bim::normCheck(m, bim::defaultNormRules()).errors == 0);
+}
+
+TEST(norms_building_model) {
+    // "Monolit bino": standart armatura shablonlari — geometrik himoya qatlami ham ShNQ ga mos
+    Document doc;
+    auto add = [&](const char* layer, std::vector<Vec3> pts) {
+        auto e = std::make_unique<PolylineEntity>(std::move(pts), true);
+        e->setLayer(layer);
+        doc.add(std::move(e));
+    };
+    add("USTUN", {{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.4, 0}, {0, 0.4, 0}});
+    add("PLITA", {{-3, -3, 0}, {3, -3, 0}, {3, 3, 0}, {-3, 3, 0}});
+    bim::BuildingParams p;
+    p.floors = 3;   // 2-qavat sterjenlari: o'lchash nuqtasi aynan plita usti = ustun osti tutashuvida (z = 6.000)
+    const auto bm = bim::buildModel(bim::readPlan(doc, bim::autoLayerMap(doc)), p);
+    auto rs = bim::defaultRebarSettings();
+    const auto rm = bim::buildRebar(bm, p, rs);
+    std::vector<std::vector<int>> prismsOf;
+    std::vector<int> barOf;
+    const auto m = bim::buildingAsIfc(bm, p, &rm, &prismsOf, &barOf);
+    CHECK(m.elements.size() == prismsOf.size() && m.elements.size() == barOf.size());
+    int bars = 0, prisms = 0;
+    for (std::size_t i = 0; i < m.elements.size(); ++i) {
+        bars += barOf[i] >= 0;
+        prisms += !prismsOf[i].empty();
+    }
+    CHECK(bars > 50 && prisms >= 6);
+    const auto rules = bim::defaultNormRules();
+    const auto ok = bim::normCheck(m, rules);
+    int coverChecked = 0;
+    for (std::size_t r = 0; r < rules.size(); ++r)
+        if (rules[r].id.rfind("rc.cover", 0) == 0) coverChecked += ok.applicable[r];
+    CHECK(coverChecked > 20 && ok.errors == 0);
+    // ustun himoya qatlami 10 mm — geometrik tekshiruv ham ushlaydi
+    auto bad = rs;
+    bad.byKind[bim::ElemKind::Column].cover = 0.010;
+    const auto rb = bim::buildRebar(bm, p, bad);
+    const auto mb = bim::buildingAsIfc(bm, p, &rb, nullptr, nullptr);
+    const auto rep = bim::normCheck(mb, rules);
+    bool colCover = false;
+    for (const auto& v : rep.items) colCover |= rules[static_cast<std::size_t>(v.rule)].id.rfind("rc.cover.col", 0) == 0;
+    CHECK(rep.errors > 0 && colCover);
 }
 
 int main() {

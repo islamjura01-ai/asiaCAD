@@ -14,6 +14,7 @@
 #include "earthwork_dialog.h"
 #include "model3d_view.h"
 #include "ifc_panel.h"
+#include "norm_rules_dialog.h"
 #include "sheet_view.h"
 #include "smart_panel.h"
 #include <QStackedWidget>
@@ -60,6 +61,8 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QProgressDialog>
+#include <QFile>
+#include <QStandardPaths>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
@@ -163,6 +166,7 @@ const ActDef kActs[] = {
     {"recent", "recent", "gui.act.recent", false},
     {"kjimport", "rebar+imp", "gui.act.kjimport", false}, {"bimimport", "bim+imp", "gui.act.bimimport", false},
     {"ifcimport", "ifc+imp", "gui.act.ifcimport", false}, {"ifcpanel", "ifctree", "gui.act.ifcpanel", false},
+    {"normcheck", "shnq", "gui.act.normcheck", false}, {"normrules", "rules", "gui.act.normrules", false},
     {"view2d", "view2d", "gui.act.view2d", false},
     {"cam3d", "camera", "gui.act.cam3d", false},  {"cut3d", "cut", "gui.act.cut3d", false},
     {"cats3d", "cats", "gui.act.cats3d", false},
@@ -627,6 +631,23 @@ void MainWindow::buildActions() {
         importIfc(files);
     });
     connect(act_["ifcpanel"], &QAction::triggered, this, [this] { openIfcPanel(); });
+    // ShNQ tekshiruvi: IFC model bo'lsa — joriy model; aks holda "Monolit bino" (o'z oynasida qizil bilan)
+    connect(act_["normcheck"], &QAction::triggered, this, [this] {
+        if (!ifc_.empty()) {
+            IfcPanel* p = openIfcPanel();
+            p->showNormTab();
+            runIfcNormCheck(std::max(0, p->current()));
+            return;
+        }
+        if (building_ && !building_->model().prisms.empty()) {
+            building_->show();
+            building_->raise();
+            building_->runNormCheck(true);
+            return;
+        }
+        QMessageBox::information(this, t("gui.act.normcheck"), t("gui.norm.nothing"));
+    });
+    connect(act_["normrules"], &QAction::triggered, this, [this] { openNormRules(); });
     connect(act_["util"], &QAction::triggered, this, [this] { openUtility(); });
     connect(act_["road"], &QAction::triggered, this, [this] { openRoad(); });
     connect(act_["waterway"], &QAction::triggered, this, [this] { openWaterway(); });
@@ -865,6 +886,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
         {"gui.tab.analyze", {{"gui.grp.volume", {"ewvolume"}},
                              {"gui.grp.check", {"dist", "area", "list"}},
+                             {"gui.grp.norms", {"normcheck", "normrules"}},
                              {"gui.grp.reports", {"steelspec", "ifcpanel"}}}},
     };
     // Ochiladigan menyuli tugmalar (3D kamera, kesim, toifalar)
@@ -1869,6 +1891,7 @@ BuildingDialog* MainWindow::openBuilding() {
     if (!building_) {
         building_ = new BuildingDialog(loc_, doc_, !theme_.lightCanvas, this);
         building_->setStyleSheet(theme_.styleSheet);
+        building_->setNormRules(&normRules());
         connect(building_, &BuildingDialog::scratchRequested, this, [this] { openScratch("building"); });
         connect(building_, &BuildingDialog::locateRequested, this, &MainWindow::locate);
         connect(building_, &BuildingDialog::rebarRequested, this, [this] { openRebar(); });
@@ -2527,8 +2550,29 @@ void MainWindow::rebuild3D(bool keepView) {
         std::size_t total = 0;
         for (const auto& e : m.elements) total += e.triangleCount();
         const bool edges = total < 1500000;   // juda katta modelda qirralar o'chiriladi (tezlik)
-        for (const auto& e : m.elements) {
+        // ShNQ: element -> eng og'ir daraja va xabarlar
+        const bool normOn = L.norms && L.normColors;
+        std::vector<int> worst;
+        std::map<int, QStringList> normLines;
+        std::map<int, const bim::NormViolation*> firstViol;
+        if (L.norms) {
+            worst = L.norms->worstByElement(m.elements.size());
+            const std::string lang = loc_.language();
+            for (const auto& v : L.norms->items) {
+                if (v.rule < 0 || v.rule >= static_cast<int>(L.normRules.size())) continue;
+                const auto& r = L.normRules[static_cast<std::size_t>(v.rule)];
+                normLines[v.element] << QString::fromUtf8(v.severity >= 2 ? "⛔ " : "⚠ ") + QString::fromStdString(r.titleFor(lang)) + ": " +
+                                            QString::fromStdString(bim::normFormat(v.value, r.unit)) + (v.belowMin ? " < " : " > ") +
+                                            QString::fromStdString(bim::normFormat(v.limit, r.unit)) + "  (" +
+                                            QString::fromStdString(r.norm + (r.clause.empty() ? std::string() : ", " + r.clause)) + ")";
+                if (!firstViol.count(v.element)) firstViol[v.element] = &v;
+            }
+        }
+        int labels = 0;
+        for (std::size_t ei = 0; ei < m.elements.size(); ++ei) {
+            const auto& e = m.elements[ei];
             if (L.hiddenStoreys.count(e.storey)) continue;
+            const int sev = worst.empty() ? 0 : worst[ei];
             const QString cat = t((std::string("ifc.cat.") + bim::ifcCategory(e.type)).c_str());
             QStringList props;
             props << t("gui.ifc.p.type", {QString::fromStdString(e.type)});
@@ -2540,6 +2584,7 @@ void MainWindow::rebuild3D(bool keepView) {
             if (e.volume > 0 && bim::ifcCategory(e.type) != std::string("SPACE")) props << t("gui.v3d.p.volume", {QString::number(e.volume, 'f', 3)});
             if (e.barMass > 0) props << t("gui.ifc.p.rebar", {QString::number(e.barLength, 'f', 2), QString::number(e.barMass, 'f', 2)});
             if (!e.tag.empty()) props << t("gui.ifc.p.tag", {QString::fromStdString(e.tag)});
+            if (auto it = normLines.find(static_cast<int>(ei)); it != normLines.end()) props = it->second + props;
             props << QStringLiteral("GUID: ") + QString::fromStdString(e.guid);
             int np = 0;
             for (const auto& [k, v] : e.props) {
@@ -2547,17 +2592,43 @@ void MainWindow::rebuild3D(bool keepView) {
                 props << QString::fromStdString(k + ": " + v);
             }
             view3d_->beginObject(ifcElementName(loc_, e), cat, props);
+            const QColor sevC = sev >= 2 ? QColor(229, 60, 60) : QColor(245, 165, 36);
             for (const auto& part : e.parts) {
-                const QColor c(int((part.rgb >> 16) & 255), int((part.rgb >> 8) & 255), int(part.rgb & 255));
-                view3d_->addMesh(part.tris, c, std::clamp(int(std::lround(part.alpha * 255)), 20, 255), edges);
+                QColor c(int((part.rgb >> 16) & 255), int((part.rgb >> 8) & 255), int(part.rgb & 255));
+                int alpha = std::clamp(int(std::lround(part.alpha * 255)), 20, 255);
+                if (normOn) {
+                    if (sev > 0) {
+                        c = sevC;
+                        alpha = std::max(alpha, 230);
+                    } else {   // muvofiq — xira (xatolar ko'rinsin)
+                        c = QColor::fromHsv(c.hsvHue(), c.hsvSaturation() / 3, std::min(255, c.value() + 20));
+                        alpha = std::min(alpha, 55);
+                    }
+                }
+                view3d_->addMesh(part.tris, c, alpha, edges && (!normOn || sev > 0));
             }
             for (const auto& b : e.bars) {
                 std::vector<P3> pts;
                 for (const auto& q : b.first) pts.push_back({q.x, q.y, q.z});
                 const int mm = int(std::lround(b.second * 2000));
-                view3d_->addTube(pts, std::max(0.003, b.second), QColor::fromHsv((mm * 23) % 360, 150, 220), false, 6);
+                QColor c = QColor::fromHsv((mm * 23) % 360, 150, 220);
+                if (normOn) c = sev > 0 ? sevC : QColor(150, 158, 175, 120);
+                view3d_->addTube(pts, std::max(0.003, b.second), c, false, 6);
             }
             view3d_->endObject();
+            // xato belgisi (eng og'iri; 150 tadan ko'p emas)
+            if (L.norms && L.normLabels && sev > 0 && labels < 150)
+                if (auto it = firstViol.find(static_cast<int>(ei)); it != firstViol.end() && it->second->rule < static_cast<int>(L.normRules.size())) {
+                    const auto& v = *it->second;
+                    const auto& r = L.normRules[static_cast<std::size_t>(v.rule)];
+                    QString txt = QString::fromUtf8(v.severity >= 2 ? "⛔ " : "⚠ ") +
+                                  (r.clause.empty() ? QString::fromStdString(r.titleFor(loc_.language())) : QString::fromStdString(r.clause)) + "  " +
+                                  QString::fromStdString(bim::normFormat(v.value, r.unit)) + (v.belowMin ? " < " : " > ") +
+                                  QString::fromStdString(bim::normFormat(v.limit, r.unit));
+                    if (const int more = static_cast<int>(normLines[static_cast<int>(ei)].size()) - 1; more > 0) txt += QStringLiteral("  (+%1)").arg(more);
+                    view3d_->addLabel({v.at.x, v.at.y, v.at.z}, txt, sevC);
+                    ++labels;
+                }
         }
     }
     // koridor
@@ -3199,6 +3270,9 @@ IfcPanel* MainWindow::openIfcPanel() {
             statusBar()->showMessage(n > 0 ? t("gui.ifc.plan.done", {QString::number(n)}) : t("gui.ifc.plan.none"), 8000);
             if (n == 0) QMessageBox::information(ifcPanel_, t("gui.ifc.tab.plan"), t("gui.ifc.plan.none"));
         });
+        connect(ifcPanel_, &IfcPanel::normCheckRequested, this, [this](int mi) { runIfcNormCheck(mi); });
+        connect(ifcPanel_, &IfcPanel::normRulesRequested, this, [this] { openNormRules(); });
+        connect(ifcPanel_, &IfcPanel::normViewChanged, this, [this] { if (is3D()) rebuild3D(true); });
         connect(ifcPanel_, &IfcPanel::reloadRequested, this, [this](int mi, bool geo) {
             if (mi < 0 || mi >= static_cast<int>(ifc_.size())) return;
             importIfc({ifc_[static_cast<std::size_t>(mi)].path}, false, geo);
@@ -3225,6 +3299,71 @@ void MainWindow::syncIfcLinks() {
     } catch (const std::exception&) {
     }
     refreshTitle();
+}
+
+QString MainWindow::normRulesPath() const {
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/shnq_rules.json");
+}
+
+const std::vector<bim::NormRule>& MainWindow::normRules() {
+    if (!normRulesLoaded_) {
+        normRulesLoaded_ = true;
+        normRules_ = bim::defaultNormRules();
+        QFile f(normRulesPath());
+        if (f.exists() && f.open(QIODevice::ReadOnly)) {
+            try {
+                normRules_ = bim::normRulesFromJson(f.readAll().toStdString());
+            } catch (const std::exception& ex) {
+                statusBar()->showMessage(t("norm.err.rules", {QDir::toNativeSeparators(f.fileName()), QString::fromUtf8(ex.what())}), 10000);
+            }
+        }
+    }
+    return normRules_;
+}
+
+void MainWindow::openNormRules() {
+    NormRulesDialog dlg(loc_, normRules(), this);
+    dlg.setStyleSheet(theme_.styleSheet);
+    if (dlg.exec() != QDialog::Accepted) return;
+    normRules_ = dlg.rules();
+    QDir().mkpath(QFileInfo(normRulesPath()).absolutePath());
+    QFile f(normRulesPath());
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QByteArray::fromStdString(bim::normRulesToJson(normRules_)));
+    statusBar()->showMessage(t("gui.norm.rules.saved", {QString::number(normRules_.size()), QDir::toNativeSeparators(normRulesPath())}), 8000);
+    if (building_) building_->setNormRules(&normRules_);
+}
+
+void MainWindow::runIfcNormCheck(int mi) {
+    if (mi < 0 || mi >= static_cast<int>(ifc_.size())) return;
+    auto& L = ifc_[static_cast<std::size_t>(mi)];
+    const auto rules = normRules();
+    auto rep = std::make_shared<bim::NormReport>();
+    std::atomic<bool> done{false};
+    std::thread th([&] {
+        *rep = bim::normCheck(*L.model, rules);
+        done = true;
+    });
+    QProgressDialog pd(t("gui.norm.running", {QFileInfo(L.path).fileName()}), QString(), 0, 0, this);
+    pd.setWindowTitle(t("gui.norm.tab"));
+    pd.setWindowModality(Qt::WindowModal);
+    pd.setMinimumDuration(400);
+    pd.setCancelButton(nullptr);
+    while (!done) {
+        QApplication::processEvents(QEventLoop::AllEvents, 30);
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    }
+    th.join();
+    pd.close();
+    L.norms = rep;
+    L.normRules = rules;
+    L.normColors = true;
+    statusBar()->showMessage(t("gui.norm.done", {QString::number(rep->errors), QString::number(rep->warnings), QString::number(rep->subjects)}), 10000);
+    show3D(true);
+    rebuild3D(true);
+    if (ifcPanel_) {
+        ifcPanel_->fillNorms();
+        ifcPanel_->showNormTab();
+    }
 }
 
 void MainWindow::loadIfcLinks() {

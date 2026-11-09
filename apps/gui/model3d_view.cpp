@@ -581,7 +581,12 @@ void Model3DView::addMesh(const std::vector<std::array<Vec3, 3>>& tris, const QC
 
 void Model3DView::addLabel(const P3& at, const QString& text) {
     if (!haveOrigin_) { ox_ = at.x; oy_ = at.y; oz_ = at.z; haveOrigin_ = true; }
-    labels_.push_back({L(at), text});
+    labels_.push_back({L(at), text, QColor()});
+}
+
+void Model3DView::addLabel(const P3& at, const QString& text, const QColor& color) {
+    if (!haveOrigin_) { ox_ = at.x; oy_ = at.y; oz_ = at.z; haveOrigin_ = true; }
+    labels_.push_back({L(at), text, color});
 }
 
 void Model3DView::endScene(bool keepView) {
@@ -923,11 +928,38 @@ void Model3DView::drawOverlay(QPainter& p) {
     const QMatrix4x4 M = projMatrix() * viewMatrix();
     if (labels_.size() <= 400) {
         p.setPen(fg);
+        const QFontMetrics fm(p.font());
+        std::vector<QRectF> placed;   // rangli belgilar ustma-ust tushmasin
         for (const auto& l : labels_) {
             const QVector4D c = M * QVector4D(l.at, 1.f);
             if (c.w() <= 0) continue;
             const QPointF s((c.x() / c.w() * 0.5 + 0.5) * width(), (0.5 - c.y() / c.w() * 0.5) * height());
-            p.drawText(s + QPointF(4, -4), l.text);
+            if (!l.color.isValid()) {
+                p.drawText(s + QPointF(4, -4), l.text);
+                continue;
+            }
+            // ramkali belgi: nuqta + ko'rsatkich + matn
+            QRectF box(s.x() + 10, s.y() - 24, fm.horizontalAdvance(l.text) + 14, fm.height() + 6);
+            for (int k = 0; k < 24; ++k) {
+                bool hit = false;
+                for (const auto& r : placed)
+                    if (r.adjusted(-2, -2, 2, 2).intersects(box)) { hit = true; break; }
+                if (!hit) break;
+                box.translate(0, -(box.height() + 4));
+            }
+            placed.push_back(box);
+            p.save();
+            p.setRenderHint(QPainter::Antialiasing, true);
+            p.setPen(QPen(l.color, 1.6));
+            p.drawLine(s, QPointF(box.left(), box.bottom()));
+            p.setBrush(l.color);
+            p.drawEllipse(s, 3.5, 3.5);
+            QColor bg = dark_ ? QColor(14, 18, 30, 225) : QColor(255, 255, 255, 235);
+            p.setBrush(bg);
+            p.drawRoundedRect(box, 5, 5);
+            p.setPen(dark_ ? QColor(238, 241, 248) : QColor(30, 34, 44));
+            p.drawText(box.adjusted(7, 3, -7, -3), Qt::AlignVCenter | Qt::AlignLeft, l.text);
+            p.restore();
         }
     }
     // sarlavha
@@ -942,7 +974,9 @@ void Model3DView::drawOverlay(QPainter& p) {
     }
     if (!subtitle_.isEmpty()) {
         p.setPen(dim);
-        p.drawText(QRectF(12, bar_->height() + 34, width() * 0.6, 40), Qt::TextWordWrap, subtitle_);
+        const int w = static_cast<int>(width() * 0.6);
+        const QRect br = p.fontMetrics().boundingRect(QRect(0, 0, w, 10000), Qt::TextWordWrap, subtitle_);
+        p.drawText(QRectF(12, bar_->height() + 34, w, br.height() + 4), Qt::TextWordWrap, subtitle_);
     }
     // o'q uchligi (chap past)
     {

@@ -9,6 +9,7 @@
 
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
+#include <asiacad/bim/norms.h>
 #include <asiacad/i18n/localizer.h>
 
 #include <QDialog>
@@ -64,6 +65,19 @@ private:
 public:
     void setGroupVisible(int g, bool on);   // sinov va menyu uchun
     bool groupVisible(int g) const;
+    // ShNQ: elementlar va armatura shu qoidalar bilan tekshiriladi; on — 3D da ranglash (xato — qizil, ogohlantirish — sariq)
+    void setNormRules(const std::vector<bim::NormRule>* rules);
+    void runNormCheck(bool on);
+    const bim::NormReport& normReport() const { return normRep_; }
+    bool normOn() const { return normOn_; }
+private:
+    const std::vector<bim::NormRule>* normRules_ = nullptr;
+    QPushButton* normBtn_ = nullptr;
+    bool normOn_ = false, normDirty_ = true;
+    bim::NormReport normRep_;
+    std::vector<bim::NormRule> normRulesUsed_;
+    std::map<int, int> normPrism_, normBar_;   // prizma / sterjen -> eng og'ir daraja
+    void computeNorms();
 private:
     QPushButton* sample_ = nullptr;
     QString t(const char* key, const QStringList& args = {}) const;

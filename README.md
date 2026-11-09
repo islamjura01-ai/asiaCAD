@@ -639,3 +639,25 @@ Revit, ArchiCAD, Tekla, SketchUp, Allplan, Renga eksportlari (IFC2X3, IFC4, IFC4
 * **Loyiha bilan:** yuklangan IFC lar chizma lug'atida (`ifc:links`) saqlanadi — .acad ochilganda qayta yuklanadi
   (papka ko'chgan bo'lsa — chizma yonidan qidiriladi). Fayllarni oynaga sudrab tashlash (.ifc, .acad, .dxf, .dwg).
 * **Xarita / mahalliy koordinatalar:** IfcMapConversion bor modelda — Tarkib varag'idagi belgi bilan almashtiriladi.
+
+## ShNQ tekshiruvi (v0.32) — `src/bim/norms.*`, `apps/gui/norm_rules_dialog.*`, `SHNQ` buyrug'i
+
+Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo'ladi, qolganlari xira; yonida belgi
+(`⛔ 376b  16 mm < 25 mm`). IFC modellar va «Monolit bino» bir xil qoidalar bilan tekshiriladi.
+
+* **Qayerda:** Tahlil › Normativ › *ShNQ tekshiruvi* / *ShNQ qoidalari*; IFC modellar oynasi › *ShNQ tekshiruvi* varag'i
+  (ro'yxat, filtr, ikki marta bosish — element 3D da, *Dalolatnoma (Excel)*); Monolit bino › *ShNQ tekshiruvi* tugmasi
+  (natija — «Tekshiruv» ro'yxatida va 3D sarlavhasida). Buyruq satri: `SHNQ model.ifc [qoidalar.json]`, `SHNQ QOIDALAR chiqish.json`.
+* **Qoidalar jadvali** (`%APPDATA%/AsiaCAD/AsiaCAD/shnq_rules.json`): toifa, shart, kattalik, min/max (ifoda: `max(15mm, d)`,
+  `if(lean, 35mm, 70mm)`), daraja, norma va band, *tasdiqlangan* belgisi. Qo'shish, nusxa, o'chirish, JSON import/eksport,
+  standartga qaytarish; ifoda xatosi qizil bilan ko'rsatiladi.
+* **Armatura himoya qatlami** geometriyadan: sterjen bo'ylab nuqtalarda beton birlashmasining tashqi sirtigacha masofa minus
+  radius (ustun usti va plita osti kabi ichki tutashuvlar hisobga olinmaydi), joylashgan element (ustun, devor, plita,
+  fundament), qalinligi, padbetonka bor-yo'qligi, ustun bo'ylama diametri (xomut uchun).
+* **Tasdiqlangan qoidalar** (ShNQ 2.03.01-24 matni bilan solishtirilgan, xato): himoya qatlami — 376a (plita, devor), 376b
+  (ustun), 376v (fundament), 378 (xomut); ustun diametri 409, 411; xomut diametri 434.
+* **Tasdiqlanmagan qoidalar** (ogohlantirish, qiymatini normaning matni bilan tekshirib *tasdiqlangan* qilish kerak):
+  to'sin himoya qatlami, plita qalinligi, zina marshi eni / pog'ona balandligi va eni (ShNQ 2.08.01-24), to'siq balandligi,
+  evakuatsiya eshigi (ShNK 2.01.02-04), xona balandligi (o'chirilgan).
+* Namuna: `tests/data/armatura_sinov.ifc` — 4 ta xato (ustun bo'ylama 16 < 25 mm, xomut 10 < 15 mm, xomut Ø6 < 6.25 mm,
+  padbetonkasiz fundament 50 < 70 mm); dübel, plita to'ri va padbetonkali fundament — xatosiz.

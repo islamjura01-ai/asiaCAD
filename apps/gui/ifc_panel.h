@@ -2,6 +2,7 @@
 // AsiaCAD GUI — IFC modellar oynasi: yuklangan modellar (ko'rinish), qavatlar filtri, tarkib (PTO) jadvali, Excelga eksport.
 // Modellar MainWindow da saqlanadi (3D sahnaga rebuild3D qo'shadi); oyna faqat ko'rsatadi va boshqaradi.
 #include <asiacad/bim/ifc.h>
+#include <asiacad/bim/norms.h>
 #include <asiacad/i18n/localizer.h>
 
 #include <QDialog>
@@ -29,6 +30,10 @@ struct IfcLoaded {
     bool visible = true;
     bool georef = true;            // IfcMapConversion qo'llanadimi (xarita koordinatalari)
     std::set<int> hiddenStoreys;   // -1 — qavatsiz elementlar
+    // ShNQ tekshiruvi natijasi (3D da ranglash: xato — qizil, ogohlantirish — sariq, qolganlari xira)
+    std::shared_ptr<bim::NormReport> norms;
+    std::vector<bim::NormRule> normRules;   // tekshiruv paytidagi qoidalar (hisobot ular bo'yicha)
+    bool normColors = true, normLabels = true;
 };
 
 // IFC -> 2D chizma (reja kesimi, o'qlar, razbivka nuqtalari)
@@ -59,6 +64,12 @@ public:
     QTabWidget* tabs() const { return tabs_; }
     void highlightGuid(const QString& guid);           // 3D da tanlangan element — ro'yxatda
     IfcPlanOptions planOptions() const;
+    // ShNQ
+    void showNormTab();
+    void fillNorms();
+    bool exportNorms(const QString& path) const;          // nomuvofiqliklar dalolatnomasi (Excel)
+    QTableWidget* normTable() const { return normTable_; }
+    QPushButton* normRunButton() const { return normRun_; }
 
 signals:
     void addRequested();
@@ -68,6 +79,9 @@ signals:
     void elementActivated(int model, const QString& guid);   // ro'yxatdan — 3D da topish
     void planRequested(int model, const asiacad::gui::IfcPlanOptions& opt);
     void reloadRequested(int model, bool georef);
+    void normCheckRequested(int model);
+    void normRulesRequested();
+    void normViewChanged();
 
 private:
     QString t(const char* key, const QStringList& args = {}) const;
@@ -101,6 +115,12 @@ private:
     QCheckBox *chkCut_ = nullptr, *chkAxes_ = nullptr, *chkPoints_ = nullptr, *chkLabels_ = nullptr;
     QPushButton *planBtn_ = nullptr, *stakeBtn_ = nullptr;
     QLabel *lblStorey_ = nullptr, *lblCut_ = nullptr;
+    // ShNQ tekshiruvi
+    QPushButton *normRun_ = nullptr, *normRulesBtn_ = nullptr, *normExport_ = nullptr;
+    QLabel* normSummary_ = nullptr;
+    QComboBox* normFilter_ = nullptr;
+    QCheckBox *normColor_ = nullptr, *normLabels_ = nullptr;
+    QTableWidget* normTable_ = nullptr;
     QPushButton *add_ = nullptr, *remove_ = nullptr, *export_ = nullptr, *show3d_ = nullptr, *close_ = nullptr;
     bool filling_ = false;
 };

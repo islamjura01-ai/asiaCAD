@@ -3,6 +3,7 @@
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/ifc.h>
+#include <asiacad/bim/norms.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
@@ -122,6 +123,7 @@ const char* commandSyntax(const std::string& c) {
         {"UTIL", "[file.json] [+]"},
         {"KJ", "file.dxf [fTop|-] [fT] [abs±0.000]"},
         {"IFCIMPORT", "file.ifc [{LOCAL}]"},
+        {"SHNQ", "file.ifc [rules.json] | {RULES} out.json"},
         {"ROAD", "[file.json] [+] [x,y]"},
         {"WATERWAY", "[file.json] [Q=m3/s] [SEC=n] [+] [x,y]"},
         {"CORRIDOR", "[file.json] [ASM=n] [+]"},
@@ -798,6 +800,53 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         for (const auto& w : m.warnings)
             out_ << "  " << loc_.tr("sewer.lvl.warning") << ": "
                  << loc_.tr(w, {std::to_string(m.openings - m.openingsCut), std::to_string(m.openings), std::to_string(m.skipped)}) << '\n';
+    } else if (cmd == "SHNQ") {
+        // ShNQ normativ tekshiruvi: IFC model + qoidalar jadvali (standart yoki JSON fayl)
+        need(a, 1, cmd);
+        if (loc_.isKeyword(a[0], "RULES")) {   // standart qoidalarni tahrirlash uchun faylga
+            need(a, 2, cmd);
+            std::ofstream f(a[1], std::ios::binary | std::ios::trunc);
+            if (!f) throw Error("norm.err.write", {a[1]});
+            f << bim::normRulesToJson(bim::defaultNormRules());
+            say("norm.msg.exported", {a[1], std::to_string(bim::defaultNormRules().size())});
+            return;
+        }
+        bim::IfcModel m;
+        std::string err;
+        if (!bim::readIfc(a[0], m, err)) throw Error(err, {a[0]});
+        std::vector<bim::NormRule> rules = bim::defaultNormRules();
+        if (a.size() > 1) {
+            std::ifstream f(a[1], std::ios::binary);
+            if (!f) throw Error("norm.err.rules", {a[1], "-"});
+            const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            try {
+                rules = bim::normRulesFromJson(text);
+            } catch (const std::exception& ex) {
+                throw Error("norm.err.rules", {a[1], ex.what()});
+            }
+        }
+        const auto rep = bim::normCheck(m, rules);
+        const std::string lang = loc_.language();
+        int enabled = 0;
+        for (const auto& r : rules) enabled += r.enabled;
+        say("norm.msg.summary", {std::to_string(rep.subjects), std::to_string(enabled), std::to_string(rep.errors), std::to_string(rep.warnings),
+                                 rep.seconds < 0.1 ? std::format("{:.3f}", rep.seconds) : std::format("{:.2f}", rep.seconds)});
+        for (const auto& e : rep.ruleErrors) say("norm.msg.ruleerr", {e});
+        if (rep.items.empty()) say("norm.msg.none");
+        std::size_t shown = 0;
+        for (const auto& v : rep.items) {
+            if (++shown > 300) {
+                say("norm.msg.more", {std::to_string(rep.items.size() - 300)});
+                break;
+            }
+            const auto& r = rules[static_cast<std::size_t>(v.rule)];
+            const auto& el = m.elements[static_cast<std::size_t>(v.element)];
+            std::string name = el.name.empty() ? loc_.tr(std::string("ifc.cat.") + bim::ifcCategory(el.type)) : el.name;
+            if (!v.where.empty()) name += " (" + v.where + ")";
+            const std::string ref = r.norm + (r.clause.empty() ? std::string() : ", " + r.clause) + (r.verified ? std::string() : " · " + loc_.tr("norm.unverified"));
+            say("norm.msg.item", {loc_.tr(v.severity >= 2 ? "sewer.lvl.error" : "sewer.lvl.warning"), name, r.titleFor(lang), bim::normFormat(v.value, r.unit),
+                                  v.belowMin ? "<" : ">", bim::normFormat(v.limit, r.unit), ref});
+        }
     } else if (cmd == "KJ") {
         // KJ fayl.dxf [fundament usti] [qalinligi] — bitta KJ fayldan (qolip + armatura) beton va armatura
         need(a, 1, cmd);

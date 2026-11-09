@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
     QStringList points;
     QStringList cmds;
     QStringList ifcFiles;
-    bool ifcPanelShot = false, ifcPlan = false;
+    bool ifcPanelShot = false, ifcPlan = false, ifcNorm = false;
     int ifcTab = 0;
     bool selectAll = false;
     const QStringList args = app.arguments();
@@ -156,6 +156,7 @@ int main(int argc, char** argv) {
         else if (a == "--ifc-panel") ifcPanelShot = true;        // skrinshot: IFC modellar oynasi
         else if (a == "--ifc-tab") ifcTab = next().toInt();      // skrinshot: panel varag'i (0..2)
         else if (a == "--ifc-plan") ifcPlan = true;              // 1-qavat rejasini chizmaga (+1.0 m)
+        else if (a == "--shnq") ifcNorm = true;                  // IFC import -> ShNQ tekshiruvi
         else if (a.endsWith(".ifc", Qt::CaseInsensitive) || a.endsWith(".ifczip", Qt::CaseInsensitive)) ifcFiles << a;   // "Bilan ochish"
         else file = a;
     }
@@ -192,8 +193,9 @@ int main(int argc, char** argv) {
     if (!ifcFiles.isEmpty()) {
         QStringList abs;
         for (const auto& f : ifcFiles) abs << QFileInfo(f).absoluteFilePath();
-        QTimer::singleShot(0, &w, [&w, abs, show = shot.isEmpty() || ifcPanelShot, ifcTab, ifcPlan] {
+        QTimer::singleShot(0, &w, [&w, abs, show = shot.isEmpty() || ifcPanelShot, ifcTab, ifcPlan, ifcNorm] {
             w.importIfc(abs, show);
+            if (ifcNorm && !w.ifcModels().empty()) w.runIfcNormCheck(0);
             if (auto* p = w.findChild<asiacad::gui::IfcPanel*>("ifcPanel")) p->tabs()->setCurrentIndex(ifcTab);
             if (ifcPlan && !w.ifcModels().empty()) {
                 asiacad::gui::IfcPlanOptions o;
@@ -221,6 +223,7 @@ int main(int argc, char** argv) {
             if (const auto gi = grip.split(','); gi.size() == 2) w.viewport()->beginGrip(gi[0].toULongLong(), gi[1].toInt());
             if (!tool.isEmpty()) w.activateTool(tool);
             if (building > 0) w.openBuilding()->setFloors(building);
+            if (building > 0 && ifcNorm) w.openBuilding()->runNormCheck(true);   // Monolit bino: ShNQ tekshiruvi
             auto addSheets = [](asiacad::gui::DrawingSetWidget* ds, const QStringList& list) {
                 for (const auto& sa : list) {
                     const auto f = sa.split(',');

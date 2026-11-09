@@ -15,6 +15,7 @@
 #include <QPushButton>
 #include <QStyle>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSlider>
 #include <QSpinBox>
 #include <QSplitter>
@@ -25,6 +26,7 @@
 
 #include <asiacad/civil/excel.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -571,7 +573,19 @@ void RebarDialog::recompute() {
             updating_ = true;
             kjDatum_->setValue(kj_.datum);
             kjFTop_->setValue(kj_.foundTop);
+            kjFT_->setValue(kj_.foundT);
             updating_ = was;
+        }
+        if (projectMode_) {   // qavatlar surilgichi — KJ dagi barcha qavatlar (Пм-4 7-qavatda bo'lsa ham)
+            int top = 0;
+            for (const auto& pr : kj_.bm.prisms) top = std::max(top, pr.level);
+            for (const auto& b : kj_.bars) top = std::max(top, b.level);
+            if (top > 0 && top != upTo_->maximum()) {
+                const bool all = upTo_->value() >= upTo_->maximum();
+                const QSignalBlocker block(upTo_);
+                upTo_->setRange(0, top);
+                if (all) upTo_->setValue(top);
+            }
         }
         if (projectMode_) {
             bm_ = kj_.bm;

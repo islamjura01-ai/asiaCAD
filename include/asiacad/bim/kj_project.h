@@ -79,6 +79,15 @@ struct KjParams {
     std::string concrete = "";     // bo'sh — chizmadan ("Бетон кл.В30"), aks holda B25
 };
 
+struct KjSlab {                   // plita turi ("Пм-3") — o'z belgilari va qavatlari bilan
+    std::string tag;              // chizmadagidek ("Пм-3"; bo'sh — nomsiz yagona plita)
+    std::vector<double> levels;   // plita usti (nisbiy), o'sish tartibida
+    std::vector<int> floors;      // qavat raqamlari (levels bilan parallel)
+    double t = 0;                 // qalinligi, m
+    double area = 0;              // m² (teshiklarsiz)
+    std::string mark;             // asosiy to'r ("Ø14 A500C s200")
+};
+
 struct KjProject {
     std::vector<KjView> views;
     BuildingModel bm;              // beton prizmalar + PTO
@@ -91,6 +100,8 @@ struct KjProject {
     double slabTop = 0, slabT = 0; // qo'llanilgan (nisbiy)
     std::vector<double> typical;   // tipik qavatlar plita usti belgilari (nisbiy; bo'sh — bitta qavat)
     double foundTop = 0;           // qo'llanilgan (nisbiy)
+    double foundT = 0;             // qo'llanilgan fundament qalinligi (chizmadan yoki parametrdan)
+    std::vector<KjSlab> slabs;     // plita turlari (bir nechta bo'lsa — har biri o'z belgisida: Пм-1 −0.700, Пм-3 +5.300 … +21.300)
     double datum = 0;              // ±0.000 absolyut belgisi; bm/bars z = nisbiy + datum
     bool datumKnown = false;       // chizmadan yoki foydalanuvchidan
     bool datumFromDrawing = false;

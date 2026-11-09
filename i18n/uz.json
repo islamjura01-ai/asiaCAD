@@ -1028,7 +1028,7 @@
     "kj.chk.no_datum": "±0.000 ning absolyut belgisi chizmada topilmadi — 3D balandliklar NISBIY (syomka bilan solishtirib boʻlmaydi). Parametrga kiriting",
     "kj.chk.datum_differs": "Kiritilgan ±0.000 = {0}, chizmada esa {1} — tekshiring",
     "kj.chk.found_t_assumed": "Fundament usti = ±0.000 (chizmadagi izohdan); qalinligi {0} m — parametrdan (kesimdan tekshiring)",
-    "kj.chk.local_xy": "Plan koordinatalari oʻqlar boʻyicha lokal (\"1\"/\"А\" = 0,0) — geodezik X,Y uchun bogʻlashni kiriting",
+    "kj.chk.local_xy": "Plan koordinatalari oʻqlar boʻyicha lokal ({0} / {1} = 0,0) — geodezik X,Y uchun bogʻlashni kiriting",
     "kj.msg.datum": "±0.000 = {0} (absolyut){1}; fundament usti {2}, plita usti {3}",
     "gui.kj.datum": "±0.000 absolyut, m",
     "gui.kj.datum_auto": "Chizmadan",
@@ -2621,6 +2621,15 @@
     "gui.ds.placed": "{0}: {1}-qavat ({2}, {3} qavat)",
     "gui.ds.placed.nolevel": "{0}: {1}-qavat",
     "gui.ds.placed.none": "{0}: qavat aniqlanmadi — «Qavat dan»ni kiriting",
-    "gui.ds.floors.tip": "Avto — qavatlar chizmadagi belgilardan: «+11.300...+23.400» — tipik qavatlar (har biriga oʻz belgisi)"
+    "gui.ds.floors.tip": "Avto — qavatlar chizmadagi belgilardan: «+11.300...+23.400» — tipik qavatlar (har biriga oʻz belgisi)",
+    "kj.chk.slab_no_level": "Plita {0}: usti belgisi topilmadi — {1} qabul qilindi",
+    "kj.chk.slab_t_same": "Plita {0}: qalinligi belgilarda yoʻq — shu qavatdagi {1} kabi {2} m olindi (kesimdan tekshiring)",
+    "kj.chk.slab_t_assumed": "Plita {0}: qalinligi belgilarda yoʻq — {1} m qabul qilindi (kesimdan tekshiring)",
+    "kj.chk.found_drawing": "Fundament usti {0}, osti {1} (qalinligi {2} m) — chizmadagi belgilardan",
+    "kj.chk.found_top_drawing": "Fundament usti {0} — chizmadan; qalinligi {1} m — parametrdan (kesimdan tekshiring)",
+    "kj.chk.vert_form": "{0}-qavatlar ustun va devorlari — plita qolip chizmalaridan",
+    "kj.chk.vert_copied": "{0}-qavatlar ustun va devorlari — pastki qavatdagidek (sxemasi yoʻq)",
+    "kj.chk.vert_outside": "{0} ta ustun/devor yuqori qavat plitasi konturidan tashqarida — yuqoriga davom ettirilmadi",
+    "kj.msg.slab": "  Plita {0}: usti {1}, qalinligi {2} m, {3} m², toʻr {4} — {5}-qavat"
   }
 }

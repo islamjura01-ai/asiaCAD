@@ -652,11 +652,24 @@ void RebarDialog::recompute() {
             totals_->addItem(it);
         }
         totals_->addItem(t("gui.kj.concrete", {f1(bm_.totalVolume), f1(bm_.totalFormwork)}));
+        bool floors = !kj_.typical.empty();
+        for (const auto& r : bm_.pto) floors = floors || r.level >= 2;
         for (const auto& r : bm_.pto)
-            totals_->addItem(QStringLiteral("  %1: %2 — %3 m³")
+            totals_->addItem(QStringLiteral("  %1%2: %3 — %4 m³")
+                                 .arg(floors ? levelName(r.level) + QStringLiteral(" · ") : QString())
                                  .arg(t((std::string("bim.kind.") + bim::kindKey(r.kind)).c_str()))
                                  .arg(r.count)
                                  .arg(f1(r.volume)));
+        if (kj_.slabs.size() > 1)   // plita turlari: Пм-1 −0.700, Пм-3 +5.300 … — har biri o'z belgisida
+            for (const auto& s : kj_.slabs) {
+                QString lv, fl;
+                for (std::size_t i = 0; i < s.levels.size(); ++i) {
+                    lv += (i ? QStringLiteral("; ") : QString()) + QString::asprintf("%+.3f", s.levels[i]);
+                    fl += (i ? QStringLiteral(", ") : QString()) + QString::number(s.floors[i]);
+                }
+                totals_->addItem(t("kj.msg.slab", {QString::fromStdString(s.tag), lv, QString::number(s.t, 'f', 2), f1(s.area),
+                                                   s.mark.empty() ? QStringLiteral("-") : QString::fromStdString(s.mark), fl}));
+            }
         int known = 0;
         for (const auto& v : kj_.views) known += v.kind != bim::KjViewKind::Other;
         totals_->addItem(t("gui.kj.views", {QString::number(known)}));

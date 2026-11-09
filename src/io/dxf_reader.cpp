@@ -378,6 +378,8 @@ private:
             insert(n, c);
         } else if (t == "HATCH") {
             hatch(r, c);
+        } else if (t == "MULTILEADER" || t == "MLEADER") {
+            multileader(r, c);
         } else if (t == "DIMENSION") {
             dimension(r, c);
         } else if (t == "ATTDEF" || t == "VIEWPORT" || t == "SEQEND" || t == "VERTEX") {
@@ -518,6 +520,59 @@ private:
             const double kk = static_cast<double>(k);
             const double shift = row == 0 ? kk : row == 1 ? kk - (nLines - 1) / 2.0 : kk - (nLines - 1);
             emit(std::make_unique<TextEntity>(ins + down * (shift * spacing), h, paras[k], rot, ha, va), r, c);
+        }
+    }
+
+    // MULTILEADER (multivynoska): CONTEXT_DATA ichida 41 — matn balandligi, 304 — matn (MTEXT kodlari bilan), 12/22/32 —
+    // matn joyi (chap yuqori burchak); LEADER{ 10/20 — tokcha nuqtasi; LEADER_LINE{ 10/20 — strelka nuqtalari.
+    // Matn qatorlari TEXT sifatida, chiziqlar — poliliniya (KJ belgilari: "Ø14 A500С / ш. 200х200").
+    void multileader(const Raw& r, const Ctx& c) {
+        std::string content;
+        double h = 0;
+        Vec3 at;
+        bool ctx = false, hasAt = false, inLeader = false, inLine = false;
+        Vec3 landing;
+        bool hasLanding = false;
+        std::vector<Vec3> line;
+        std::vector<std::vector<Vec3>> lines;
+        auto val = [](const Group& g) { return trim(g.value); };
+        for (std::size_t i = 0; i < r.g.size(); ++i) {
+            const Group& g = r.g[i];
+            auto pt = [&](std::size_t k) {   // 10/20/30 — ketma-ket
+                Vec3 p{parseNum(r.g[k].value), 0, 0};
+                if (k + 1 < r.g.size() && r.g[k + 1].code == g.code + 10) p.y = parseNum(r.g[k + 1].value);
+                if (k + 2 < r.g.size() && r.g[k + 2].code == g.code + 20) p.z = parseNum(r.g[k + 2].value);
+                return p;
+            };
+            if (g.code == 300 && val(g).rfind("CONTEXT_DATA", 0) == 0) { ctx = true; continue; }
+            if (!ctx) continue;
+            if (g.code == 302 && val(g).rfind("LEADER{", 0) == 0) { inLeader = true; hasLanding = false; continue; }
+            if (g.code == 304 && val(g).rfind("LEADER_LINE{", 0) == 0) { inLine = true; line.clear(); continue; }
+            if (g.code == 305) {   // LEADER_LINE tugadi
+                if (inLine && !line.empty()) {
+                    if (hasLanding) line.push_back(landing);
+                    lines.push_back(line);
+                }
+                inLine = false;
+                continue;
+            }
+            if (g.code == 303) { inLeader = false; continue; }
+            if (inLine && g.code == 10) { line.push_back(pt(i)); continue; }
+            if (inLeader && !inLine && g.code == 10 && !hasLanding) { landing = pt(i); hasLanding = true; continue; }
+            if (inLeader || inLine) continue;
+            if (g.code == 41 && h <= 0) h = parseNum(g.value);
+            else if (g.code == 304 && content.empty()) content = dxftext::toUtf8(g.value, cp_);
+            else if (g.code == 12 && !content.empty() && !hasAt) { at = pt(i); hasAt = true; }
+        }
+        for (auto& l : lines)
+            if (l.size() >= 2) emit(std::make_unique<PolylineEntity>(std::move(l), false), r, c);
+        if (content.empty() || !hasAt) return;
+        if (h <= 0) h = 2.5;
+        const auto paras = dxftext::mtextToParagraphs(content);
+        const double spacing = h * 5.0 / 3.0;
+        for (std::size_t k = 0; k < paras.size(); ++k) {
+            if (paras[k].find_first_not_of(' ') == std::string::npos) continue;
+            emit(std::make_unique<TextEntity>(at + Vec3{0, -spacing * static_cast<double>(k), 0}, h, paras[k], 0.0, TextHAlign::Left, TextVAlign::Top), r, c);
         }
     }
 

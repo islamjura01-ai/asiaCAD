@@ -1028,7 +1028,7 @@
     "kj.chk.no_datum": "Absolute elevation of ±0.000 not found on the drawing — 3D heights are RELATIVE (cannot compare with survey). Enter it in parameters",
     "kj.chk.datum_differs": "Entered ±0.000 = {0}, drawing says {1} — check",
     "kj.chk.found_t_assumed": "Foundation top = ±0.000 (from drawing note); thickness {0} m — from parameters (check the section)",
-    "kj.chk.local_xy": "Plan coordinates are local to grid (\"1\"/\"A\" = 0,0) — set georeference for survey X,Y",
+    "kj.chk.local_xy": "Plan coordinates are local to grid ({0} / {1} = 0,0) — set georeference for survey X,Y",
     "kj.msg.datum": "±0.000 = {0} (abs.){1}; foundation top {2}, slab top {3}",
     "gui.kj.datum": "±0.000 absolute, m",
     "gui.kj.datum_auto": "From drawing",
@@ -2621,6 +2621,15 @@
     "gui.ds.placed": "{0}: floors {1} ({2}, {3} floors)",
     "gui.ds.placed.nolevel": "{0}: floors {1}",
     "gui.ds.placed.none": "{0}: floor not detected — enter \"Floor from\"",
-    "gui.ds.floors.tip": "Auto — floors from the drawing levels: \"+11.300...+23.400\" means typical floors (each with its own level)"
+    "gui.ds.floors.tip": "Auto — floors from the drawing levels: \"+11.300...+23.400\" means typical floors (each with its own level)",
+    "kj.chk.slab_no_level": "Slab {0}: top level not found — {1} assumed",
+    "kj.chk.slab_t_same": "Slab {0}: thickness not found in the levels — {2} m taken as for {1} on the same floor (check the section)",
+    "kj.chk.slab_t_assumed": "Slab {0}: thickness not found in the levels — {1} m assumed (check the section)",
+    "kj.chk.found_drawing": "Foundation top {0}, bottom {1} (thickness {2} m) — from the drawing levels",
+    "kj.chk.found_top_drawing": "Foundation top {0} — from the drawing; thickness {1} m — from parameters (check the section)",
+    "kj.chk.vert_form": "Columns and walls of floors {0} — from the slab formwork drawings",
+    "kj.chk.vert_copied": "Columns and walls of floors {0} — same as the floor below (no layout drawing)",
+    "kj.chk.vert_outside": "{0} columns/walls lie outside the upper floor slab outline — not continued upwards",
+    "kj.msg.slab": "  Slab {0}: top {1}, thickness {2} m, {3} m², mesh {4} — floor {5}"
   }
 }

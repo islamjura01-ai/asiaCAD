@@ -2564,6 +2564,175 @@ TEST(kj_typical_floors) {
     CHECK(info && !err);
 }
 
+TEST(dxf_multileader_and_caret_codes) {
+    // MULTILEADER: matn qatorlari (MTEXT kodlari bilan) — TEXT, strelka chizig'i — poliliniya; "^I" (tab) — bo'sh joy
+    const std::string dxf =
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nMULTILEADER\n8\nKJ\n100\nAcDbMLeader\n300\nCONTEXT_DATA{\n40\n1.0\n10\n100.0\n20\n50.0\n30\n0.0\n41\n2.5\n290\n1\n"
+        "304\n\\A1;%%c14 A500\xD0\xA1\\P\xD1\x88. 200\xD1\x85" "200\n12\n101.0\n22\n55.0\n32\n0.0\n"
+        "302\nLEADER{\n290\n1\n10\n99.0\n20\n54.0\n30\n0.0\n11\n1.0\n21\n0.0\n31\n0.0\n"
+        "304\nLEADER_LINE{\n10\n90.0\n20\n48.0\n30\n0.0\n91\n0\n305\n}\n303\n}\n301\n}\n"
+        "0\nTEXT\n8\n0\n10\n0.0\n20\n0.0\n30\n0.0\n40\n2.5\n1\n4.^I\xD0\x97\xD0\xB0 ^ 1\n"
+        "0\nENDSEC\n0\nEOF\n";
+    auto r = readDxf(dxf);
+    auto ts = ofType<TextEntity>(r);
+    CHECK(ts.size() == 3);
+    if (ts.size() == 3) {
+        CHECK(ts[0]->text() == "\xE2\x8C\x80" "14 A500\xD0\xA1");   // ⌀14 A500С
+        VNEAR(ts[0]->insertion(), Vec3(101, 55));
+        NEAR(ts[0]->height(), 2.5);
+        CHECK(ts[1]->text() == "\xD1\x88. 200\xD1\x85" "200");      // ш. 200х200 — keyingi qator
+        NEAR(ts[1]->insertion().y, 55 - 2.5 * 5 / 3);
+        CHECK(ts[0]->layer() == "KJ");
+        CHECK(ts[2]->text() == "4. \xD0\x97\xD0\xB0 ^1");          // "^ " — "^"
+    }
+    auto ps = ofType<PolylineEntity>(r);
+    CHECK(ps.size() == 1 && ps[0]->vertices().size() == 2);
+    if (ps.size() == 1 && ps[0]->vertices().size() == 2) VNEAR(ps[0]->vertices()[1], Vec3(99, 54));
+}
+
+TEST(kj_multi_slab_types) {
+    // Bir nechta plita turi bitta KJ faylda (haqiqiy "4 блок КЖ" tuzilishi bo'yicha, kichraytirilgan):
+    //  * o'qlar Ж/И/К va 2/1, 2/2 ("1"/"А" yo'q) — umumiy o'qlar bo'yicha tekislash
+    //  * fundament: sxema sarlavhasida "на отм. -3.000", kesimda -3.000 / -3.600 (0.6 m)
+    //  * Пм-1 −0.500 (kontur ichidagi belgi; kontur ochiq poliliniya + yopuvchi chiziq), Пм-2 sarlavhada "+3,000; +6,000"
+    //  * armatura belgisi ikki yozuvda: "⌀12 A500С" va "ш. 200"
+    Document doc;
+    auto add = [&](std::unique_ptr<IEntity> e, const char* layer = "0") {
+        e->setLayer(layer);
+        doc.add(std::move(e));
+    };
+    auto text = [&](double x, double y, double h, const std::string& s) {
+        add(std::make_unique<TextEntity>(Vec3{x, y}, h, s, 0.0, TextHAlign::Center, TextVAlign::Middle));
+    };
+    const std::vector<std::pair<std::string, double>> AX{{"\xD0\x96", 0}, {"\xD0\x98", 5}, {"\xD0\x9A", 10}}, AY{{"2/1", 0}, {"2/2", 6}};   // Ж И К
+    auto rect = [&](double x0, double y0, double x1, double y1, const char* layer, bool closed = true) {
+        add(std::make_unique<PolylineEntity>(std::vector<Vec3>{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}, closed), layer);
+    };
+    auto view = [&](double ox, const std::string& title) {
+        for (const auto& [n, x] : AX)
+            for (double y : {-2.0, 8.0}) {
+                add(std::make_unique<CircleEntity>(Vec3{ox + x, y}, 0.4), "OSI");
+                text(ox + x, y, 0.4, n);
+            }
+        for (const auto& [n, y] : AY)
+            for (double x : {-2.0, 12.0}) {
+                add(std::make_unique<CircleEntity>(Vec3{ox + x, y}, 0.4), "OSI");
+                text(ox + x, y, 0.4, n);
+            }
+        text(ox + 5, 10, 0.5, title);
+    };
+    auto columns = [&](double ox) {
+        for (double x : {0.0, 10.0})
+            for (double y : {0.0, 6.0}) rect(ox + x - 0.2, y - 0.2, ox + x + 0.2, y + 0.2, "SV-CONC");
+    };
+    const std::string D = "\xE2\x8C\x80";   // ⌀
+    // fundament: qolip + kesim
+    view(0, "\xD0\x9E\xD0\xBF\xD0\xB0\xD0\xBB\xD1\x83\xD0\xB1\xD0\xBE\xD1\x87\xD0\xBD\xD1\x8B\xD0\xB9 \xD1\x87\xD0\xB5\xD1\x80\xD1\x82\xD0\xB5\xD0\xB6 "
+            "\xD1\x84\xD1\x83\xD0\xBD\xD0\xB4\xD0\xB0\xD0\xBC\xD0\xB5\xD0\xBD\xD1\x82\xD0\xBD\xD0\xBE\xD0\xB9 \xD0\xBF\xD0\xBB\xD0\xB8\xD1\x82\xD1\x8B "
+            "\xD0\xA4\xD0\x9F\xD0\xBC-1");   // Опалубочный чертеж фундаментной плиты ФПм-1
+    rect(-0.5, -0.5, 10.5, 6.5, "0");
+    text(3, -6, 0.3, "-3.000");
+    text(3, -7, 0.3, "-3.600");
+    // fundament: asosiy armatura
+    view(40, "\xD0\xA4\xD1\x83\xD0\xBD\xD0\xB4\xD0\xB0\xD0\xBC\xD0\xB5\xD0\xBD\xD1\x82\xD0\xBD\xD0\xB0\xD1\x8F \xD0\xBF\xD0\xBB\xD0\xB8\xD1\x82\xD0\xB0 "
+             "\xD0\xA4\xD0\x9F\xD0\xBC-1 (\xD0\xBE\xD1\x81\xD0\xBD\xD0\xBE\xD0\xB2\xD0\xBD\xD0\xBE\xD0\xB5 \xD0\xB0\xD1\x80\xD0\xBC\xD0\xB8\xD1\x80\xD0\xBE\xD0\xB2"
+             "\xD0\xB0\xD0\xBD\xD0\xB8\xD0\xB5)");   // Фундаментная плита ФПм-1 (основное армирование)
+    rect(39.5, -0.5, 50.5, 6.5, "0");
+    text(43, 3, 0.3, D + "16 A500\xD0\xA1");
+    text(43, 2.6, 0.3, "\xD1\x88. 200");
+    // vertikal elementlar -3.000 da (+ belgi ramkasi — ustun emas)
+    view(80, "\xD0\xA1\xD1\x85\xD0\xB5\xD0\xBC\xD0\xB0 \xD1\x80\xD0\xB0\xD1\x81\xD0\xBF\xD0\xBE\xD0\xBB\xD0\xBE\xD0\xB6\xD0\xB5\xD0\xBD\xD0\xB8\xD1\x8F "
+             "\xD0\xB2\xD0\xB5\xD1\x80\xD1\x82\xD0\xB8\xD0\xBA\xD0\xB0\xD0\xBB\xD1\x8C\xD0\xBD\xD1\x8B\xD1\x85 \xD1\x8D\xD0\xBB\xD0\xB5\xD0\xBC\xD0\xB5\xD0\xBD"
+             "\xD1\x82\xD0\xBE\xD0\xB2 \xD0\xBD\xD0\xB0 \xD0\xBE\xD1\x82\xD0\xBC. -3.000");   // Схема расположения вертикальных элементов на отм. -3.000
+    columns(80);
+    text(85, 3, 0.3, "-3.000");
+    rect(84.5, 2.8, 85.5, 3.2, "0");
+    // Пм-1: qolip — ochiq kontur + yopuvchi chiziq; ichida −0.500, tashqarida −0.100; kesim −0.500 / −0.700
+    const std::string slabT = "\xD0\x9E\xD0\xBF\xD0\xB0\xD0\xBB\xD1\x83\xD0\xB1\xD0\xBE\xD1\x87\xD0\xBD\xD1\x8B\xD0\xB9 \xD1\x87\xD0\xB5\xD1\x80\xD1\x82\xD0\xB5\xD0\xB6 "
+                              "\xD0\xBC\xD0\xBE\xD0\xBD\xD0\xBE\xD0\xBB\xD0\xB8\xD1\x82\xD0\xBD\xD0\xBE\xD0\xB9 \xD0\xBF\xD0\xBB\xD0\xB8\xD1\x82\xD1\x8B ";   // Опалубочный чертеж монолитной плиты
+    const std::string meshT = "\xD0\xA1\xD1\x85\xD0\xB5\xD0\xBC\xD0\xB0 \xD0\xB0\xD1\x80\xD0\xBC\xD0\xB8\xD1\x80\xD0\xBE\xD0\xB2\xD0\xB0\xD0\xBD\xD0\xB8\xD1\x8F "
+                              "\xD0\xBC\xD0\xBE\xD0\xBD\xD0\xBE\xD0\xBB\xD0\xB8\xD1\x82\xD0\xBD\xD0\xBE\xD0\xB9 \xD0\xBF\xD0\xBB\xD0\xB8\xD1\x82\xD1\x8B ";   // Схема армирования монолитной плиты
+    const std::string pm1 = "\xD0\x9F\xD0\xBC-1", pm2 = "\xD0\x9F\xD0\xBC-2";   // Пм-1, Пм-2
+    view(120, slabT + pm1);
+    add(std::make_unique<PolylineEntity>(std::vector<Vec3>{{119.5, -0.5}, {130.5, -0.5}, {130.5, 6.5}, {119.5, 6.5}}, false), "0");
+    add(std::make_unique<LineEntity>(Vec3{119.5, 6.5}, Vec3{119.5, -0.5}), "0");
+    columns(120);
+    text(125, 3, 0.3, "-0.500");
+    text(131.5, 7.5, 0.3, "-0.100");
+    text(123, -6, 0.3, "-0.500");
+    text(123, -7, 0.3, "-0.700");
+    view(160, meshT + pm1);
+    text(163, 3, 0.3, D + "12 A500\xD0\xA1");
+    text(163, 2.6, 0.3, "\xD1\x88. 200");
+    // Пм-2: ikki belgida, teshik (2×2 va uning "X" belgisi), konturdan tashqaridagi ustun (yuqoriga davom etmaydi)
+    view(200, slabT + pm2 + " \xD0\xBD\xD0\xB0 \xD0\xBE\xD1\x82\xD0\xBC. +3,000; +6,000");   // на отм.
+    rect(199.5, -0.5, 210.5, 6.5, "0");
+    rect(202, 2, 204, 4, "0");
+    add(std::make_unique<PolylineEntity>(std::vector<Vec3>{{204, 4}, {202, 4}, {202, 2}, {202.3, 3.7}}, true), "0");
+    columns(200);
+    rect(211.8, 2.8, 212.2, 3.2, "SV-CONC");
+    text(203, -6, 0.3, "+3.000");
+    text(203, -7, 0.3, "+2.800");
+    view(240, meshT + pm2);
+    text(243, 3, 0.3, D + "10 A500\xD0\xA1");
+    text(243.2, 2.5, 0.3, "\xD1\x88. 200");
+
+    bim::KjParams kp;
+    const auto r = bim::buildKjProject(doc, {}, kp);
+    CHECK(r.views.size() == 7);
+    for (const auto& v : r.views) CHECK(v.aligned);
+    CHECK(r.slabs.size() == 2);
+    if (r.slabs.size() == 2) {
+        CHECK(r.slabs[0].tag == pm1 && r.slabs[1].tag == pm2);
+        CHECK(r.slabs[0].levels.size() == 1 && r.slabs[0].floors == std::vector<int>({1}));
+        if (!r.slabs[0].levels.empty()) NEAR(r.slabs[0].levels[0], -0.5);
+        NEAR(r.slabs[0].t, 0.2);
+        CHECK(r.slabs[0].mark == "\xC3\x98" "12 A500C s200");
+        CHECK(r.slabs[1].levels.size() == 2 && r.slabs[1].floors == std::vector<int>({2, 3}));
+        if (r.slabs[1].levels.size() == 2) NEAR(r.slabs[1].levels[1], 6.0);
+        NEAR(r.slabs[1].t, 0.2);
+        NEAR(r.slabs[1].area, 77 - 4);   // teshik bir marta ayiriladi
+    }
+    NEAR(r.foundTop, -3.0);
+    NEAR(r.foundT, 0.6);
+    auto vol = [&](bim::ElemKind k, int level) {
+        double v = 0;
+        for (const auto& row : r.bm.pto)
+            if (row.kind == k && (level < 0 || row.level == level)) v += row.volume;
+        return v;
+    };
+    NEAR(vol(bim::ElemKind::FoundationSlab, -1), 11 * 7 * 0.6);
+    NEAR(vol(bim::ElemKind::Slab, 1), 11 * 7 * 0.2);
+    NEAR(vol(bim::ElemKind::Slab, 2), (11 * 7 - 4) * 0.2);
+    NEAR(vol(bim::ElemKind::Slab, 3), (11 * 7 - 4) * 0.2);
+    NEAR(vol(bim::ElemKind::Column, 1), 4 * 0.16 * 2.3);   // -3.000 … Пм-1 osti -0.700
+    NEAR(vol(bim::ElemKind::Column, 2), 4 * 0.16 * 3.3);   // Пм-1 usti -0.500 … Пм-2 osti +2.800
+    NEAR(vol(bim::ElemKind::Column, 3), 4 * 0.16 * 2.8);
+    // armatura: Пм-2 to'ri ikkala belgida bir xil, ⌀10 qadam 0.2
+    auto bars = [&](int level, long d) {
+        int n = 0;
+        for (const auto& b : r.bars) n += b.level == level && std::lround(b.d * 1000) == d;
+        return n;
+    };
+    CHECK(bars(1, 12) > 0 && bars(2, 10) > 0 && bars(2, 10) == bars(3, 10) && bars(0, 16) > 0);
+    CHECK(bars(1, 10) == 0 && bars(2, 12) == 0);
+    double z2 = 0, z3 = 0;
+    for (const auto& b : r.bars) {
+        if (b.level == 2 && b.role == bim::BarRole::TopX) z2 = b.pts[0].z;
+        if (b.level == 3 && b.role == bim::BarRole::TopX) z3 = b.pts[0].z;
+    }
+    NEAR(z3 - z2, 3.0);
+    bool err = false, found = false, outside = false, local = false;
+    for (const auto& i : r.issues) {
+        err |= i.error;
+        found |= i.key == "kj.chk.found_drawing" && i.info;
+        outside |= i.key == "kj.chk.vert_outside" && i.args[0] == "1";
+        local |= i.key == "kj.chk.local_xy" && i.args[0].find("\xD0\x96") != std::string::npos && i.args[1].find("2/1") != std::string::npos;
+    }
+    CHECK(!err && found && outside && local);
+}
+
 TEST(rebar_import_auto_floors) {
     // KJ varag'i "avto": chizmadagi "+9.900...+16.500" — bino 3..5-qavat plitalari
     const std::string dir = std::string(ASIACAD_EXAMPLES_DIR) + "/bino_qolip/";

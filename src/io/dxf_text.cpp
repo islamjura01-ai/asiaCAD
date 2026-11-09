@@ -143,7 +143,28 @@ std::string decodeUnicodeEscapes(std::string_view s) {
 }
 
 std::string decodeTextControlCodes(std::string_view in) {
-    const std::string s = decodeUnicodeEscapes(in);
+    std::string s = decodeUnicodeEscapes(in);
+    // DXF satrlarida boshqaruv belgilari "^" bilan: ^I — tab, ^J — yangi qator (izoh "4.^IЗа относительную ..."); "^ " — "^"
+    if (s.find('^') != std::string::npos) {
+        std::string c;
+        c.reserve(s.size());
+        for (std::size_t i = 0; i < s.size(); ++i) {
+            if (s[i] != '^' || i + 1 >= s.size()) {
+                c.push_back(s[i]);
+                continue;
+            }
+            const char k = s[i + 1];
+            if (k == ' ') c.push_back('^');
+            else if (k == 'I' || k == 'J' || k == 'M') c.push_back(' ');
+            else if (k >= '@' && k <= '_') {}   // boshqa boshqaruv belgisi — tashlanadi
+            else {
+                c.push_back('^');
+                continue;
+            }
+            ++i;
+        }
+        s = std::move(c);
+    }
     if (s.find("%%") == std::string::npos) return s;
     std::string out;
     out.reserve(s.size());

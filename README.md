@@ -290,6 +290,29 @@ AsiaCAD faylni o'zi tahlil qiladi — rol berish shart emas ("Armatura 3D" → K
   asosiy sterjenlar va xomutlar ("100/200").
 - CLI: `KJ fayl.dxf [fundament usti] [qalinligi]`. Namuna: `examples/kj_loyiha/` (`make_kj.py` — generator).
 
+### Bir faylda bir nechta plita turi (v0.32)
+
+Masalan "4 блок КЖ": ФПм-1 (fundament), Пм-1 −0.700, Пм-2 −0.150, Пм-3 +5.300 … +21.300 (5 qavat), Пм-4 +26.300.
+
+- **Plita turlari:** ko'rinishlar sarlavhadagi markasi bo'yicha guruhlanadi ("Пм-3", "ФПм-1", "П-2", "PM-1"); markasiz
+  qo'shimcha armatura ko'rinishi — eng yaqin guruhga. Har turning konturi — qolip chizmasidan ("Опалубочный чертеж"),
+  asosiy to'ri — armatura sxemasidan (ikki marta hisoblanmaydi).
+- **Belgilar:** sarlavhadan ("на отм. +5,300; +9,300; …", "на отм. +26,300"), aks holda qolip chizmasida kontur
+  ichidagi va kesimdagi ("Фрагмент монолитной плиты") belgidan. Qalinligi — kesimdagi usti/osti jufti (+5.300 / +5.100);
+  topilmasa shu qavatdagi boshqa plitaniki (ogohlantirish bilan).
+- **Qavatlar:** barcha plitalar belgilari tartibida; 1.5 m dan yaqinlari bitta qavat (Пм-1 va Пм-2 — 1-qavat). Har tur
+  armaturasi va betoni o'z belgilarida takrorlanadi.
+- **Ustun va devorlar:** 1-qavat — "Схема расположения вертикальных элементов на отм. -5.150" (fundament usti shu
+  belgidan); yuqori qavatlar — o'sha plitaning qolip chizmasidagi shu qatlamdagi elementlar, yo'q bo'lsa pastki qavatdagidek.
+  Yuqori plita konturidan tashqaridagilar (pastki qavat ayvoni ustunlari) yuqoriga davom ettirilmaydi. Balandligi — ostidagi
+  plita ustidan ustidagi plita ostigacha (har element o'z plitasi bo'yicha). L/U shaklli yupqa ko'pburchaklar ham devor.
+- **Fundament:** usti — vertikal elementlar / vypusklar sxemasi sarlavhasidan, osti — kesimdagi juftdan (−5.150 / −5.950 → 0.80 m).
+- **O'qlar:** "1"/"А" bo'lmasa (Ж…Р, 2/1…2/5) — barcha ko'rinishlarda uchraydigan eng chapdagi va eng pastdagi o'qlar
+  kesishmasi umumiy nol; yonma-yon turgan ko'rinishlar (bir qatorda takrorlangan o'q nomlari) ajratiladi.
+- **Belgi yozuvi ikki joyda:** "Ø14 A500С" va "ш. 200х200" alohida matn yoki multivynoska (MULTILEADER) qatorlari — yaqin
+  qadam yozuvi belgiga qo'shiladi. Kontur ochiq poliliniya + yopuvchi chiziq bo'lsa ham topiladi.
+- Cheklov: rigellar (plita ostidagi to'sinlar) hozircha betonga kirmaydi.
+
 ## Tipik qavatlar: "+11.300...+23.400" — bir nechta qavat (v0.32) — `bim::parseLevelSet`
 
 Chizmadagi belgilar to'plami endi bitta qavat emas, shuncha qavat deb o'qiladi:

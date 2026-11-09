@@ -869,11 +869,22 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         }
         say("kj.msg.datum", {std::format("{:.3f}", r.datum), r.datumFromDrawing && kp.datumAuto ? " — " + r.datumText : std::string{},
                              std::format("{:.3f}", r.datum + r.foundTop), std::format("{:.3f}", r.datum + r.slabTop)});
-        say("kj.msg.levels", {std::format("{:+.3f}", r.foundTop), std::format("{:.2f}", kp.foundT), std::format("{:+.3f}", r.slabTop),
+        say("kj.msg.levels", {std::format("{:+.3f}", r.foundTop), std::format("{:.2f}", r.foundT), std::format("{:+.3f}", r.slabTop),
                               std::format("{:.2f}", r.slabT)});
+        if (r.slabs.size() > 1)   // plita turlari (Пм-1, Пм-3 ...) — har biri o'z belgisida
+            for (const auto& s : r.slabs) {
+                std::string lv, fl;
+                for (std::size_t i = 0; i < s.levels.size(); ++i) {
+                    lv += (i ? "; " : "") + std::format("{:+.3f}", s.levels[i]);
+                    fl += (i ? ", " : "") + std::to_string(s.floors[i]);
+                }
+                say("kj.msg.slab", {s.tag, lv, std::format("{:.2f}", s.t), std::format("{:.1f}", s.area), s.mark.empty() ? "-" : s.mark, fl});
+            }
         say("kj.msg.concrete", {std::format("{:.1f}", r.bm.totalVolume), r.concrete, std::format("{:.1f}", r.bm.totalFormwork)});
+        bool floors = !r.typical.empty();
+        for (const auto& row : r.bm.pto) floors = floors || row.level >= 2;
         for (const auto& row : r.bm.pto)
-            out_ << "  " << (r.typical.empty() ? std::string() : (row.level == 0 ? loc_.tr("bim.level.found") : loc_.tr("bim.level.n", {std::to_string(row.level)})) + " · ")
+            out_ << "  " << (!floors ? std::string() : (row.level == 0 ? loc_.tr("bim.level.found") : loc_.tr("bim.level.n", {std::to_string(row.level)})) + " · ")
                  << loc_.tr(std::string("bim.kind.") + bim::kindKey(row.kind)) << ": " << row.count << " — " << std::format("{:.2f} m3", row.volume) << '\n';
         say("kj.msg.steel", {std::to_string(r.bars.size()), std::format("{:.2f}", r.totalMass / 1000)});
         for (const auto& [d, kg] : r.massByDia) out_ << "  " << d << ": " << std::format("{:.0f} kg", kg) << '\n';

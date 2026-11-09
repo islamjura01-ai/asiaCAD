@@ -1028,7 +1028,7 @@
     "kj.chk.no_datum": "±0.000 mutlak kotu çizimde yok — 3D yükseklikler GÖRECELİ (ölçümle karşılaştırılamaz). Parametreye girin",
     "kj.chk.datum_differs": "Girilen ±0.000 = {0}, çizimde {1} — kontrol edin",
     "kj.chk.found_t_assumed": "Temel üstü = ±0.000 (çizim notundan); kalınlık {0} m — parametreden (kesitten kontrol edin)",
-    "kj.chk.local_xy": "Plan koordinatları akslara göre yerel (\"1\"/\"А\" = 0,0) — jeodezik X,Y için bağlama girin",
+    "kj.chk.local_xy": "Plan koordinatları akslara göre yerel ({0} / {1} = 0,0) — jeodezik X,Y için bağlama girin",
     "kj.msg.datum": "±0.000 = {0} (mutlak){1}; temel üstü {2}, döşeme üstü {3}",
     "gui.kj.datum": "±0.000 mutlak, m",
     "gui.kj.datum_auto": "Çizimden",
@@ -2621,6 +2621,15 @@
     "gui.ds.placed": "{0}: {1}. kat ({2}, {3} kat)",
     "gui.ds.placed.nolevel": "{0}: {1}. kat",
     "gui.ds.placed.none": "{0}: kat belirlenemedi — \"Kattan\" girin",
-    "gui.ds.floors.tip": "Otomatik — katlar çizim kotlarından: \"+11.300...+23.400\" tipik katlardır (her birine kendi kotu)"
+    "gui.ds.floors.tip": "Otomatik — katlar çizim kotlarından: \"+11.300...+23.400\" tipik katlardır (her birine kendi kotu)",
+    "kj.chk.slab_no_level": "Döşeme {0}: üst kotu bulunamadı — {1} kabul edildi",
+    "kj.chk.slab_t_same": "Döşeme {0}: kalınlık kotlarda yok — aynı kattaki {1} gibi {2} m alındı (kesitten kontrol edin)",
+    "kj.chk.slab_t_assumed": "Döşeme {0}: kalınlık kotlarda yok — {1} m kabul edildi (kesitten kontrol edin)",
+    "kj.chk.found_drawing": "Temel üstü {0}, altı {1} (kalınlık {2} m) — çizim kotlarından",
+    "kj.chk.found_top_drawing": "Temel üstü {0} — çizimden; kalınlık {1} m — parametreden (kesitten kontrol edin)",
+    "kj.chk.vert_form": "{0}. katların kolon ve perdeleri — döşeme kalıp çizimlerinden",
+    "kj.chk.vert_copied": "{0}. katların kolon ve perdeleri — alt kattaki gibi (yerleşim çizimi yok)",
+    "kj.chk.vert_outside": "{0} kolon/perde üst kat döşemesi sınırı dışında — yukarı devam ettirilmedi",
+    "kj.msg.slab": "  Döşeme {0}: üst {1}, kalınlık {2} m, {3} m², hasır {4} — {5}. kat"
   }
 }

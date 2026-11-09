@@ -9,6 +9,7 @@
 #include <cstring>
 #include <format>
 #include <functional>
+#include <optional>
 #include <set>
 
 namespace asiacad::bim {
@@ -188,6 +189,8 @@ double spacingOf(const std::string& u) {
     }
     return 0;
 }
+// sarlavha emas: jadval va izoh sarlavhalari ("Спецификация элементов на плиту Пм-1", "Ведомость расхода стали")
+bool notTitle(const std::string& u) { return has(u, {"СПЕЦИФИКАЦ", "ВЕДОМОСТ", "ПРИМЕЧАН", "SPETSIFIKATSIYA", "SPECIFICATION", "QAYDNOMA", "IZOH"}); }
 KjViewKind classify(const std::string& u) {
     if (has(u, {"ВЫПУСК", "VYPUSK", "CHIQISH"})) return KjViewKind::Outlets;
     if (has(u, {"КАРКАС", "KARKAS"})) return KjViewKind::FoundSupports;
@@ -199,7 +202,8 @@ KjViewKind classify(const std::string& u) {
         if (extra) return top ? KjViewKind::FoundExtraTop : KjViewKind::FoundExtraBottom;
         return KjViewKind::FoundMain;
     }
-    if (has(u, {"КОЛОНН", "USTUN", "COLUMN"}) || (has(u, {"СТЕН", "DEVOR", "WALL"}) && !has(u, {"ПЛИТ", "PLITA", "SLAB"})))
+    if (has(u, {"КОЛОНН", "USTUN", "COLUMN", "ПИЛОН"}) || (has(u, {"СТЕН", "DEVOR", "WALL"}) && !has(u, {"ПЛИТ", "PLITA", "SLAB"})) ||
+        (has(u, {"ВЕРТИКАЛЬН", "VERTIKAL", "VERTICAL"}) && has(u, {"ЭЛЕМЕНТ", "ELEMENT"})))   // "Схема расположения вертикальных элементов"
         return KjViewKind::Columns;
     if (has(u, {"ПЕРЕКРЫТ", "ПОКРЫТ", "ПЛИТ", "YOPMA", "PLITA", "SLAB"})) {
         if (extra) return top ? KjViewKind::SlabExtraTop : KjViewKind::SlabExtraBottom;
@@ -270,10 +274,58 @@ std::vector<KjView> detectKjViews(const Document& doc, const std::vector<DxfDimI
         for (std::size_t b = a + 1; b < idx.size() && bubbles[idx[b]].c.x - bubbles[idx[a]].c.x <= thr; ++b)
             if (std::hypot(bubbles[idx[a]].c.x - bubbles[idx[b]].c.x, bubbles[idx[a]].c.y - bubbles[idx[b]].c.y) <= thr)
                 parent[root(static_cast<int>(idx[a]))] = root(static_cast<int>(idx[b]));
-    std::map<int, std::vector<Bubble>> groups;
-    for (std::size_t i = 0; i < bubbles.size(); ++i) groups[root(static_cast<int>(i))].push_back(bubbles[i]);
+    std::map<int, std::vector<Bubble>> groups0;
+    for (std::size_t i = 0; i < bubbles.size(); ++i) groups0[root(static_cast<int>(i))].push_back(bubbles[i]);
+    // Yonma-yon (yoki ustma-ust) turgan ko'rinishlar bitta klasterga tushishi mumkin. Belgisi: bitta qatorda (bir xil Y) bir
+    // xil o'q nomlari ikki marta ("Ж … Р Ж … Р") — ikkinchi ketma-ketlik boshlanishidan kesiladi (ustunda — Y bo'yicha).
+    std::vector<std::vector<Bubble>> groups;
+    std::function<void(std::vector<Bubble>, int)> splitRec = [&](std::vector<Bubble> g, int depth) {
+        double rm = 0;
+        for (const auto& b : g) rm += b.r;
+        rm /= std::max<std::size_t>(1, g.size());
+        for (int axis = 0; axis < 2 && depth < 8 && g.size() >= 8; ++axis) {
+            // axis 0: qatorlar (bir xil Y), X bo'yicha kesish; axis 1: ustunlar (bir xil X), Y bo'yicha
+            auto along = [&](const Bubble& b) { return axis == 0 ? b.c.x : b.c.y; };
+            auto across = [&](const Bubble& b) { return axis == 0 ? b.c.y : b.c.x; };
+            std::vector<const Bubble*> s;
+            for (const auto& b : g) s.push_back(&b);
+            std::sort(s.begin(), s.end(), [&](auto* a, auto* b) { return across(*a) < across(*b); });
+            std::optional<double> cut;
+            for (std::size_t i = 0; i < s.size() && !cut;) {
+                std::size_t j = i + 1;
+                while (j < s.size() && across(*s[j]) - across(*s[i]) < rm * 4) ++j;   // yonma-yon ko'rinishlar qatori biroz siljigan bo'lishi mumkin
+                if (j - i >= 6) {
+                    std::vector<const Bubble*> line(s.begin() + static_cast<std::ptrdiff_t>(i), s.begin() + static_cast<std::ptrdiff_t>(j));
+                    std::sort(line.begin(), line.end(), [&](auto* a, auto* b) { return along(*a) < along(*b); });
+                    std::map<std::string, int> cnt;
+                    for (auto* b : line) ++cnt[b->name];
+                    int dup = 0;
+                    for (const auto& [n, c] : cnt) dup += c >= 2;
+                    if (dup >= 3) {
+                        std::set<std::string> seen;
+                        for (std::size_t k = 0; k < line.size(); ++k) {
+                            if (!seen.insert(line[k]->name).second && k > 0) {
+                                cut = (along(*line[k]) + along(*line[k - 1])) / 2;
+                                break;
+                            }
+                        }
+                    }
+                }
+                i = j;
+            }
+            if (!cut) continue;
+            std::vector<Bubble> a, b;
+            for (const auto& x : g) (along(x) < *cut ? a : b).push_back(x);
+            if (a.size() < 4 || b.size() < 4) continue;
+            splitRec(std::move(a), depth + 1);
+            splitRec(std::move(b), depth + 1);
+            return;
+        }
+        groups.push_back(std::move(g));
+    };
+    for (auto& [g, all] : groups0) splitRec(std::move(all), 0);
 
-    for (auto& [g, all] : groups) {
+    for (auto& all : groups) {
         if (all.size() < 4) continue;
         KjView v;
         double rmed = 0;
@@ -350,7 +402,8 @@ std::vector<KjView> detectKjViews(const Document& doc, const std::vector<DxfDimI
         double maxH = 0;
         for (const auto& t : sc.texts) {
             if (utf8::length(t.s) < 15 ||
-                !has(t.u, {"ПЛАН", "СХЕМА", "АРМИРОВАН", "ОПАЛУБ", "РАСПОЛОЖ", "PLAN", "SXEMA", "ARMATURA", "SCHEME", "LAYOUT", "REINFORCEMENT"}))
+                !has(t.u, {"ПЛАН", "СХЕМА", "АРМИРОВАН", "ОПАЛУБ", "РАСПОЛОЖ", "PLAN", "SXEMA", "ARMATURA", "SCHEME", "LAYOUT", "REINFORCEMENT"}) ||
+                notTitle(t.u))
                 continue;
             if (t.c.x < v.box.min.x - w * 0.3 || t.c.x > v.box.max.x + w * 0.3) continue;
             const double dx = std::max({v.box.min.x - t.c.x, 0.0, t.c.x - v.box.max.x});
@@ -362,8 +415,28 @@ std::vector<KjView> detectKjViews(const Document& doc, const std::vector<DxfDimI
         }
         // sarlavha — eng katta shriftli (izohlar kichikroq), ular orasida eng yaqini
         double bestD = 1e18;
+        const Txt* tt = nullptr;
         for (const auto& c : cands)
-            if (c.h >= maxH * 0.9 && c.d < bestD) { bestD = c.d; v.title = c.t->s; }
+            if (c.h >= maxH * 0.9 && c.d < bestD) { bestD = c.d; tt = c.t; }
+        if (tt) {
+            // ko'p qatorli sarlavha ("Схема расположения монолитной плиты Пм-1" + "(нижнее дополнительное армирование по Х)"):
+            // shu shriftdagi, ustma-ust (2.2 qator ichida) va gorizontal yaqin qatorlar qo'shiladi
+            std::vector<const Txt*> block{tt};
+            for (bool grew = true; grew && block.size() < 4;) {
+                grew = false;
+                for (const auto& t : sc.texts) {
+                    if (std::find(block.begin(), block.end(), &t) != block.end()) continue;
+                    if (std::abs(t.h - tt->h) > tt->h * 0.35 || std::abs(t.c.x - tt->c.x) > std::max(w * 0.5, tt->h * 15) || notTitle(t.u)) continue;
+                    bool nearOne = false;
+                    for (const Txt* b : block) nearOne = nearOne || (std::abs(t.c.y - b->c.y) < tt->h * 2.2 && std::abs(t.c.y - b->c.y) > tt->h * 0.5);
+                    if (!nearOne || block.size() >= 4) continue;
+                    block.push_back(&t);
+                    grew = true;
+                }
+            }
+            std::sort(block.begin(), block.end(), [](const Txt* a, const Txt* b) { return a->c.y > b->c.y; });
+            for (const Txt* b : block) v.title += (v.title.empty() ? "" : " ") + trimmed(b->s);
+        }
         v.kind = classify(utf8::toUpper(v.title));
         for (const auto& t : sc.texts) {
             if (!inBox(v.box, t.c)) continue;
@@ -375,6 +448,39 @@ std::vector<KjView> detectKjViews(const Document& doc, const std::vector<DxfDimI
         out.push_back(std::move(v));
     }
     std::sort(out.begin(), out.end(), [](const KjView& a, const KjView& b) { return a.box.min.x < b.box.min.x || (a.box.min.x == b.box.min.x && a.box.max.y > b.box.max.y); });
+    // Hech bir ko'rinishda "1"/"А" yo'q (masalan Ж…Р va 2/1…2/5 o'qlari): ko'p ko'rinishlarda uchraydigan birinchi
+    // (eng chapdagi / eng pastdagi) o'qlar kesishmasi umumiy boshlang'ich nuqta
+    if (std::none_of(out.begin(), out.end(), [](const KjView& v) { return v.aligned; })) {
+        std::map<std::string, int> nx, ny;
+        for (const auto& v : out) {
+            for (const auto& [n, x] : v.axesX) ++nx[n];
+            for (const auto& [n, y] : v.axesY) ++ny[n];
+        }
+        auto pick = [&](const std::map<std::string, int>& cnt, bool isX) {
+            int best = 0;
+            for (const auto& [n, c] : cnt) best = std::max(best, c);
+            std::string name;
+            double bestC = 1e18;
+            for (const auto& v : out) {   // eng ko'p uchraydiganlar orasida — o'z ko'rinishida eng chapdagi / pastdagi
+                const auto& ax = isX ? v.axesX : v.axesY;
+                for (const auto& [n, c] : ax)
+                    if (cnt.at(n) >= best && cnt.at(n) >= 2 && c < bestC) { bestC = c; name = n; }
+            }
+            return name;
+        };
+        const std::string rx = pick(nx, true), ry = pick(ny, false);
+        if (!rx.empty() && !ry.empty())
+            for (auto& v : out) {
+                const auto ix = v.axesX.find(rx);
+                const auto iy = v.axesY.find(ry);
+                if (ix == v.axesX.end() || iy == v.axesY.end()) continue;
+                const Vec3 o{v.origin.x + ix->second / v.scale, v.origin.y + iy->second / v.scale, 0};
+                for (auto& [n, x] : v.axesX) x -= (o.x - v.origin.x) * v.scale;
+                for (auto& [n, y] : v.axesY) y -= (o.y - v.origin.y) * v.scale;
+                v.origin = o;
+                v.aligned = true;
+            }
+    }
     // "1"/"А" topilmagan ko'rinish: boshqa ko'rinish bilan umumiy o'q nomlari orqali
     const KjView* ref = nullptr;
     for (const auto& v : out)
@@ -410,10 +516,21 @@ namespace {
 struct Ctx {
     const KjParams& p;
     KjProject& r;
-    double fTop, fBot, sTop, sBot;
     std::string cls = "A400";
+    int group = -1;              // joriy plita guruhi: sterjenlar keyin uning boshqa belgilariga ko'chiriladi
+    std::vector<int> barGroup;   // r.bars bilan parallel
     std::map<std::tuple<int, int, int, long, std::string>, ScheduleRow> rows;  // kind, level, role, d(mm), cls
 
+    void row(const Bar& b) {
+        auto& row = rows[{static_cast<int>(b.kind), b.level, static_cast<int>(b.role), std::lround(b.d * 1000), b.cls}];
+        row.kind = b.kind;
+        row.level = b.level;
+        row.role = b.role;
+        row.d = b.d;
+        row.cls = b.cls;
+        row.count += 1;
+        row.totalLength += b.length;
+    }
     void bar(ElemKind k, int level, BarRole role, double d, const std::string& c, std::vector<Vec3> pts, double extraLen = 0) {
         double L = 0;
         for (std::size_t i = 1; i < pts.size(); ++i) L += pts[i - 1].distanceTo(pts[i]);
@@ -421,15 +538,9 @@ struct Ctx {
         const double stock = 11.7;
         if (L > stock) L += std::floor(L / stock) * 40 * d;
         L += extraLen;
-        auto& row = rows[{static_cast<int>(k), level, static_cast<int>(role), std::lround(d * 1000), c}];
-        row.kind = k;
-        row.level = level;
-        row.role = role;
-        row.d = d;
-        row.cls = c;
-        row.count += 1;
-        row.totalLength += L;
         r.bars.push_back({k, level, role, d, c, std::move(pts), L});
+        barGroup.push_back(group);
+        row(r.bars.back());
     }
 };
 
@@ -475,89 +586,658 @@ void mesh(Ctx& cx, const std::vector<std::vector<Vec3>>& rings, ElemKind k, int 
     }
 }
 
+bool isFormwork(const std::string& u) { return has(u, {"ОПАЛУБ", "QOLIP", "FORMWORK", "KALIP"}); }
+// Izoh/annotatsiya qatlamlari: kontur bo'laklarini ulashda hisobga olinmaydi
+bool annoLayer(const std::string& l) {
+    const std::string u = utf8::toUpper(l);
+    return has(u, {"DIM", "РАЗМЕР", "ANNO", "AXIS", "ОСИ", "ОСЬ", "TEXT", "ТЕКСТ", "ВЫНОС", "LEADER", "HATCH", "ШТРИХ", "_TX"});
+}
+
+// Plita markasi sarlavhada: "Пм-3", "ФПм-1", "П-2", "PM-1", "S-1" (katta harfda; yo'q — ""). shown — chizmadagidek
+std::string slabTag(const std::string& title, std::string* shown = nullptr) {
+    const std::u32string s = utf8::decode(title);
+    const std::u32string u = utf8::decode(utf8::toUpper(title));
+    if (s.size() != u.size()) return {};
+    for (std::size_t i = 0; i < u.size();) {
+        if (!isLetter(u[i])) {
+            ++i;
+            continue;
+        }
+        std::size_t j = i;
+        while (j < u.size() && isLetter(u[j])) ++j;
+        const std::size_t len = j - i;
+        const bool dash = j < u.size() && (u[j] == U'-' || u[j] == U'–' || u[j] == U'—');
+        std::size_t q = j + (dash ? 1 : 0);
+        const std::size_t k = q;
+        while (q < u.size() && u[q] >= U'0' && u[q] <= U'9') ++q;
+        const char32_t c0 = u[i], c1 = len > 1 ? u[i + 1] : 0;
+        const bool okL = len <= 4 && (c0 == U'П' || c0 == U'P' || c0 == U'S' || ((c0 == U'Ф' || c0 == U'F') && (c1 == U'П' || c1 == U'P')));
+        if (dash && okL && q > k && q - k <= 3) {
+            if (q < u.size() && isLetter(u[q])) {   // "Пм-3а" — bitta harf qo'shimchasi
+                if (q + 1 < u.size() && isLetter(u[q + 1])) {
+                    i = j;
+                    continue;
+                }
+                ++q;
+            }
+            if (shown) *shown = utf8::encode(s.substr(i, q - i));
+            return utf8::encode(u.substr(i, q - i));
+        }
+        i = j;
+    }
+    return {};
+}
+
+// Sarlavhadagi belgilar: "на отм. +5,300; +9,300; ..." (bir nechta), "на отм. +26,300" / "на отм. -5.150" (bitta)
+std::vector<double> titleLevels(const std::string& title, double floorHeight) {
+    if (auto ls = parseLevelSet(title); !ls.empty()) return expandLevelSet(ls, floorHeight);
+    if (!has(utf8::toUpper(title), {"ОТМ", "OTM", "BELGI", "LEVEL", "KOT", "ELEV"})) return {};
+    double v;
+    if (parseLevelText(title, v) && std::abs(v) < 200) return {v};
+    return {};
+}
+
+struct LP {
+    std::vector<Vec3> pts;
+    bool closed;
+    std::string layer;
+    double area;
+    BBox box;
+};
+Vec3 toLocal(const KjView& v, const Vec3& q) { return {(q.x - v.origin.x) * v.scale, (q.y - v.origin.y) * v.scale, 0}; }
+// Ko'rinishdagi poliliniyalar — mahalliy (o'qlar bo'yicha, haqiqiy o'lchamda)
+std::vector<LP> localPolys(const Scene& sc, const KjView& v) {
+    std::vector<LP> lps;
+    for (const auto& q : sc.polys) {
+        if (!inBox(v.box, center(q.box))) continue;
+        if (q.box.max.x - q.box.min.x > (v.box.max.x - v.box.min.x) * 1.05) continue;
+        LP lp;
+        for (const auto& x : q.pts) {
+            lp.pts.push_back(toLocal(v, x));
+            lp.box.expand(lp.pts.back());
+        }
+        lp.closed = q.closed;
+        lp.layer = q.layer;
+        lp.area = q.area * v.scale * v.scale;
+        lps.push_back(std::move(lp));
+    }
+    return lps;
+}
+
+struct Outline {
+    std::vector<std::vector<Vec3>> rings;   // [0] — kontur (soat strelkasiga qarshi), qolganlari — teshiklar
+    double area = 0, net = 0;               // kontur maydoni; teshiklarsiz
+    std::string layer;
+};
+// Kontur — eng katta yopiq (yoki deyarli yopiq) poliliniya. Qolip chizmalarida kontur ko'pincha ochiq poliliniya + uni
+// yopuvchi alohida chiziq: bir qatlamdagi ochiq bo'laklar uchma-uch ulanib yopilsa — ular ham nomzod.
+// Teshiklar — shu qatlamdagi ichki yopiq konturlar (≥ 1 m²; ustma-ust chizilganlardan — kattasi).
+Outline findOutline(const Scene& sc, const KjView& v, const std::vector<LP>& lps) {
+    struct Cand {
+        std::vector<Vec3> pts;
+        std::string layer;
+        double area;
+    };
+    std::vector<Cand> cands;
+    const double vw = (v.box.max.x - v.box.min.x) * v.scale, vh = (v.box.max.y - v.box.min.y) * v.scale;
+    const double vdiag = std::hypot(vw, vh);
+    for (const auto& q : lps) {
+        if (q.pts.size() < 4 || rebarLayer(q.layer)) continue;
+        const double diag = std::hypot(q.box.max.x - q.box.min.x, q.box.max.y - q.box.min.y);
+        if (!q.closed && q.pts.front().distanceTo(q.pts.back()) > diag * 0.02) continue;
+        cands.push_back({q.pts, q.layer, q.area});
+    }
+    struct Piece {
+        std::vector<Vec3> pts;
+        std::string layer;
+        double len;
+        bool used = false;
+    };
+    std::vector<Piece> pieces;
+    auto plen = [](const std::vector<Vec3>& pts) {
+        double s = 0;
+        for (std::size_t i = 1; i < pts.size(); ++i) s += pts[i - 1].distanceTo(pts[i]);
+        return s;
+    };
+    for (const auto& q : lps)
+        if (!q.closed && q.pts.size() >= 2 && !rebarLayer(q.layer) && !annoLayer(q.layer)) pieces.push_back({q.pts, q.layer, plen(q.pts)});
+    std::vector<std::size_t> seeds;
+    for (std::size_t i = 0; i < pieces.size(); ++i)
+        if (pieces[i].pts.size() >= 3 && pieces[i].len >= vdiag * 0.3) seeds.push_back(i);
+    if (!seeds.empty())
+        for (const auto& l : sc.lines) {
+            if (rebarLayer(l.layer) || annoLayer(l.layer) || !inBox(v.box, Vec3{(l.a.x + l.b.x) / 2, (l.a.y + l.b.y) / 2, 0})) continue;
+            std::vector<Vec3> pts{toLocal(v, l.a), toLocal(v, l.b)};
+            const double len = pts[0].distanceTo(pts[1]);
+            if (len > 1e-6) pieces.push_back({std::move(pts), l.layer, len});
+        }
+    std::sort(seeds.begin(), seeds.end(), [&](std::size_t a, std::size_t b) { return pieces[a].len > pieces[b].len; });
+    const double tol = std::max(0.005, vdiag * 2e-4);
+    for (const std::size_t s : seeds) {
+        if (pieces[s].used) continue;
+        std::vector<Vec3> ch = pieces[s].pts;
+        std::vector<std::size_t> taken{s};
+        for (int it = 0; it < 64 && ch.front().distanceTo(ch.back()) > tol; ++it) {
+            bool grew = false;
+            for (std::size_t j = 0; j < pieces.size() && !grew; ++j) {
+                const Piece& q = pieces[j];
+                if (q.used || q.layer != pieces[s].layer || std::find(taken.begin(), taken.end(), j) != taken.end()) continue;
+                if (q.pts.front().distanceTo(ch.back()) <= tol) ch.insert(ch.end(), q.pts.begin() + 1, q.pts.end());
+                else if (q.pts.back().distanceTo(ch.back()) <= tol) ch.insert(ch.end(), q.pts.rbegin() + 1, q.pts.rend());
+                else if (q.pts.back().distanceTo(ch.front()) <= tol) ch.insert(ch.begin(), q.pts.begin(), q.pts.end() - 1);
+                else if (q.pts.front().distanceTo(ch.front()) <= tol) ch.insert(ch.begin(), q.pts.rbegin(), q.pts.rend() - 1);
+                else continue;
+                taken.push_back(j);
+                grew = true;
+            }
+            if (!grew) break;
+        }
+        if (ch.size() < 5 || ch.front().distanceTo(ch.back()) > tol) continue;
+        ch.pop_back();
+        BBox b;
+        for (const auto& x : ch) b.expand(x);
+        if (b.max.x - b.min.x > vw * 1.05) continue;
+        for (const std::size_t j : taken) pieces[j].used = true;
+        const double a = std::abs(shoelace(ch));
+        cands.push_back({std::move(ch), pieces[s].layer, a});
+    }
+    const Cand* best = nullptr;
+    for (const auto& c : cands)
+        if (!best || c.area > best->area) best = &c;
+    Outline o;
+    if (!best || best->area < 4) return o;
+    o.rings.push_back(best->pts);
+    if (shoelace(o.rings[0]) < 0) std::reverse(o.rings[0].begin(), o.rings[0].end());
+    o.area = o.net = best->area;
+    o.layer = best->layer;
+    std::vector<const LP*> hs;
+    for (const auto& q : lps) {
+        if (!q.closed || q.layer != o.layer || q.area < 1.0 || q.area > best->area * 0.3) continue;
+        const Vec3 c = center(q.box);
+        if (inPoly(o.rings[0], c.x, c.y)) hs.push_back(&q);
+    }
+    std::sort(hs.begin(), hs.end(), [](const LP* a, const LP* b) { return a->area > b->area; });
+    for (const LP* q : hs) {
+        const Vec3 c = center(q->box);
+        bool over = false;
+        for (std::size_t i = 1; i < o.rings.size() && !over; ++i) over = inPoly(o.rings[i], c.x, c.y);
+        if (over) continue;
+        auto h = q->pts;
+        if (shoelace(h) > 0) std::reverse(h.begin(), h.end());
+        o.rings.push_back(std::move(h));
+        o.net -= q->area;
+    }
+    return o;
+}
+
+// to'rtburchak (ustun / devor / zona)
+struct Rect {
+    Vec3 o, u, w;
+    double a, b;
+    Vec3 c;
+};  // o + u*[0..a] + w*[0..b]
+bool rectOf(const LP& q, Rect& rc) {
+    if (!q.closed || q.pts.size() != 4) return false;
+    const Vec3 e1 = q.pts[1] - q.pts[0], e2 = q.pts[2] - q.pts[1];
+    const double a = e1.length(), b = e2.length();
+    if (a < 1e-6 || b < 1e-6) return false;
+    if (std::abs((e1.x * e2.x + e1.y * e2.y) / (a * b)) > 0.02) return false;
+    if (q.pts[3].distanceTo(q.pts[0] + e2) > (a + b) * 0.01) return false;
+    rc = {q.pts[0], e1 * (1 / a), e2 * (1 / b), a, b, center(q.box)};
+    return true;
+}
+
+// Vertikal element (ustun / devor) — mahalliy koordinatada
+struct Vert {
+    std::vector<Vec3> ring;
+    bool wall = false;
+    std::string layer;
+    Vec3 c;
+    double area = 0;
+};
+// Ko'rinishdagi ustun va devorlar: to'rtburchaklar (ustun — kichik tomoni 0.2..1.2, nisbati ≤ 3; devor — yupqa va cho'ziq) va
+// murakkab yupqa ko'pburchaklar (L/U shaklli yadro devori, qiya bo'lak). layers — faqat shu qatlamlardagilar
+std::vector<Vert> findVerticals(const Scene& sc, const KjView& v, const std::vector<LP>& lps, const std::set<std::string>* layers = nullptr) {
+    std::vector<Vec3> exclude;   // "Приямок" yozuvlari: yonidagi kvadratga yaqin element — chuqurcha, ustun emas
+    std::vector<Vec3> marks;     // belgi yozuvlari ("-5.150"): ularning ramkasi ustun emas
+    for (const auto& t : sc.texts) {
+        if (!inBox(v.box, t.c)) continue;
+        if (has(t.u, {"ПРИЯМОК", "ОТВЕРСТ", "ПРОЕМ", "ПРОЁМ", "ЛЮК", "CHUQURCHA", "TESHIK"})) exclude.push_back(toLocal(v, t.c));
+        double lv;
+        if (utf8::length(t.s) <= 12 && parseLevelText(t.s, lv)) marks.push_back(toLocal(v, t.c));
+    }
+    std::vector<Vert> cand;
+    for (const auto& q : lps) {
+        if (!q.closed || rebarLayer(q.layer) || (layers && !layers->count(q.layer))) continue;
+        Vert e;
+        e.layer = q.layer;
+        Rect rc;
+        if (rectOf(q, rc)) {
+            constexpr double eps = 1e-3;   // 1200 × 1800 chizmada 1.2000001 bo'lishi mumkin
+            const double a = std::min(rc.a, rc.b), b = std::max(rc.a, rc.b);
+            const bool col = a >= 0.2 - eps && a <= 1.2 + eps && b / a <= 3 + eps;
+            const bool wall = !col && a >= 0.12 - eps && a <= 0.6 + eps && b / a > 3 && b <= 40 + eps;
+            if (!col && !wall) continue;
+            e.ring = {rc.o, rc.o + rc.u * rc.a, rc.o + rc.u * rc.a + rc.w * rc.b, rc.o + rc.w * rc.b};
+            e.wall = !col;
+            e.c = rc.c;
+            e.area = rc.a * rc.b;
+        } else if (q.pts.size() >= 5) {
+            double per = 0;
+            for (std::size_t i = 0; i < q.pts.size(); ++i) per += q.pts[i].distanceTo(q.pts[(i + 1) % q.pts.size()]);
+            const double th = per > 0 ? 2 * q.area / per : 0;   // yupqa ko'pburchak qalinligi
+            if (q.area < 0.1 || q.area > 30 || th < 0.12 || th > 0.8) continue;
+            e.ring = q.pts;
+            e.wall = true;
+            e.c = center(q.box);
+            e.area = q.area;
+        } else {
+            continue;
+        }
+        if (shoelace(e.ring) < 0) std::reverse(e.ring.begin(), e.ring.end());
+        if (std::any_of(marks.begin(), marks.end(), [&](const Vec3& m) { return inPoly(e.ring, m.x, m.y); })) continue;
+        bool dup = false;
+        for (const auto& o : cand) dup = dup || (o.c.distanceTo(e.c) < 0.05 && std::abs(o.area - e.area) < 0.01);
+        if (!dup) cand.push_back(std::move(e));
+    }
+    std::vector<bool> drop(cand.size(), false);
+    for (const auto& x : exclude) {
+        int bi = -1;
+        double bd = 8;
+        for (std::size_t i = 0; i < cand.size(); ++i) {
+            if (cand[i].wall) continue;
+            const double d = cand[i].c.distanceTo(x);
+            if (d < bd) {
+                bd = d;
+                bi = static_cast<int>(i);
+            }
+        }
+        if (bi >= 0) drop[bi] = true;
+    }
+    std::vector<Vert> out;
+    for (std::size_t i = 0; i < cand.size(); ++i)
+        if (!drop[i]) out.push_back(std::move(cand[i]));
+    return out;
+}
+
+// Ko'rinishdagi armatura yozuvlari
+struct Marks {
+    std::map<std::string, int> votes;
+    std::map<std::string, BarMark> of;
+    std::vector<std::pair<Vec3, double>> spacings;   // mahalliy (joy, qadam)
+    std::set<long> dias;
+    double step = 0;                                 // eng ko'p uchraydigan qadam
+    std::string best() const {
+        std::string k;
+        int bc = 0;
+        for (const auto& [key, c] : votes)
+            if (c > bc) {
+                bc = c;
+                k = key;
+            }
+        return k;
+    }
+};
+Marks viewMarks(const Scene& sc, const KjView& v, double defStep) {
+    Marks M;
+    struct MT {
+        Vec3 c;
+        double h;
+        BarMark m;
+    };
+    std::vector<MT> ms;
+    struct ST {
+        Vec3 c;
+        double h, s;
+    };
+    std::vector<ST> sts;
+    for (const auto& t : sc.texts) {
+        if (!inBox(v.box, t.c)) continue;
+        const double s = spacingOf(t.u);
+        if (s > 0) {
+            M.spacings.push_back({toLocal(v, t.c), s});
+            sts.push_back({t.c, t.h, s});
+        }
+        BarMark m;
+        if (parseBarMark(t.s, m)) {
+            if (m.spacing == 0) m.spacing = s;
+            ms.push_back({t.c, t.h, m});
+        }
+    }
+    // "Ø14 A500С" va "ш. 200х200" — alohida yozuvlar (yoki multiliderning alohida qatorlari): qadamsiz belgiga yaqin (≈3 qator
+    // ichidagi) qadam yozuvi
+    for (auto& x : ms) {
+        if (x.m.spacing > 0) continue;
+        double bd = 1e300;
+        for (const auto& st : sts) {
+            const double d = st.c.distanceTo(x.c);
+            if (d < bd && d <= std::max(x.h, st.h) * 3.5) {
+                bd = d;
+                x.m.spacing = st.s;
+            }
+        }
+    }
+    for (const auto& x : ms) {
+        M.dias.insert(std::lround(x.m.d * 1000));
+        const std::string k = std::format("{}|{}|{}", std::lround(x.m.d * 1000), x.m.cls, std::lround(x.m.spacing * 1000));
+        M.votes[k]++;
+        M.of[k] = x.m;
+    }
+    std::map<double, int> spVotes;
+    for (const auto& [q, sp] : M.spacings) spVotes[sp]++;
+    M.step = defStep;
+    int bc = 0;
+    for (auto [s, c] : spVotes)
+        if (c > bc) {
+            bc = c;
+            M.step = s;
+        }
+    return M;
+}
+
+// Plita turi (Пм-1, Пм-3 ...): ko'rinishlari, konturi, belgilari, qalinligi
+struct Group {
+    std::string tag, shown;
+    std::vector<KjView*> views;
+    KjView* form = nullptr;    // kontur (qolip chizmasi)
+    KjView* meshV = nullptr;   // asosiy to'r
+    Outline ol;
+    std::vector<double> levels;   // plita usti (nisbiy), o'sish tartibida
+    std::vector<int> floors;      // levels bilan parallel
+    double t = 0;
+    bool tFound = false;
+};
+
 }  // namespace
 
 KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dims, const KjParams& p, const std::vector<KjView>* given) {
     KjProject r;
     r.views = given ? *given : detectKjViews(doc, dims);
     auto issue = [&](bool err, const std::string& k, std::vector<std::string> a = {}) { r.issues.push_back({err, k, std::move(a)}); };
+    auto info = [&](const std::string& k, std::vector<std::string> a = {}) {
+        issue(false, k, std::move(a));
+        r.issues.back().info = true;
+    };
     if (r.views.empty()) {
         issue(true, "kj.chk.no_views");
         return r;
     }
     const Scene sc = collect(doc);
-
-    // ---- belgilar va beton sinfi (butun fayl bo'yicha)
-    std::map<long, int> lvCount;   // faqat plita/ustun ko'rinishlari atrofidagi (kesimlar bilan) belgilar
-    std::map<std::vector<long>, int> typVotes;   // tipik qavatlar to'plamlari (oraliq belgisi + belgilar, mm)
+    auto f2 = [](double x) { return std::format("{:.2f}", x); };
+    auto f3 = [](double x) { return std::format("{:+.3f}", x); };
+    auto isSlab = [](KjViewKind k) { return k == KjViewKind::SlabMain || k == KjViewKind::SlabExtraBottom || k == KjViewKind::SlabExtraTop; };
+    auto isFound = [](KjViewKind k) {
+        return k == KjViewKind::FoundMain || k == KjViewKind::FoundExtraBottom || k == KjViewKind::FoundExtraTop || k == KjViewKind::FoundVertical ||
+               k == KjViewKind::FoundSupports || k == KjViewKind::Outlets;
+    };
+    // ko'rinish hududi: o'zi va pastidagi kesimlar ("Фрагмент монолитной плиты": usti / osti belgilari)
+    auto region = [](const KjView& v, const Vec3& q) {
+        const double w = v.box.max.x - v.box.min.x, h = v.box.max.y - v.box.min.y;
+        return q.x >= v.box.min.x - w * 0.15 && q.x <= v.box.max.x + w * 0.15 && q.y >= v.box.min.y - h * 0.6 && q.y <= v.box.max.y + h * 0.15;
+    };
+    struct LvT {
+        Vec3 c;
+        double v;
+    };
+    std::vector<LvT> lvTexts;   // belgi yozuvlari ("-0.700", "+5.100")
     for (const auto& t : sc.texts) {
-        bool near = false;
-        for (const auto& v : r.views) {
-            if (!(v.kind == KjViewKind::SlabMain || v.kind == KjViewKind::SlabExtraBottom || v.kind == KjViewKind::SlabExtraTop ||
-                  v.kind == KjViewKind::Columns))
-                continue;
-            const double w = v.box.max.x - v.box.min.x, h = v.box.max.y - v.box.min.y;
-            near = near || (t.c.x > v.box.min.x - w * 0.5 && t.c.x < v.box.max.x + w * 0.5 && t.c.y > v.box.min.y - h * 0.5 &&
-                            t.c.y < v.box.max.y + h * 0.5);
-        }
         double l;
-        if (near && parseLevelText(t.s, l) && std::abs(l) < 200) lvCount[std::lround(l * 1000)]++;
-        if (near)
-            if (auto ls = parseLevelSet(t.s); !ls.empty()) {
-                std::vector<long> key{ls.range ? 1L : 0L};
-                for (double x : ls.levels) key.push_back(std::lround(x * 1000));
-                ++typVotes[key];
-            }
+        if (utf8::length(t.s) <= 24 && parseLevelText(t.s, l) && std::abs(l) < 200) lvTexts.push_back({t.c, l});
     }
-    // ko'rinish sarlavhalari ham ("Опалубочный план плиты перекрытия на отм. +11.300...+23.400")
-    for (const auto& v : r.views)
-        if (v.kind == KjViewKind::SlabMain || v.kind == KjViewKind::SlabExtraBottom || v.kind == KjViewKind::SlabExtraTop || v.kind == KjViewKind::Columns)
-            if (auto ls = parseLevelSet(v.title); !ls.empty()) {
-                std::vector<long> key{ls.range ? 1L : 0L};
-                for (double x : ls.levels) key.push_back(std::lround(x * 1000));
-                typVotes[key] += 2;
-            }
+
+    // ---- plita turlari: sarlavhadagi markasi bo'yicha ("Пм-1", "Пм-3"); markasiz ko'rinish — eng yaqin guruhga
+    std::vector<Group> groups;
     {
-        int best = 0;
-        LevelSet bestSet;
-        for (const auto& [key, n] : typVotes) {
-            if (n < best || (n == best && key.size() <= bestSet.levels.size() + 1)) continue;
-            best = n;
-            bestSet.range = key[0] == 1;
-            bestSet.levels.clear();
-            for (std::size_t i = 1; i < key.size(); ++i) bestSet.levels.push_back(key[i] / 1000.0);
+        std::map<std::string, std::size_t> idx;
+        std::vector<KjView*> untagged;
+        for (auto& v : r.views) {
+            if (!v.use || !isSlab(v.kind)) continue;
+            std::string shown;
+            const std::string tag = slabTag(v.title, &shown);
+            if (tag.empty()) {
+                untagged.push_back(&v);
+                continue;
+            }
+            const auto [it, ins] = idx.try_emplace(tag, groups.size());
+            if (ins) {
+                groups.emplace_back();
+                groups.back().tag = tag;
+                groups.back().shown = shown;
+            }
+            groups[it->second].views.push_back(&v);
         }
-        if (!bestSet.empty()) r.typical = expandLevelSet(bestSet, p.floorHeight);
-        if (r.typical.size() < 2) r.typical.clear();
+        if (groups.empty() && !untagged.empty()) groups.emplace_back();
+        for (KjView* v : untagged) {
+            std::size_t bi = 0;
+            double bd = 1e300;
+            for (std::size_t g = 0; g < groups.size(); ++g)
+                for (const KjView* o : groups[g].views)
+                    if (const double d = center(o->box).distanceTo(center(v->box)); d < bd) {
+                        bd = d;
+                        bi = g;
+                    }
+            groups[bi].views.push_back(v);
+        }
+        for (auto& g : groups) {
+            for (KjView* v : g.views)
+                if (v->kind == KjViewKind::SlabMain && isFormwork(utf8::toUpper(v->title))) {
+                    g.form = v;
+                    break;
+                }
+            // asosiy to'r — yozuvlari ko'p bo'lgan ko'rinish (teng bo'lsa — qolip chizmasi emasi)
+            int bv = -1;
+            for (KjView* v : g.views) {
+                if (v->kind != KjViewKind::SlabMain) continue;
+                int n = 0;
+                for (const auto& [k, c] : viewMarks(sc, *v, p.meshStep).votes) n = std::max(n, c);
+                if (n > bv || (n == bv && g.meshV == g.form && v != g.form)) {
+                    bv = n;
+                    g.meshV = v;
+                }
+            }
+            if (!g.form) g.form = g.meshV;
+            if (g.form) g.ol = findOutline(sc, *g.form, localPolys(sc, *g.form));
+            if (g.ol.rings.empty() && g.meshV && g.meshV != g.form) g.ol = findOutline(sc, *g.meshV, localPolys(sc, *g.meshV));
+        }
     }
-    // plita: (ust, ost) belgilar jufti, farqi 0.12..0.45 — ikkalasi ham ko'p uchraydigan ("+3.050" / "+2.850")
+    const bool multi = groups.size() > 1;
+
+    // ---- plita belgilari
     double slabTop = p.slabTop, slabT = p.slabT;
-    if (slabTop <= 0 && !r.typical.empty() && r.typical.front() > 0) slabTop = r.typical.front();   // birinchi tipik qavat
-    if (slabTop <= 0 || slabT <= 0) {
-        int bestScore = 0;
-        double bt = 0, bb = 0;
-        for (auto [kt, ct] : lvCount) {
-            if (slabTop <= 0 && (kt < 1000 || kt > 12000)) continue;
-            if (slabTop > 0 && std::abs(kt - std::lround(slabTop * 1000)) > 1) continue;
-            for (auto [kb, cb] : lvCount) {
-                const long d = kt - kb;
-                if (d < 120 || d > 450) continue;
-                const int sc = std::min(ct, cb);
-                if (sc > bestScore || (sc == bestScore && kt > std::lround(bt * 1000))) { bestScore = sc; bt = kt / 1000.0; bb = kb / 1000.0; }
+    if (!multi) {
+        // bitta plita: (ust, ost) belgilar jufti va tipik qavatlar — plita/ustun ko'rinishlari atrofidagi yozuvlardan
+        std::map<long, int> lvCount;
+        std::map<std::vector<long>, int> typVotes;   // tipik qavatlar to'plamlari (oraliq belgisi + belgilar, mm)
+        for (const auto& t : sc.texts) {
+            bool near = false;
+            for (const auto& v : r.views) {
+                if (!(isSlab(v.kind) || v.kind == KjViewKind::Columns)) continue;
+                const double w = v.box.max.x - v.box.min.x, h = v.box.max.y - v.box.min.y;
+                near = near || (t.c.x > v.box.min.x - w * 0.5 && t.c.x < v.box.max.x + w * 0.5 && t.c.y > v.box.min.y - h * 0.5 &&
+                                t.c.y < v.box.max.y + h * 0.5);
+            }
+            double l;
+            if (near && parseLevelText(t.s, l) && std::abs(l) < 200) lvCount[std::lround(l * 1000)]++;
+            if (near)
+                if (auto ls = parseLevelSet(t.s); !ls.empty()) {
+                    std::vector<long> key{ls.range ? 1L : 0L};
+                    for (double x : ls.levels) key.push_back(std::lround(x * 1000));
+                    ++typVotes[key];
+                }
+        }
+        // ko'rinish sarlavhalari ham ("Опалубочный план плиты перекрытия на отм. +11.300...+23.400")
+        for (const auto& v : r.views)
+            if (isSlab(v.kind) || v.kind == KjViewKind::Columns)
+                if (auto ls = parseLevelSet(v.title); !ls.empty()) {
+                    std::vector<long> key{ls.range ? 1L : 0L};
+                    for (double x : ls.levels) key.push_back(std::lround(x * 1000));
+                    typVotes[key] += 2;
+                }
+        {
+            int best = 0;
+            LevelSet bestSet;
+            for (const auto& [key, n] : typVotes) {
+                if (n < best || (n == best && key.size() <= bestSet.levels.size() + 1)) continue;
+                best = n;
+                bestSet.range = key[0] == 1;
+                bestSet.levels.clear();
+                for (std::size_t i = 1; i < key.size(); ++i) bestSet.levels.push_back(key[i] / 1000.0);
+            }
+            if (!bestSet.empty()) r.typical = expandLevelSet(bestSet, p.floorHeight);
+            if (r.typical.size() < 2) r.typical.clear();
+        }
+        // plita: (ust, ost) belgilar jufti, farqi 0.12..0.45 — ikkalasi ham ko'p uchraydigan ("+3.050" / "+2.850")
+        if (slabTop <= 0 && !r.typical.empty() && r.typical.front() > 0) slabTop = r.typical.front();   // birinchi tipik qavat
+        if (slabTop <= 0 || slabT <= 0) {
+            int bestScore = 0;
+            double bt = 0, bb = 0;
+            for (auto [kt, ct] : lvCount) {
+                if (slabTop <= 0 && (kt < 1000 || kt > 12000)) continue;
+                if (slabTop > 0 && std::abs(kt - std::lround(slabTop * 1000)) > 1) continue;
+                for (auto [kb, cb] : lvCount) {
+                    const long d = kt - kb;
+                    if (d < 120 || d > 450) continue;
+                    const int s = std::min(ct, cb);
+                    if (s > bestScore || (s == bestScore && kt > std::lround(bt * 1000))) {
+                        bestScore = s;
+                        bt = kt / 1000.0;
+                        bb = kb / 1000.0;
+                    }
+                }
+            }
+            if (slabTop <= 0) slabTop = bestScore > 0 ? bt : 0;
+            if (slabT <= 0 && bestScore > 0) slabT = bt - bb;
+            if (slabTop <= 0) {
+                int bc = 0;
+                for (auto [k, c] : lvCount)
+                    if (k > 1000 && k < 12000 && c > bc) {
+                        bc = c;
+                        slabTop = k / 1000.0;
+                    }
+            }
+            if (slabTop <= 0) {
+                slabTop = 3.0;
+                issue(false, "kj.chk.assumed_level", {"3.000"});
+            }
+            if (slabT <= 0) slabT = 0.2;
+        }
+        if (!(r.typical.size() >= 2 && std::abs(slabTop - r.typical.front()) < 0.005)) r.typical.clear();
+        if (groups.empty()) groups.emplace_back();   // plita ko'rinishi yo'q — ustunlar balandligi uchun belgi
+        groups[0].levels = r.typical.empty() ? std::vector<double>{slabTop} : r.typical;
+        groups[0].t = slabT;
+        groups[0].tFound = true;
+    } else {
+        // har plita turi: sarlavhadagi belgi(lar) ("Пм-3 на отм. +5,300; +9,300 ..."), aks holda qolip chizmasida kontur ichidagi va
+        // kesimdagi eng ko'p belgi
+        for (auto& g : groups) {
+            std::vector<const KjView*> order;
+            if (g.form) order.push_back(g.form);
+            for (const KjView* v : g.views)
+                if (v != g.form) order.push_back(v);
+            for (const KjView* v : order)
+                if (auto lv = titleLevels(v->title, p.floorHeight); !lv.empty()) {
+                    g.levels = lv;
+                    break;
+                }
+            if (!g.levels.empty() || !g.form) continue;
+            std::map<long, int> votes;
+            const KjView& fv = *g.form;
+            for (const auto& lt : lvTexts) {
+                if (inBox(fv.box, lt.c)) {
+                    const Vec3 q = toLocal(fv, lt.c);
+                    if (!g.ol.rings.empty() && inPoly(g.ol.rings[0], q.x, q.y)) votes[std::lround(lt.v * 1000)] += 2;
+                } else if (region(fv, lt.c) && lt.c.y < fv.box.min.y) {
+                    votes[std::lround(lt.v * 1000)] += 1;
+                }
+            }
+            int bc = 0;
+            for (auto [k, c] : votes)
+                if (c > bc) {
+                    bc = c;
+                    g.levels = {k / 1000.0};
+                }
+        }
+        double hi = -1e300;
+        for (const auto& g : groups)
+            for (double l : g.levels) hi = std::max(hi, l);
+        for (auto& g : groups)
+            if (g.levels.empty()) {
+                g.levels = {hi > -1e299 ? hi + p.floorHeight : 3.0};
+                issue(false, "kj.chk.slab_no_level", {g.shown, f3(g.levels[0])});
+            }
+        // qalinligi: plita usti belgisidan 0.12..0.45 pastdagi belgi (kesimdagi "osti") — guruh ko'rinishlari hududida
+        for (auto& g : groups) {
+            if (p.slabT > 0) {
+                g.t = p.slabT;
+                g.tFound = true;
+                continue;
+            }
+            std::map<long, int> tv;
+            for (const auto& lt : lvTexts) {
+                bool in = false;
+                for (const KjView* v : g.views) in = in || region(*v, lt.c);
+                if (!in) continue;
+                for (double top : g.levels)
+                    if (const long d = std::lround((top - lt.v) * 1000); d >= 120 && d <= 450) tv[d]++;
+            }
+            int bc = 0;
+            for (auto [d, c] : tv)
+                if (c > bc) {
+                    bc = c;
+                    g.t = d / 1000.0;
+                }
+            g.tFound = bc > 0;
+        }
+    }
+
+    // ---- qavatlar: barcha plitalar usti belgilari; 1.5 m dan yaqinlari — bitta qavat (Пм-1 −0.700 va Пм-2 −0.150)
+    std::vector<std::pair<double, double>> floorLH;
+    {
+        std::vector<double> all;
+        for (const auto& g : groups) all.insert(all.end(), g.levels.begin(), g.levels.end());
+        std::sort(all.begin(), all.end());
+        for (double l : all) {
+            if (!floorLH.empty() && l - floorLH.back().second < 1.5) floorLH.back().second = l;
+            else floorLH.push_back({l, l});
+        }
+    }
+    auto floorOf = [&](double l) {
+        for (std::size_t i = 0; i < floorLH.size(); ++i)
+            if (l >= floorLH[i].first - 1e-6 && l <= floorLH[i].second + 1e-6) return static_cast<int>(i) + 1;
+        return 1;
+    };
+    const int F = std::max(1, static_cast<int>(floorLH.size()));
+    for (auto& g : groups) {
+        g.floors.clear();
+        for (double l : g.levels) g.floors.push_back(floorOf(l));
+    }
+    if (multi)   // qalinligi topilmagan plita: shu qavatdagi boshqa plitaniki, aks holda eng ko'p uchraydigani
+        for (auto& g : groups) {
+            if (g.tFound) continue;
+            const Group* same = nullptr;
+            for (const auto& o : groups)
+                if (&o != &g && o.tFound && o.floors.front() == g.floors.front()) {
+                    same = &o;
+                    break;
+                }
+            if (same) {
+                g.t = same->t;
+                issue(false, "kj.chk.slab_t_same", {g.shown, same->shown, f2(g.t)});
+            } else {
+                std::map<long, int> c;
+                for (const auto& o : groups)
+                    if (o.tFound) c[std::lround(o.t * 1000)]++;
+                g.t = 0.2;
+                int bc = 0;
+                for (auto [k, n] : c)
+                    if (n > bc) {
+                        bc = n;
+                        g.t = k / 1000.0;
+                    }
+                issue(false, "kj.chk.slab_t_assumed", {g.shown, f2(g.t)});
             }
         }
-        if (slabTop <= 0) slabTop = bestScore > 0 ? bt : 0;
-        if (slabT <= 0 && bestScore > 0) slabT = bt - bb;
-        if (slabTop <= 0) {
-            int bc = 0;
-            for (auto [k, c] : lvCount)
-                if (k > 1000 && k < 12000 && c > bc) { bc = c; slabTop = k / 1000.0; }
-        }
-        if (slabTop <= 0) { slabTop = 3.0; issue(false, "kj.chk.assumed_level", {"3.000"}); }
-        if (slabT <= 0) slabT = 0.2;
-    }
-    r.slabTop = slabTop;
-    r.slabT = slabT;
+
     std::string concrete = p.concrete;
     if (concrete.empty()) {
         std::map<std::string, int> cc;
@@ -578,31 +1258,125 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         }
         int bc = 0;
         for (const auto& [k, c] : cc)
-            if (c > bc) { bc = c; concrete = k; }
+            if (c > bc) {
+                bc = c;
+                concrete = k;
+            }
         if (concrete.empty()) concrete = "B25";
     }
     r.concrete = concrete;
     // ±0.000 absolyut belgisi va u nimaga tengligi (fundament usti / toza pol)
     const auto dat = findDatum(doc);
-    if (dat) { r.datumText = dat->text; r.datumFromDrawing = true; }
+    if (dat) {
+        r.datumText = dat->text;
+        r.datumFromDrawing = true;
+    }
     r.datum = p.datumAuto && dat ? dat->abs : p.datum;
     r.datumKnown = (p.datumAuto && dat) || !p.datumAuto || p.datum != 0;
     if (dat && !p.datumAuto && std::abs(dat->abs - p.datum) > 0.005)
         issue(false, "kj.chk.datum_differs", {std::format("{:.3f}", p.datum), std::format("{:.3f}", dat->abs)});
     if (!r.datumKnown) issue(false, "kj.chk.no_datum");  // bino: keyin ALIGN/MOVE bilan joylashtirish mumkin
-    const bool fTopFromDatum = p.foundTopAuto && dat && dat->ref == 1;
-    const double fTop = fTopFromDatum ? 0.0 : p.foundTop, fBot = fTop - p.foundT;
-    r.foundTop = fTop;
-    if (fTopFromDatum) issue(false, "kj.chk.found_t_assumed", {std::format("{:.2f}", p.foundT)});
-    else issue(false, "kj.chk.found_assumed", {std::format("{:.3f}", fTop), std::format("{:.2f}", p.foundT)});
 
-    Ctx cx{p, r, fTop, fBot, slabTop, slabTop - slabT, "A400", {}};
+    // ---- fundament usti va qalinligi: izohdan (±0.000 = fundament usti), ustunlar / vypusklar sxemasi sarlavhasidan
+    // ("Схема расположения вертикальных элементов на отм. -5.150") yoki fundament ko'rinishlaridagi (usti, osti) juftidan
+    const bool fTopFromDatum = p.foundTopAuto && dat && dat->ref == 1;
+    double fTop = p.foundTop, foundT = p.foundT;
+    std::optional<double> topDrawing, botDrawing;
+    std::map<long, int> fc;   // fundament ko'rinishlari hududidagi belgilar
+    for (const auto& lt : lvTexts)
+        for (const auto& v : r.views)
+            if (v.use && isFound(v.kind) && region(v, lt.c)) {
+                fc[std::lround(lt.v * 1000)]++;
+                break;
+            }
+    auto bottomFor = [&](long top) -> std::optional<double> {
+        int bc = 0;
+        long bb = 0;
+        for (auto [k, c] : fc)
+            if (const long d = top - k; d >= 250 && d <= 3000 && c > bc) {
+                bc = c;
+                bb = k;
+            }
+        if (bc == 0) return std::nullopt;
+        return bb / 1000.0;
+    };
+    if (p.foundTopAuto && !fTopFromDatum) {
+        for (const auto& v : r.views)
+            if (v.use && (v.kind == KjViewKind::Columns || v.kind == KjViewKind::Outlets))
+                if (auto lv = titleLevels(v.title, p.floorHeight); lv.size() == 1) {
+                    topDrawing = lv[0];
+                    break;
+                }
+        if (!topDrawing) {
+            int bs = 0;
+            long bt = 0;
+            for (auto [kt, ct] : fc)
+                for (auto [kb, cb] : fc) {
+                    const long d = kt - kb;
+                    if (d < 250 || d > 3000) continue;
+                    const int s = std::min(ct, cb);
+                    if (s > bs || (s == bs && kt > bt)) {
+                        bs = s;
+                        bt = kt;
+                    }
+                }
+            if (bs > 0) topDrawing = bt / 1000.0;
+        }
+    }
+    if (fTopFromDatum) {
+        fTop = 0;
+        botDrawing = bottomFor(0);
+    } else if (topDrawing) {
+        fTop = *topDrawing;
+        botDrawing = bottomFor(std::lround(fTop * 1000));
+    }
+    if (botDrawing) foundT = fTop - *botDrawing;
+    const double fBot = fTop - foundT;
+    r.foundTop = fTop;
+    r.foundT = foundT;
+    if (botDrawing) info("kj.chk.found_drawing", {f3(fTop), f3(fBot), f2(foundT)});
+    else if (fTopFromDatum) issue(false, "kj.chk.found_t_assumed", {f2(p.foundT)});
+    else if (topDrawing) issue(false, "kj.chk.found_top_drawing", {f3(fTop), f2(foundT)});
+    else issue(false, "kj.chk.found_assumed", {std::format("{:.3f}", fTop), f2(foundT)});
+
+    // fundament: qolip chizmasi — kontur, yozuvlari ko'p ko'rinish — asosiy to'r
+    KjView *foundForm = nullptr, *foundMesh = nullptr;
+    {
+        int bv = -1;
+        for (auto& v : r.views) {
+            if (!v.use || v.kind != KjViewKind::FoundMain) continue;
+            if (!foundForm && isFormwork(utf8::toUpper(v.title))) foundForm = &v;
+            int n = 0;
+            for (const auto& [k, c] : viewMarks(sc, v, p.meshStep).votes) n = std::max(n, c);
+            if (n > bv || (n == bv && foundMesh == foundForm && &v != foundForm)) {
+                bv = n;
+                foundMesh = &v;
+            }
+        }
+        if (!foundForm) foundForm = foundMesh;
+    }
+    Outline foundOl;
+    if (foundForm) foundOl = findOutline(sc, *foundForm, localPolys(sc, *foundForm));
+    if (foundOl.rings.empty() && foundMesh && foundMesh != foundForm) foundOl = findOutline(sc, *foundMesh, localPolys(sc, *foundMesh));
+
+    Ctx cx{p, r, "A400", -1, {}, {}};
 
     // ---- har ko'rinish
-    std::vector<std::vector<Vec3>> foundRings, slabRings;
-    std::vector<std::vector<Vec3>> columns, walls;
+    std::map<const KjView*, int> gOf;
+    for (std::size_t g = 0; g < groups.size(); ++g)
+        for (const KjView* v : groups[g].views) gOf[v] = static_cast<int>(g);
+    struct ColView {
+        const KjView* v;
+        std::vector<Vert> verts;
+    };
+    std::vector<ColView> colViews;
     double stirS = p.stirS, stirSEnd = p.stirSEnd;   // ustunlar sxemasi atrofidagi "100/200" dan
-    struct Dots { double d; std::vector<Vec3> pts; KjViewKind kind; };
+    struct Dots {
+        double d;
+        std::vector<Vec3> pts;
+        KjViewKind kind;
+        int group;
+    };
     std::vector<Dots> dots;
     for (auto& v : r.views) {
         if (!v.use) continue;
@@ -613,114 +1387,47 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
             ~Count() { v.bars += static_cast<int>(bars.size() - b0); }
         } count{v, r.bars, r.bars.size()};
         if (!v.aligned && v.kind != KjViewKind::Other && v.kind != KjViewKind::FoundSupports) issue(false, "kj.chk.not_aligned", {v.title});
-        auto L = [&](const Vec3& q) { return Vec3{(q.x - v.origin.x) * v.scale, (q.y - v.origin.y) * v.scale, 0}; };
-        // matn belgilari
-        std::map<std::string, int> markVotes;
-        std::map<std::string, BarMark> markOf;
-        std::vector<std::pair<Vec3, double>> spacings;   // (joy, qadam)
-        std::set<long> labelDias;
-        std::vector<Vec3> exclude;                       // "Приямок" yozuvlari
-        for (const auto& t : sc.texts) {
-            if (!inBox(v.box, t.c)) continue;
-            if (has(t.u, {"ПРИЯМОК", "ОТВЕРСТ", "ПРОЕМ", "ПРОЁМ", "ЛЮК", "CHUQURCHA", "TESHIK"})) exclude.push_back(L(t.c));
-            const double s = spacingOf(t.u);
-            if (s > 0) spacings.push_back({L(t.c), s});
-            BarMark m;
-            if (parseBarMark(t.s, m)) {
-                labelDias.insert(std::lround(m.d * 1000));
-                if (m.spacing == 0) m.spacing = s;
-                const std::string k = std::format("{}|{}|{}", std::lround(m.d * 1000), m.cls, std::lround(m.spacing * 1000));
-                markVotes[k]++;
-                markOf[k] = m;
-            }
-        }
+        auto L = [&](const Vec3& q) { return toLocal(v, q); };
+        const auto it = gOf.find(&v);
+        Group* G = it != gOf.end() ? &groups[static_cast<std::size_t>(it->second)] : nullptr;
+        cx.group = it != gOf.end() ? it->second : -1;
+        const Marks M = viewMarks(sc, v, p.meshStep);
+        const auto lps = localPolys(sc, v);
         auto nearestSpacing = [&](const Vec3& at, double def) {
             double bd = 1e18, s = def;
-            for (const auto& [q, sp] : spacings)
-                if (double d = q.distanceTo(at); d < bd) { bd = d; s = sp; }
+            for (const auto& [q, sp] : M.spacings)
+                if (double d = q.distanceTo(at); d < bd) {
+                    bd = d;
+                    s = sp;
+                }
             return bd < 12 ? s : def;
         };
-        std::map<double, int> spVotes;
-        for (const auto& [q, sp] : spacings) spVotes[sp]++;
-        double viewStep = p.meshStep;
-        {
-            int bc = 0;
-            for (auto [s, c] : spVotes)
-                if (c > bc) { bc = c; viewStep = s; }
-        }
-
-        // poliliniyalar (mahalliy, haqiqiy o'lchamda)
-        struct LP { std::vector<Vec3> pts; bool closed; std::string layer; double area; BBox box; };
-        std::vector<LP> lps;
-        for (const auto& q : sc.polys) {
-            if (!inBox(v.box, center(q.box))) continue;
-            if (q.box.max.x - q.box.min.x > (v.box.max.x - v.box.min.x) * 1.05) continue;
-            LP lp;
-            for (const auto& x : q.pts) { lp.pts.push_back(L(x)); lp.box.expand(lp.pts.back()); }
-            lp.closed = q.closed;
-            lp.layer = q.layer;
-            lp.area = q.area * v.scale * v.scale;
-            lps.push_back(std::move(lp));
-        }
-        // kontur — eng katta (deyarli) yopiq poliliniya
-        auto outline = [&]() -> std::vector<std::vector<Vec3>> {
-            const LP* best = nullptr;
-            for (const auto& q : lps) {
-                if (q.pts.size() < 4 || rebarLayer(q.layer)) continue;
-                const double diag = std::hypot(q.box.max.x - q.box.min.x, q.box.max.y - q.box.min.y);
-                if (!q.closed && q.pts.front().distanceTo(q.pts.back()) > diag * 0.02) continue;
-                if (!best || q.area > best->area) best = &q;
-            }
-            if (!best || best->area < 4) return {};
-            std::vector<std::vector<Vec3>> rings{best->pts};
-            if (shoelace(rings[0]) < 0) std::reverse(rings[0].begin(), rings[0].end());
-            v.outlineArea = best->area;
-            // teshiklar: shu qatlamdagi ichki yopiq konturlar (≥ 1 m²)
-            for (const auto& q : lps) {
-                if (&q == best || !q.closed || q.layer != best->layer || q.area < 1.0 || q.area > best->area * 0.3) continue;
-                const Vec3 c = center(q.box);
-                if (!inPoly(best->pts, c.x, c.y)) continue;
-                auto h = q.pts;
-                if (shoelace(h) > 0) std::reverse(h.begin(), h.end());
-                rings.push_back(std::move(h));
-            }
-            return rings;
+        auto mainMesh = [&](const std::vector<std::vector<Vec3>>& rings, ElemKind ek, int level, double z0, double z1) {
+            const std::string bestK = M.best();
+            BarMark m;
+            if (!bestK.empty()) m = M.of.at(bestK);
+            else issue(false, "kj.chk.no_mark", {v.title});
+            const double d = m.d > 0 ? m.d : 0.012;
+            const std::string cls = m.cls.empty() ? "A400" : m.cls;
+            const double s = m.spacing > 0 ? m.spacing : M.step;
+            v.mainMark = std::format("\xC3\x98{} {} s{}", std::lround(d * 1000), cls, std::lround(s * 1000));
+            mesh(cx, rings, ek, level, d, cls, s, z0, z1);
+            if (!m.cls.empty()) cx.cls = m.cls;
         };
-        // to'rtburchak (ustun / devor / zona)
-        struct Rect { Vec3 o, u, w; double a, b; Vec3 c; };  // o + u*[0..a] + w*[0..b]
-        auto rectOf = [](const LP& q, Rect& rc) {
-            if (!q.closed || q.pts.size() != 4) return false;
-            const Vec3 e1 = q.pts[1] - q.pts[0], e2 = q.pts[2] - q.pts[1];
-            const double a = e1.length(), b = e2.length();
-            if (a < 1e-6 || b < 1e-6) return false;
-            if (std::abs((e1.x * e2.x + e1.y * e2.y) / (a * b)) > 0.02) return false;
-            if (q.pts[3].distanceTo(q.pts[0] + e2) > (a + b) * 0.01) return false;
-            rc = {q.pts[0], e1 * (1 / a), e2 * (1 / b), a, b, center(q.box)};
-            return true;
-        };
-
-        if (v.kind == KjViewKind::FoundMain || v.kind == KjViewKind::SlabMain) {
-            auto rings = outline();
-            if (rings.empty()) {
-                issue(true, "kj.chk.no_outline", {v.title});
-            } else {
-                (v.kind == KjViewKind::FoundMain ? foundRings : slabRings) = rings;
-                // asosiy to'r
-                std::string bestK;
-                int bc = 0;
-                for (const auto& [k, c] : markVotes)
-                    if (c > bc) { bc = c; bestK = k; }
-                BarMark m;
-                if (!bestK.empty()) m = markOf[bestK];
-                else issue(false, "kj.chk.no_mark", {v.title});
-                const double d = m.d > 0 ? m.d : 0.012;
-                const std::string cls = m.cls.empty() ? "A400" : m.cls;
-                const double s = m.spacing > 0 ? m.spacing : viewStep;
-                v.mainMark = std::format("\xC3\x98{} {} s{}", std::lround(d * 1000), cls, std::lround(s * 1000));
-                if (v.kind == KjViewKind::FoundMain) mesh(cx, rings, ElemKind::FoundationSlab, 0, d, cls, s, fBot, fTop);
-                else mesh(cx, rings, ElemKind::Slab, 1, d, cls, s, slabTop - slabT, slabTop);
-                if (!m.cls.empty()) cx.cls = m.cls;
+        if (v.kind == KjViewKind::FoundMain) {
+            if (&v == foundForm) {
+                v.outlineArea = foundOl.area;
+                if (foundOl.rings.empty()) issue(true, "kj.chk.no_outline", {v.title});
             }
+            if (&v == foundMesh && !foundOl.rings.empty()) mainMesh(foundOl.rings, ElemKind::FoundationSlab, 0, fBot, fTop);
+        }
+        if (v.kind == KjViewKind::SlabMain && G) {
+            if (&v == G->form) {
+                v.outlineArea = G->ol.area;
+                if (G->ol.rings.empty()) issue(true, "kj.chk.no_outline", {v.title});
+            }
+            if (&v == G->meshV && !G->ol.rings.empty())
+                mainMesh(G->ol.rings, ElemKind::Slab, G->floors.front(), G->levels.front() - G->t, G->levels.front());
         }
         if (v.kind == KjViewKind::Columns) {
             const double w = v.box.max.x - v.box.min.x, h = v.box.max.y - v.box.min.y;
@@ -731,47 +1438,21 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
                 const auto sl = q.find('/');
                 if (sl == std::string::npos || q.find_first_not_of("0123456789/") != std::string::npos) continue;
                 const int a = std::atoi(q.substr(0, sl).c_str()), b = std::atoi(q.substr(sl + 1).c_str());
-                if (a >= 50 && b > a && b <= 400) { stirSEnd = a / 1000.0; stirS = b / 1000.0; }
-            }
-            std::vector<Rect> cand;
-            for (const auto& q : lps) {
-                Rect rc;
-                if (rebarLayer(q.layer) || !rectOf(q, rc)) continue;
-                const double a = std::min(rc.a, rc.b), b = std::max(rc.a, rc.b);
-                const bool col = a >= 0.2 && a <= 1.2 && b / a <= 3;
-                const bool wall = a >= 0.12 && a <= 0.6 && b / a > 3 && b <= 40;
-                if (!col && !wall) continue;
-                bool dup = false;
-                for (const auto& o : cand) dup = dup || (o.c.distanceTo(rc.c) < 0.05 && std::abs(o.a * o.b - rc.a * rc.b) < 0.01);
-                if (!dup) cand.push_back(rc);
-            }
-            std::vector<bool> drop(cand.size(), false);
-            for (const auto& e : exclude) {
-                int bi = -1;
-                double bd = 8;
-                for (std::size_t i = 0; i < cand.size(); ++i) {
-                    const double d = cand[i].c.distanceTo(e);
-                    const double a = std::min(cand[i].a, cand[i].b), b = std::max(cand[i].a, cand[i].b);
-                    if (b / a > 3) continue;
-                    if (d < bd) { bd = d; bi = static_cast<int>(i); }
+                if (a >= 50 && b > a && b <= 400) {
+                    stirSEnd = a / 1000.0;
+                    stirS = b / 1000.0;
                 }
-                if (bi >= 0) drop[bi] = true;
             }
-            for (std::size_t i = 0; i < cand.size(); ++i) {
-                if (drop[i]) continue;
-                const auto& rc = cand[i];
-                std::vector<Vec3> ring{rc.o, rc.o + rc.u * rc.a, rc.o + rc.u * rc.a + rc.w * rc.b, rc.o + rc.w * rc.b};
-                if (shoelace(ring) < 0) std::reverse(ring.begin(), ring.end());
-                const double a = std::min(rc.a, rc.b), b = std::max(rc.a, rc.b);
-                if (b / a > 3) { walls.push_back(ring); ++v.walls; }
-                else { columns.push_back(ring); ++v.columns; }
-            }
+            ColView cv{&v, findVerticals(sc, v, lps)};
+            for (const auto& e : cv.verts) ++(e.wall ? v.walls : v.columns);
+            colViews.push_back(std::move(cv));
         }
         // ---- armatura qatlamlari
-        const bool found = v.kind == KjViewKind::FoundMain || v.kind == KjViewKind::FoundExtraBottom || v.kind == KjViewKind::FoundExtraTop ||
-                           v.kind == KjViewKind::FoundVertical || v.kind == KjViewKind::Outlets;
-        const bool slab = v.kind == KjViewKind::SlabMain || v.kind == KjViewKind::SlabExtraBottom || v.kind == KjViewKind::SlabExtraTop;
+        const bool found = isFound(v.kind) && v.kind != KjViewKind::FoundSupports;
+        const bool slab = isSlab(v.kind);
         if (!found && !slab) continue;
+        const int lvl = found ? 0 : (G ? G->floors.front() : 1);
+        const double z1 = found ? fTop : (G ? G->levels.front() : slabTop), z0 = found ? fBot : z1 - (G ? G->t : slabT);
         // aylanalar — vertikal sterjenlar
         if (v.kind == KjViewKind::FoundVertical || v.kind == KjViewKind::Outlets || v.kind == KjViewKind::SlabExtraBottom ||
             v.kind == KjViewKind::SlabExtraTop) {
@@ -785,12 +1466,12 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
                 auto& g = byD[std::lround(d * 1000)];
                 g.d = d;
                 g.kind = v.kind;
+                g.group = cx.group;
                 g.pts.push_back(L(c.c));
             }
             for (auto& [k, g] : byD) {
                 v.dots += static_cast<int>(g.pts.size());
-                if (!labelDias.empty() && !labelDias.count(k))
-                    issue(false, "kj.chk.dia_label", {v.title, std::to_string(k)});
+                if (!M.dias.empty() && !M.dias.count(k)) issue(false, "kj.chk.dia_label", {v.title, std::to_string(k)});
                 dots.push_back(std::move(g));
             }
         }
@@ -806,8 +1487,6 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
             }
             const bool top = v.kind == KjViewKind::FoundExtraTop || v.kind == KjViewKind::SlabExtraTop;
             const ElemKind ek = found ? ElemKind::FoundationSlab : ElemKind::Slab;
-            const int lvl = found ? 0 : 1;
-            const double z0 = found ? fBot : slabTop - slabT, z1 = found ? fTop : slabTop;
             std::set<std::tuple<int, int, long>> done;
             for (const auto& sg : sc.lines) {
                 const double d = layerDia(sg.layer);
@@ -827,25 +1506,28 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
                     const double cu = std::abs(dir.x * z.u.x + dir.y * z.u.y);
                     const double ext = cu > 0.98 ? z.a : (cu < 0.02 ? z.b : -1);
                     if (ext < 0 || len < ext * 0.75 || len > ext * 1.3) continue;
-                    if (z.a * z.b < ba) { ba = z.a * z.b; bi = static_cast<int>(i); }
+                    if (z.a * z.b < ba) {
+                        ba = z.a * z.b;
+                        bi = static_cast<int>(i);
+                    }
                 }
                 const BarRole role = (std::abs(dir.x) >= std::abs(dir.y)) ? (top ? BarRole::TopX : BarRole::BottomX)
                                                                            : (top ? BarRole::TopY : BarRole::BottomY);
                 const double zz = top ? z1 - p.cover - d / 2 - (role == BarRole::TopY ? d : 0) : z0 + p.cover + d / 2 + (role == BarRole::BottomY ? d : 0);
                 std::string zcls = cx.cls;
-                for (const auto& [k, m] : markOf)
+                for (const auto& [k, m] : M.of)
                     if (std::lround(m.d * 1000) == std::lround(d * 1000) && !m.cls.empty()) zcls = m.cls;
                 if (bi < 0) {
                     cx.bar(ek, lvl, role, d, zcls, {Vec3{a.x, a.y, zz}, Vec3{b.x, b.y, zz}});
                     continue;
                 }
-                const auto& z = zones[bi];
+                const auto& z = zones[static_cast<std::size_t>(bi)];
                 const bool alongU = std::abs(dir.x * z.u.x + dir.y * z.u.y) > 0.5;
                 if (!done.insert({bi, alongU ? 0 : 1, std::lround(d * 1000)}).second) continue;
                 ++v.zones;
                 const Vec3 U = alongU ? z.u : z.w, W = alongU ? z.w : z.u;
                 const double lu = alongU ? z.a : z.b, lw = alongU ? z.b : z.a;
-                const double s = nearestSpacing(z.c, viewStep);
+                const double s = nearestSpacing(z.c, M.step);
                 const int n = std::max(1, static_cast<int>(std::lround(lw / s)));
                 for (int i = 0; i < n; ++i) {
                     const Vec3 o = z.o + W * ((i + 0.5) * lw / n);
@@ -855,44 +1537,132 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
             }
         }
     }
+    cx.group = -1;
+    const auto& foundRings = foundOl.rings;
 
-    // ---- tipik qavatlar: birinchi tipik qavat ustunlari pastdagi qavat plitasi ustidan (qadam — tipik qavat balandligi)
+    // ---- qavatlar bo'yicha ustun va devorlar
+    // 1-qavat asosi: fundament usti; tipik qavatli (fundamentsiz) KJ da — birinchi tipik plitadan bir qavat pastda
     const double typStep = r.typical.size() >= 2 ? (r.typical.back() - r.typical.front()) / static_cast<double>(r.typical.size() - 1) : 0;
-    double colBase = fTop;
-    if (typStep > 0 && std::abs(slabTop - r.typical.front()) < 0.005) colBase = std::max(foundRings.empty() ? -1e9 : fTop, slabTop - typStep);
+    double base1 = fTop;
+    if (!multi && typStep > 0) base1 = std::max(foundRings.empty() ? -1e9 : fTop, slabTop - typStep);
+    if (multi && foundRings.empty()) base1 = floorLH.empty() ? fTop : floorLH.front().first - p.floorHeight;
+    struct GL {
+        const Group* g;
+        double L;
+    };
+    auto groupsAt = [&](int f) {
+        std::vector<GL> out;
+        for (const auto& g : groups)
+            for (std::size_t i = 0; i < g.levels.size(); ++i)
+                if (g.floors[i] == f) out.push_back({&g, g.levels[i]});
+        return out;
+    };
+    auto covers = [](const Group& g, const Vec3& c) { return g.ol.rings.empty() || inPoly(g.ol.rings[0], c.x, c.y); };
+    // element ustidagi plita: (plita osti, plita usti) — qoplaydiganlarning eng balandi
+    auto topAt = [&](int f, const Vec3& c) {
+        std::pair<double, double> best{-1e300, 0}, any{-1e300, 0};
+        for (const auto& [g, L] : groupsAt(f)) {
+            const double b = g->ol.rings.empty() ? L : L - g->t;
+            if (b > any.first) any = {b, L};
+            if (covers(*g, c) && b > best.first) best = {b, L};
+        }
+        return best.first > -1e299 ? best : any;
+    };
+    auto baseAt = [&](int f, const Vec3& c) {
+        if (f <= 1) return base1;
+        double best = -1e300, any = -1e300;
+        for (const auto& [g, L] : groupsAt(f - 1)) {
+            any = std::max(any, L);
+            if (covers(*g, c)) best = std::max(best, L);
+        }
+        return best > -1e299 ? best : any;
+    };
+    std::vector<std::vector<Vert>> fv(static_cast<std::size_t>(F) + 1);
+    auto addVert = [](std::vector<Vert>& to, const Vert& e) {
+        for (const auto& o : to)
+            if (o.c.distanceTo(e.c) < 0.05 && std::abs(o.area - e.area) < 0.01) return;
+        to.push_back(e);
+    };
+    std::set<std::string> vLayers;   // ustunlar sxemasidagi vertikal elementlar qatlamlari
+    for (const auto& cv : colViews) {
+        int f = 1;   // sxema belgisi ("на отм. +5.300") qaysi qavat plitasi ustiga to'g'ri kelsa — keyingi qavat
+        if (auto lv = titleLevels(cv.v->title, p.floorHeight); lv.size() == 1 && std::abs(lv[0] - base1) > 0.05)
+            for (int k = 1; k < F; ++k)
+                for (const auto& [g, L] : groupsAt(k))
+                    if (std::abs(L - lv[0]) < 0.05) f = k + 1;
+        for (const auto& e : cv.verts) {
+            addVert(fv[static_cast<std::size_t>(f)], e);
+            vLayers.insert(e.layer);
+        }
+    }
+    std::vector<int> fromForm, copied;
+    int outside = 0;
+    for (int f = 2; f <= F; ++f) {
+        auto& cur = fv[static_cast<std::size_t>(f)];
+        if (!cur.empty()) continue;
+        // bir nechta plita turi: shu qavat plitasining qolip chizmasidagi (ustunlar sxemasidagi qatlamlarda) elementlar; yo'q bo'lsa —
+        // pastki qavatdagidek. Yuqori qavatlarda plita konturidan tashqaridagilar (pastki qavat ayvoni ustunlari) davom etmaydi.
+        std::vector<Vert> src;
+        if (multi && !vLayers.empty()) {
+            std::set<const KjView*> seen;
+            for (const auto& [g, L] : groupsAt(f))
+                if (g->form && seen.insert(g->form).second)
+                    for (const auto& e : findVerticals(sc, *g->form, localPolys(sc, *g->form), &vLayers)) addVert(src, e);
+        }
+        const bool own = !src.empty();
+        if (!own) src = fv[static_cast<std::size_t>(f - 1)];
+        bool rings = false;
+        for (const auto& [g, L] : groupsAt(f)) rings = rings || !g->ol.rings.empty();
+        int out = 0;
+        for (const auto& e : src) {
+            bool in = !rings;
+            for (const auto& [g, L] : groupsAt(f)) in = in || (!g->ol.rings.empty() && inPoly(g->ol.rings[0], e.c.x, e.c.y));
+            if (in) cur.push_back(e);
+            else ++out;
+        }
+        outside = std::max(outside, out);
+        if (!cur.empty()) (own ? fromForm : copied).push_back(f);
+    }
     // ---- ustun karkaslari (vypusklar ustun ichida bo'lsa — asosiy sterjenlar shu joyda, ust plitaga kiradi)
-    const double colTop0 = slabRings.empty() ? slabTop : slabTop - slabT;
-    if (p.columnCages) {
-        int caged = 0;
-        for (const auto& c : columns) {
-            BBox b;
-            for (const auto& q : c) b.expand(q);
+    int caged = 0, nColumns = 0;
+    for (int f = 1; f <= F; ++f)
+        for (const auto& e : fv[static_cast<std::size_t>(f)]) {
+            if (e.wall) continue;
+            ++nColumns;
+            if (!p.columnCages) continue;
             std::vector<std::pair<Vec3, double>> in;
             for (const auto& g : dots)
                 if (g.kind == KjViewKind::Outlets)
                     for (const auto& q : g.pts)
-                        if (inPoly(c, q.x, q.y)) in.push_back({q, g.d});
+                        if (inPoly(e.ring, q.x, q.y)) in.push_back({q, g.d});
             if (in.empty()) continue;
             ++caged;
-            const double zTop = slabRings.empty() ? colTop0 : slabTop - p.cover;
-            for (const auto& [q, d] : in) cx.bar(ElemKind::Column, 1, BarRole::Main, d, cx.cls, {Vec3{q.x, q.y, colBase}, Vec3{q.x, q.y, zTop}});
+            const double colBase = baseAt(f, e.c);
+            const auto [colTop0, slabL] = topAt(f, e.c);
+            bool rings = false;
+            for (const auto& [g, L] : groupsAt(f)) rings = rings || !g->ol.rings.empty();
+            const double zTop = rings ? slabL - p.cover : colTop0;
+            for (const auto& [q, d] : in) cx.bar(ElemKind::Column, f, BarRole::Main, d, cx.cls, {Vec3{q.x, q.y, colBase}, Vec3{q.x, q.y, zTop}});
+            BBox b;
+            for (const auto& q : e.ring) b.expand(q);
             const double inset = p.cover + p.stirD / 2;
             if (b.max.x - b.min.x < 2 * inset + 0.05 || b.max.y - b.min.y < 2 * inset + 0.05) continue;
             const double H = colTop0 - colBase, endZ = std::max(0.5, H / 6);
             std::vector<double> zs;
             for (double z = 0.05; z < H - 0.04; z += (z < endZ || z > H - endZ) ? stirSEnd : stirS) zs.push_back(colBase + z);
             for (double z : zs)
-                cx.bar(ElemKind::Column, 1, BarRole::Stirrup, p.stirD, "A240",
+                cx.bar(ElemKind::Column, f, BarRole::Stirrup, p.stirD, "A240",
                        {Vec3{b.min.x + inset, b.min.y + inset, z}, Vec3{b.max.x - inset, b.min.y + inset, z},
                         Vec3{b.max.x - inset, b.max.y - inset, z}, Vec3{b.min.x + inset, b.max.y - inset, z},
                         Vec3{b.min.x + inset, b.min.y + inset, z}},
                        0.2);  // ilgaklar
         }
-        if (caged == 0 && !columns.empty()) issue(false, "kj.chk.no_cages");
-    }
+    if (p.columnCages && caged == 0 && nColumns > 0) issue(false, "kj.chk.no_cages");
 
     // ---- vertikal sterjenlar
     for (const auto& g : dots) {
+        cx.group = g.group;
+        const Group* G = g.group >= 0 ? &groups[static_cast<std::size_t>(g.group)] : nullptr;
         for (const auto& q : g.pts) {
             switch (g.kind) {
                 case KjViewKind::Outlets:
@@ -902,13 +1672,16 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
                     cx.bar(ElemKind::FoundationSlab, 0, BarRole::Vertical, g.d, cx.cls,
                            {Vec3{q.x, q.y, fBot + p.cover}, Vec3{q.x, q.y, fTop - p.cover}});
                     break;
-                default:
-                    cx.bar(ElemKind::Slab, 1, BarRole::Vertical, g.d, cx.cls,
-                           {Vec3{q.x, q.y, slabTop - slabT + p.cover}, Vec3{q.x, q.y, slabTop - p.cover}});
+                default: {
+                    const double top = G ? G->levels.front() : slabTop, t = G ? G->t : slabT;
+                    cx.bar(ElemKind::Slab, G ? G->floors.front() : 1, BarRole::Vertical, g.d, cx.cls,
+                           {Vec3{q.x, q.y, top - t + p.cover}, Vec3{q.x, q.y, top - p.cover}});
                     break;
+                }
             }
         }
     }
+    cx.group = -1;
 
     // ---- beton
     auto prism = [&](ElemKind k, int lv, const std::vector<std::vector<Vec3>>& rings, double z0, double z1, const std::string& c) {
@@ -926,47 +1699,81 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         prism(ElemKind::Lean, 0, {foundRings[0]}, fBot - p.leanT, fBot, "B7.5");
         prism(ElemKind::FoundationSlab, 0, foundRings, fBot, fTop, concrete);
     }
-    const double colTop = slabRings.empty() ? slabTop : slabTop - slabT;
-    for (const auto& c : columns) prism(ElemKind::Column, 1, {c}, colBase, colTop, concrete);
-    for (const auto& w : walls) prism(ElemKind::Wall, 1, {w}, colBase, colTop, concrete);
-    if (!slabRings.empty()) prism(ElemKind::Slab, 1, slabRings, slabTop - slabT, slabTop, concrete);
-    r.bm.heightTop = slabTop;
-    // ---- tipik qavatlar: 1-qavat (birinchi tipik) beton va armaturasi har belgiga ko'chiriladi
-    if (typStep > 0 && std::abs(slabTop - r.typical.front()) < 0.005) {
-        const std::size_t np = r.bm.prisms.size(), nb = r.bars.size();
-        for (std::size_t i = 1; i < r.typical.size(); ++i) {
-            const double dz = r.typical[i] - r.typical.front();
-            const int lv = 1 + static_cast<int>(i);
-            for (std::size_t j = 0; j < np; ++j) {
-                if (r.bm.prisms[j].level != 1) continue;
-                Prism q = r.bm.prisms[j];
-                q.level = lv;
-                q.z0 += dz;
-                q.z1 += dz;
-                r.bm.prisms.push_back(std::move(q));
+    for (int wall = 0; wall < 2; ++wall)
+        for (int f = 1; f <= F; ++f)
+            for (const auto& e : fv[static_cast<std::size_t>(f)]) {
+                if (e.wall != (wall == 1)) continue;
+                const double z0 = baseAt(f, e.c), z1 = topAt(f, e.c).first;
+                if (z1 - z0 > 0.05) prism(e.wall ? ElemKind::Wall : ElemKind::Column, f, {e.ring}, z0, z1, concrete);
             }
-            for (std::size_t j = 0; j < nb; ++j) {
-                if (r.bars[j].level != 1) continue;
-                Bar b = r.bars[j];
-                b.level = lv;
-                for (auto& q : b.pts) q.z += dz;
-                auto& row = cx.rows[{static_cast<int>(b.kind), lv, static_cast<int>(b.role), std::lround(b.d * 1000), b.cls}];
-                row.kind = b.kind;
-                row.level = lv;
-                row.role = b.role;
-                row.d = b.d;
-                row.cls = b.cls;
-                row.count += 1;
-                row.totalLength += b.length;
-                r.bars.push_back(std::move(b));
+    double heightTop = -1e300;
+    for (const auto& g : groups)
+        for (std::size_t i = 0; i < g.levels.size(); ++i) {
+            heightTop = std::max(heightTop, g.levels[i]);
+            if (!g.ol.rings.empty()) prism(ElemKind::Slab, g.floors[i], g.ol.rings, g.levels[i] - g.t, g.levels[i], concrete);
+        }
+    r.bm.heightTop = heightTop > -1e299 ? heightTop : slabTop;
+    // ---- plita turining armaturasi (birinchi belgisida qurilgan) — uning boshqa belgilariga ("Пм-3": +9.300 ... +21.300)
+    {
+        const std::size_t nb = r.bars.size();
+        for (std::size_t gi = 0; gi < groups.size(); ++gi) {
+            const auto& g = groups[gi];
+            for (std::size_t i = 1; i < g.levels.size(); ++i) {
+                const double dz = g.levels[i] - g.levels.front();
+                for (std::size_t j = 0; j < nb; ++j) {
+                    if (cx.barGroup[j] != static_cast<int>(gi)) continue;
+                    Bar b = r.bars[j];
+                    b.level = g.floors[i];
+                    for (auto& q : b.pts) q.z += dz;
+                    cx.row(b);
+                    r.bars.push_back(std::move(b));
+                    cx.barGroup.push_back(-1);
+                }
             }
         }
-        r.bm.heightTop = r.typical.back();
+    }
+    // qo'llanilgan plita belgisi (1-qavatning eng katta plitasi)
+    {
+        const Group* m = nullptr;
+        for (const auto& g : groups)
+            if (!g.levels.empty() && g.floors.front() == 1 && (!m || g.ol.area > m->ol.area)) m = &g;
+        if (m) {
+            slabTop = m->levels.front();
+            slabT = m->t;
+        }
+    }
+    r.slabTop = slabTop;
+    r.slabT = slabT;
+    if (!multi && typStep > 0) {
         issue(false, "kj.chk.typical", {std::format("{:+.3f}", r.typical.front()), std::format("{:+.3f}", r.typical.back()),
                                         std::to_string(r.typical.size()), std::format("{:.3f}", typStep)});
         r.issues.back().info = true;
-    } else {
-        r.typical.clear();
+    }
+    if (multi) {
+        // tipik: eng ko'p belgili plita turi (PTO qatorlarida qavat nomi; GUI)
+        for (const auto& g : groups)
+            if (g.levels.size() >= 2 && g.levels.size() > r.typical.size()) r.typical = g.levels;
+        if (!fromForm.empty() || !copied.empty() || outside > 0) {
+            auto list = [](const std::vector<int>& v) {
+                std::string s;
+                for (int f : v) s += (s.empty() ? "" : ", ") + std::to_string(f);
+                return s;
+            };
+            if (!fromForm.empty()) info("kj.chk.vert_form", {list(fromForm)});
+            if (!copied.empty()) info("kj.chk.vert_copied", {list(copied)});
+            if (outside > 0) info("kj.chk.vert_outside", {std::to_string(outside)});
+        }
+    }
+    for (const auto& g : groups) {
+        if (g.views.empty()) continue;
+        KjSlab s;
+        s.tag = g.shown;
+        s.levels = g.levels;
+        s.floors = g.floors;
+        s.t = g.t;
+        s.area = g.ol.net;
+        s.mark = g.meshV ? g.meshV->mainMark : std::string();
+        r.slabs.push_back(std::move(s));
     }
     computePto(r.bm);
     // ---- absolyut belgilar va geodezik bog'lash (PTO hajmlari o'zgarmaydi)
@@ -996,19 +1803,33 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         r.bm.heightTop += r.datum;
         r.bm.zeroAbs = r.datum;
         r.bm.zeroAbsKnown = r.datumKnown;
-        if (!r.georef) issue(false, "kj.chk.local_xy");
-    }
-    if (foundRings.empty() && r.typical.empty()) issue(true, "kj.chk.no_found");   // tipik qavatlar KJ sida fundament bo'lmaydi
-    if (columns.empty()) issue(false, "kj.chk.no_columns");
-    // ustunlar plita ichidami
-    if (!slabRings.empty()) {
-        int out = 0;
-        for (const auto& c : columns) {
-            BBox b;
-            for (const auto& q : c) b.expand(q);
-            const Vec3 m = center(b);
-            if (!inPoly(slabRings[0], m.x, m.y)) ++out;
+        if (!r.georef) {   // lokal boshlang'ich nuqta — tekislangan ko'rinishdagi 0 ga teng o'qlar ("1"/"А" yoki "Ж"/"2/5")
+            std::string nx = "1", ny = "\xD0\x90";
+            for (const auto& v : r.views) {
+                if (!v.aligned) continue;
+                for (const auto& [n, x] : v.axesX)
+                    if (std::abs(x) < 1e-6) nx = n;
+                for (const auto& [n, y] : v.axesY)
+                    if (std::abs(y) < 1e-6) ny = n;
+                break;
+            }
+            issue(false, "kj.chk.local_xy", {"\xC2\xAB" + nx + "\xC2\xBB", "\xC2\xAB" + ny + "\xC2\xBB"});
         }
+    }
+    if (foundRings.empty() && r.typical.empty() && !multi) issue(true, "kj.chk.no_found");   // tipik qavatlar KJ sida fundament bo'lmaydi
+    if (nColumns == 0) issue(false, "kj.chk.no_columns");
+    // ustunlar plita ichidami (1-qavat)
+    {
+        int out = 0;
+        bool rings = false;
+        for (const auto& [g, L] : groupsAt(1)) rings = rings || !g->ol.rings.empty();
+        if (rings)
+            for (const auto& e : fv[1]) {
+                if (e.wall) continue;
+                bool in = false;
+                for (const auto& [g, L] : groupsAt(1)) in = in || (!g->ol.rings.empty() && inPoly(g->ol.rings[0], e.c.x, e.c.y));
+                out += !in;
+            }
         if (out) issue(false, "kj.chk.col_outside", {std::to_string(out)});
     }
 
@@ -1022,11 +1843,22 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         r.totalMass += row.mass;
         r.schedule.push_back(row);
     }
-    r.spec = readSpecification(doc);
-    if (!r.typical.empty())   // tipik qavat spetsifikatsiyasi — bir qavat uchun deb olinadi (eslatmada aytiladi)
+    // chizmadagi spetsifikatsiya — bitta plita (bir qavat) uchun deb olinadi: shu jadval qaysi plita turi yonida bo'lsa,
+    // uning belgilari soniga (tipik qavatlar) ko'paytiriladi
+    BBox specBox;
+    r.spec = readSpecification(doc, &specBox);
+    std::size_t mult = r.typical.size();
+    if (multi) {
+        mult = 1;
+        if (specBox.valid())
+            for (const auto& g : groups)
+                for (const KjView* v : g.views)
+                    if (region(*v, center(specBox))) mult = std::max<std::size_t>(1, g.levels.size());
+    }
+    if (mult > 1)
         for (auto& s : r.spec) {
-            s.count *= static_cast<int>(r.typical.size());
-            s.mass *= static_cast<double>(r.typical.size());
+            s.count *= static_cast<int>(mult);
+            s.mass *= static_cast<double>(mult);
         }
     for (const auto& s : r.spec) r.specMass += s.mass;
     for (const auto& v : r.views)

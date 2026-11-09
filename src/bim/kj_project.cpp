@@ -795,7 +795,8 @@ struct Vert {
     Vec3 c;
     double area = 0;
 };
-// Ko'rinishdagi ustun va devorlar: to'rtburchaklar (ustun — kichik tomoni 0.2..1.2, nisbati ≤ 3; devor — yupqa va cho'ziq) va
+// Ko'rinishdagi ustun va devorlar: to'rtburchaklar (ustun — kichik tomoni 0.2..1.2, tomonlar nisbati ≤ 4: 400×1350
+// "Колонна Км-4" ham ustun; devor — yupqa va cho'ziqroq) va
 // murakkab yupqa ko'pburchaklar (L/U shaklli yadro devori, qiya bo'lak). layers — faqat shu qatlamlardagilar
 std::vector<Vert> findVerticals(const Scene& sc, const KjView& v, const std::vector<LP>& lps, const std::set<std::string>* layers = nullptr) {
     std::vector<Vec3> exclude;   // "Приямок" yozuvlari: yonidagi kvadratga yaqin element — chuqurcha, ustun emas
@@ -815,8 +816,8 @@ std::vector<Vert> findVerticals(const Scene& sc, const KjView& v, const std::vec
         if (rectOf(q, rc)) {
             constexpr double eps = 1e-3;   // 1200 × 1800 chizmada 1.2000001 bo'lishi mumkin
             const double a = std::min(rc.a, rc.b), b = std::max(rc.a, rc.b);
-            const bool col = a >= 0.2 - eps && a <= 1.2 + eps && b / a <= 3 + eps;
-            const bool wall = !col && a >= 0.12 - eps && a <= 0.6 + eps && b / a > 3 && b <= 40 + eps;
+            const bool col = a >= 0.2 - eps && a <= 1.2 + eps && b / a <= 4 + eps;
+            const bool wall = !col && a >= 0.12 - eps && a <= 0.6 + eps && b / a > 4 && b <= 40 + eps;
             if (!col && !wall) continue;
             e.ring = {rc.o, rc.o + rc.u * rc.a, rc.o + rc.u * rc.a + rc.w * rc.b, rc.o + rc.w * rc.b};
             e.wall = !col;

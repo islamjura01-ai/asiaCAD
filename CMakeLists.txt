@@ -86,6 +86,10 @@ target_link_libraries(asiacad_cmd PUBLIC asiacad_io asiacad_i18n asiacad_civil)
 
 add_executable(asiacad apps/cli/main.cpp)
 target_link_libraries(asiacad PRIVATE asiacad_cmd)
+if(WIN32)
+  # UTF-8 kod sahifasi: kirill fayl nomlari ("4 блок КЖ.dwg") tor (char) API larda ham ochiladi
+  target_sources(asiacad PRIVATE apps/win/asiacad.manifest)
+endif()
 target_compile_definitions(asiacad PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}")
 # Lug'atlarni dastur yoniga nusxalash (tarqatish uchun)
 add_custom_command(TARGET asiacad POST_BUILD
@@ -94,6 +98,9 @@ add_custom_command(TARGET asiacad POST_BUILD
 enable_testing()
 add_executable(asiacad_tests tests/test_main.cpp)
 target_link_libraries(asiacad_tests PRIVATE asiacad_cmd)
+if(WIN32)
+  target_sources(asiacad_tests PRIVATE apps/win/asiacad.manifest)
+endif()
 target_compile_definitions(asiacad_tests PRIVATE ASIACAD_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")
 target_compile_definitions(asiacad_tests PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}" ASIACAD_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples")
 add_test(NAME core COMMAND asiacad_tests)
@@ -120,6 +127,7 @@ if(ASIACAD_BUILD_GUI)
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASIACAD_I18N_SRC} $<TARGET_FILE_DIR:asiacad-gui>/i18n)
     if(WIN32)
       set_target_properties(asiacad-gui PROPERTIES WIN32_EXECUTABLE ON)
+      target_sources(asiacad-gui PRIVATE apps/win/asiacad.manifest)
     endif()
     install(TARGETS asiacad-gui RUNTIME DESTINATION bin)
 

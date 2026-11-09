@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <random>
 #include <system_error>
 #include <vector>
@@ -81,6 +82,39 @@ fs::path odaConvert(const Converter& c, const fs::path& src, const std::string& 
     }
     return out;
 }
+// AutoCAD Core Console: vaqtinchalik nusxani ochib DXFOUT (asl fayl o'zgarmaydi), keyin saqlamasdan chiqadi
+fs::path acadConvert(const Converter& c, const fs::path& src) {
+    const fs::path d = tempDir();
+    const fs::path in = d / "in" / "drawing.dwg";   // ASCII nom: skript va konsol uchun
+    fs::copy_file(src, in, fs::copy_options::overwrite_existing);
+    const fs::path out = d / "out" / "drawing.dxf";
+    {
+        std::ofstream scr(d / "in" / "dxfout.scr", std::ios::binary);
+        scr << "FILEDIA\r\n0\r\n_.DXFOUT\r\n\"" << out.string() << "\"\r\n16\r\n_.QUIT\r\n_Y\r\n";
+    }
+    run(quote(c.exe) + " /i " + quote(in.string()) + " /s " + quote((d / "in" / "dxfout.scr").string()) + " /l en-US");
+    std::error_code ec;
+    if (!fs::exists(out, ec) || fs::file_size(out, ec) == 0) throw Error("dwg.err.convert", {src.string()});
+    return out;
+}
+
+// O'rnatilgan AutoCAD (eng yangi versiya): Program Files\Autodesk\AutoCAD 20xx\accoreconsole.exe
+std::string findAcCore() {
+#ifdef _WIN32
+    std::error_code ec;
+    std::vector<fs::path> cands;
+    for (const char* v : {"ProgramW6432", "ProgramFiles"})
+        if (const char* p = std::getenv(v)) {
+            const fs::path r = fs::path(p) / "Autodesk";
+            if (!fs::is_directory(r, ec)) continue;
+            for (const auto& e : fs::directory_iterator(r, ec))
+                if (e.is_directory(ec) && fs::exists(e.path() / "accoreconsole.exe", ec)) cands.push_back(e.path() / "accoreconsole.exe");
+        }
+    std::sort(cands.rbegin(), cands.rend());   // "AutoCAD 2024" > "AutoCAD 2022"
+    if (!cands.empty()) return cands.front().string();
+#endif
+    return {};
+}
 }  // namespace
 
 void useBundled(const std::string& exeDir) {
@@ -96,7 +130,7 @@ void useBundled(const std::string& exeDir) {
 }
 
 std::string converterName(const Converter& c) {
-    return c.kind == Converter::Oda ? "ODA File Converter" : c.kind == Converter::LibreDwg ? "LibreDWG" : "";
+    return c.kind == Converter::Oda ? "ODA File Converter" : c.kind == Converter::LibreDwg ? "LibreDWG" : c.kind == Converter::AutoCad ? "AutoCAD (accoreconsole)" : "";
 }
 
 Converter find() {
@@ -133,6 +167,7 @@ Converter find() {
             if (fs::exists(d / (std::string("ODAFileConverter") + kExeExt), ec)) return {Converter::Oda, (d / (std::string("ODAFileConverter") + kExeExt)).string(), {}};
     }
     if (std::string e = inPath("dwg2dxf"); !e.empty()) return {Converter::LibreDwg, e, inPath("dxf2dwg")};
+    if (std::string e = findAcCore(); !e.empty()) return {Converter::AutoCad, e, {}};
     return c;
 }
 
@@ -142,6 +177,7 @@ std::string toDxf(const std::string& dwgPath) {
     std::error_code ec;
     if (!fs::exists(dwgPath, ec)) throw Error("acad.err.open", {dwgPath});
     if (c.kind == Converter::Oda) return odaConvert(c, fs::path(dwgPath), "DXF", "ACAD2018").string();
+    if (c.kind == Converter::AutoCad) return acadConvert(c, fs::path(dwgPath)).string();
     const fs::path out = tempDir() / "out" / fs::path(dwgPath).filename().replace_extension(".dxf");
     run(quote(c.exe) + " -y -o " + quote(out.string()) + " " + quote(dwgPath));
     if (!fs::exists(out, ec)) throw Error("dwg.err.convert", {dwgPath});
@@ -150,7 +186,7 @@ std::string toDxf(const std::string& dwgPath) {
 
 void fromDxf(const std::string& dxfPath, const std::string& dwgPath, const std::string& version) {
     const Converter c = find();
-    if (c.kind == Converter::None) throw Error("dwg.err.noconv");
+    if (c.kind == Converter::None || c.kind == Converter::AutoCad) throw Error("dwg.err.noconv");   // AutoCAD — faqat o'qish
     std::error_code ec;
     fs::path out;
     if (c.kind == Converter::Oda) {

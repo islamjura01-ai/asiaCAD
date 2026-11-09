@@ -2,6 +2,8 @@
 // AsiaCAD — DWG ochish/saqlash tashqi konverter orqali (DWG formati yopiq; FreeCAD/QGIS kabi):
 //   1) ODA File Converter (bepul, opendesign.com) — "ODAFileConverter" (Windows: C:\Program Files\ODA\ODAFileConverter*\)
 //   2) LibreDWG — "dwg2dxf" / "dxf2dwg"
+//   3) O'rnatilgan AutoCAD / Civil 3D (Windows) — accoreconsole.exe: faqat o'qish (DWG -> DXF, DXFOUT skripti bilan;
+//      asl fayl o'zgarmaydi — vaqtinchalik nusxasi ochiladi). Saqlash (DXF -> DWG) uchun ODA yoki LibreDWG kerak.
 // Yo'lni ASIACAD_DWG_CONVERTER muhit o'zgaruvchisi bilan aniq berish mumkin.
 // DWG -> vaqtinchalik DXF -> AsiaCAD DXF o'quvchisi; saqlash: DXF yoziladi -> DWG ga aylantiriladi.
 #include <string>
@@ -9,7 +11,7 @@
 namespace asiacad::dwg {
 
 struct Converter {
-    enum Kind { None, Oda, LibreDwg } kind = None;
+    enum Kind { None, Oda, LibreDwg, AutoCad } kind = None;
     std::string exe;      // ODAFileConverter yoki dwg2dxf
     std::string exe2;     // LibreDWG: dxf2dwg
 };

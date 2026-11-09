@@ -312,11 +312,8 @@ void BuildingDialog::buildUi() {
 
     connect(reread, &QPushButton::clicked, this, &BuildingDialog::reread);
     connect(set_, &DrawingSetWidget::changed, this, [this] {
-        int maxFloor = 0;
-        for (const auto& f : set_->sheets())
-            if (f.enabled && f.role == "PLAN") maxFloor = std::max(maxFloor, f.floorTo);
-        if (maxFloor > floors_->value()) floors_->setValue(maxFloor);  // recompute signal orqali
-        else recompute();
+        autoFloors_ = true;   // qavatlar soni — varaqlar (qo'lda yoki belgilar bo'yicha) va tipik plan bo'yicha
+        recompute();
     });
     connect(toRebar, &QPushButton::clicked, this, &BuildingDialog::rebarRequested);
     connect(close, &QPushButton::clicked, this, &QDialog::close);
@@ -368,6 +365,7 @@ void BuildingDialog::fillLayers() {
 
 void BuildingDialog::reread() {
     fillLayers();
+    autoFloors_ = true;
     recompute();
 }
 
@@ -473,11 +471,27 @@ bim::BuildingParams BuildingDialog::params() const {
 bim::PlanInput BuildingDialog::typicalPlan() const { return bim::readPlan(doc_, layerMap()); }
 
 void BuildingDialog::recompute() {
-    const auto p = params();
+    auto p = params();
     rebarDirty_ = true;
     normDirty_ = true;
-    fp_ = civil::floorPlansFrom(set_->loaded());
-    model_ = bim::buildModel(typicalPlan(), p, fp_);
+    std::vector<civil::SheetFloors> placed;
+    fp_ = civil::floorPlansFrom(set_->loaded(), p.floorHeight, &placed);
+    const auto typical = typicalPlan();
+    // tipik qavatlar ("+11.300...+23.400") va avto varaqlar: qavatlar soni yetmasa — oshiriladi (chizma / varaqlar o'qilganda)
+    if (autoFloors_) {
+        autoFloors_ = false;
+        int need = fp_.floors.empty() ? 0 : fp_.floors.rbegin()->first;
+        if (const auto tf = bim::typicalFloors(typical, p.floorHeight); tf.count) need = std::max(need, tf.first + tf.count - 1);
+        if (need > floors_->value()) {
+            const QSignalBlocker b1(floors_), b2(showUpTo_);
+            floors_->setValue(need);
+            showUpTo_->setRange(0, need);
+            showUpTo_->setValue(need);
+            p = params();
+        }
+    }
+    set_->setPlacement(placed);
+    model_ = bim::buildModel(typical, p, fp_);
     // PTO
     pto_->setRowCount(0);
     auto row = [&](const QStringList& cells, bool bold) {
@@ -504,12 +518,14 @@ void BuildingDialog::recompute() {
     // tekshiruv
     checks_->clear();
     for (const auto& is : model_.issues) {
-        auto* it = new QListWidgetItem(QString::fromStdString(loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") + ": " +
+        auto* it = new QListWidgetItem(QString::fromStdString(loc_.tr(is.error ? "sewer.lvl.error" : is.info ? "sewer.lvl.info" : "sewer.lvl.warning") + ": " +
                                                              loc_.tr(is.key, is.args)));
-        it->setForeground(is.error ? QColor(232, 70, 80) : QColor(230, 160, 30));
+        it->setForeground(is.error ? QColor(232, 70, 80) : is.info ? QColor(90, 170, 240) : QColor(230, 160, 30));
         checks_->addItem(it);
     }
-    if (model_.issues.empty()) checks_->addItem(t("gui.bim.ok"));
+    bool problems = false;
+    for (const auto& is : model_.issues) problems |= !is.info;
+    if (!problems) checks_->addItem(t("gui.bim.ok"));
     if (model_.zeroAbsKnown && zeroAuto_->isChecked() && std::abs(zeroAbs_->value() - model_.zeroAbs) > 1e-9) {
         const bool was = updating_;
         updating_ = true;

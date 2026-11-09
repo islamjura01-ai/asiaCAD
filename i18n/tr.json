@@ -2612,6 +2612,15 @@
     "gui.norm.rules.saved": "ShNQ kuralları kaydedildi: {0} ({1})",
     "gui.bim.norm": "ShNQ kontrolü",
     "gui.bim.norm.tip": "Elemanlar ve donatı ShNQ kurallarına göre kontrol edilir: uygunsuzluklar kırmızı (hata) ve sarı (uyarı), diğerleri soluk. Liste \"Kontrol\" sekmesinde.",
-    "gui.bim.norm.head": "ShNQ: {0} hata, {1} uyarı ({2} nesne kontrol edildi)"
+    "gui.bim.norm.head": "ShNQ: {0} hata, {1} uyarı ({2} nesne kontrol edildi)",
+    "bim.chk.typical": "Tipik katlar {0} … {1}: {2} kat ({3}–{4}. katlar), adım {5} m",
+    "bim.chk.typical_floors": "Tipik katlar {0}. kata kadar, kat sayısı ise {1} — kat sayısını artırın",
+    "kj.chk.typical": "Tipik katlar {0} … {1}: {2} kat (adım {3} m) — beton, donatı ve metraj {2} kat için; çizimdeki metraj 1 kat için kabul edilip {2} ile çarpıldı",
+    "rbi.chk.auto_floors": "{0}: çizim kotlarına ({2}) göre — {1}. kat",
+    "rbi.chk.auto_nofloor": "{0}: çizim kotu ({1}) binanın hiçbir döşemesiyle eşleşmedi — 1. kat alındı, katı elle girin",
+    "gui.ds.placed": "{0}: {1}. kat ({2}, {3} kat)",
+    "gui.ds.placed.nolevel": "{0}: {1}. kat",
+    "gui.ds.placed.none": "{0}: kat belirlenemedi — \"Kattan\" girin",
+    "gui.ds.floors.tip": "Otomatik — katlar çizim kotlarından: \"+11.300...+23.400\" tipik katlardır (her birine kendi kotu)"
   }
 }

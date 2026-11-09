@@ -145,7 +145,10 @@ int main(int argc, char** argv) {
         else if (a == "--rebar-kind") rebarKind = next();
         else if (a == "--no-concrete") noConcrete = true;
         else if (a == "--upto") upTo = next().toInt();  // FOUND/STRIP/COLUMN/WALL/SLAB/ROOF
-        else if (a == "--building") building = next().toInt();  // Monolit bino menyusi (qavatlar)
+        else if (a == "--building") {   // Monolit bino menyusi: qavatlar soni yoki "auto" — chizma / varaqlar belgilari bo'yicha
+            const QString v = next();
+            building = v == "auto" ? -1 : v.toInt();
+        }
         else if (a == "--sewer") sewer = true;                 // Kanalizatsiya menyusi (skrinshot uni oladi)
         else if (a == "--sewer-file") { sewer = true; sewerFile = next(); }
         else if (a == "--sewer-tab") sewerTab = next();
@@ -222,15 +225,18 @@ int main(int argc, char** argv) {
             if (polar) w.viewport()->setPolar(true);
             if (const auto gi = grip.split(','); gi.size() == 2) w.viewport()->beginGrip(gi[0].toULongLong(), gi[1].toInt());
             if (!tool.isEmpty()) w.activateTool(tool);
-            if (building > 0) w.openBuilding()->setFloors(building);
-            if (building > 0 && ifcNorm) w.openBuilding()->runNormCheck(true);   // Monolit bino: ShNQ tekshiruvi
+            if (building != 0) {
+                auto* bd = w.openBuilding();
+                if (building > 0) bd->setFloors(building);
+            }
+            if (building != 0 && ifcNorm) w.openBuilding()->runNormCheck(true);   // Monolit bino: ShNQ tekshiruvi
             auto addSheets = [](asiacad::gui::DrawingSetWidget* ds, const QStringList& list) {
                 for (const auto& sa : list) {
                     const auto f = sa.split(',');
                     if (f.size() >= 2) ds->addFile(f[1], f[0], f.size() > 2 ? f[2].toInt() : 1, f.size() > 3 ? f[3].toInt() : 1);
                 }
             };
-            if (!sheetArgs.isEmpty() && !util && building > 0) addSheets(w.openBuilding()->drawings(), sheetArgs);
+            if (!sheetArgs.isEmpty() && !util && building != 0) addSheets(w.openBuilding()->drawings(), sheetArgs);
             if (road) {
                 auto* rd = w.openRoad();
                 if (!sewerTab.isEmpty()) rd->showTab(sewerTab.toInt());
@@ -321,7 +327,7 @@ int main(int argc, char** argv) {
             QWidget* target = &w;
             for (QWidget* tl : QApplication::topLevelWidgets())
                 if ((sewer && tl->isVisible() && tl->inherits("asiacad::gui::SewerDialog")) ||
-                    (building > 0 && !rebar && !drive && !show3d && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
+                    (building != 0 && !rebar && !drive && !show3d && tl->isVisible() && tl->inherits("asiacad::gui::BuildingDialog")) ||
                     (rebar && tl->isVisible() && tl->inherits("asiacad::gui::RebarDialog")) ||
                     (util && tl->isVisible() && tl->inherits("asiacad::gui::UtilityDialog")) ||
                     (road && tl->isVisible() && tl->inherits("asiacad::gui::RoadDialog")) ||

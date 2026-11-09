@@ -560,6 +560,7 @@ void RebarDialog::recompute() {
                 proj = known >= 3;
             }
             if (!proj) continue;
+            kp_.floorHeight = bp_.floorHeight;   // tipik qavatlar oralig'ini bo'lish uchun
             kj_ = bim::buildKjProject(*sh.doc, sh.dims, kp_);
             projectMode_ = true;
             break;
@@ -680,12 +681,14 @@ void RebarDialog::recompute() {
 
     checks_->clear();
     for (const auto& is : rm_.issues) {
-        auto* it = new QListWidgetItem(QString::fromStdString(loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") + ": " +
+        auto* it = new QListWidgetItem(QString::fromStdString(loc_.tr(is.error ? "sewer.lvl.error" : is.info ? "sewer.lvl.info" : "sewer.lvl.warning") + ": " +
                                                              loc_.tr(is.key, is.args)));
-        it->setForeground(is.error ? QColor(232, 70, 80) : QColor(230, 160, 30));
+        it->setForeground(is.error ? QColor(232, 70, 80) : is.info ? QColor(90, 170, 240) : QColor(230, 160, 30));
         checks_->addItem(it);
     }
-    if (rm_.issues.empty()) checks_->addItem(t("gui.bim.ok"));
+    bool problems = false;
+    for (const auto& is : rm_.issues) problems |= !is.info;
+    if (!problems) checks_->addItem(t("gui.bim.ok"));
     summary_->setText(t("gui.rb.summary", {QString::number(nbars), f3(rm_.totalMass / 1000), f1(rm_.wireKg), QString::number(rm_.nodes)}));
     render();
 }

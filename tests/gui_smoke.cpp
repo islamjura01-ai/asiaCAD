@@ -697,6 +697,22 @@ int main(int argc, char** argv) {
         CHECK(rdp->view()->faceCount() >= 0);
         rdp->close();
         bdlg->close();
+
+        // tipik qavatlar: "+9.900...+16.500" yozilgan varaq — qavat raqami kiritilmagan (avto): 3..5-qavat, qavatlar soni 5
+        BuildingDialog* bt = w.openBuilding();
+        bt->drawings()->setSheets({});
+        bt->setFloors(2);
+        bt->drawings()->addFile(dir + "/bino_qolip/fundament.dxf", "FOUND", 1, 1);
+        bt->drawings()->addFile(dir + "/bino_qolip/qavat_1_2.dxf", "PLAN", 1, 2);
+        bt->drawings()->addFile(dir + "/bino_qolip/qavat_tipik.dxf", "PLAN");
+        CHECK(bt->params().floors == 5);
+        CHECK(bt->floorPlans().floors.size() == 5);
+        double top5 = 0;
+        for (const auto& pr : bt->model().prisms)
+            if (pr.level == 5 && (pr.kind == asiacad::bim::ElemKind::Slab || pr.kind == asiacad::bim::ElemKind::Roof)) top5 = pr.z1 - bt->model().zeroAbs;
+        CHECK(std::abs(top5 - 16.5) < 1e-6);
+        CHECK(bt->drawings()->statusText().contains(QString::fromUtf8("qavat_tipik.dxf: 3\xE2\x80\x93" "5")));
+        bt->close();
     }
 
     // 25. "0 dan chizish" — har menyuda: kiritish → chizmaga (undo bilan) → modul o'qiydi → tuzatish (tekshiruvdan joyga)

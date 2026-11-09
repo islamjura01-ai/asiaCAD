@@ -11,6 +11,7 @@
 #include <cstring>
 #include <functional>
 #include <format>
+#include <set>
 #include <sstream>
 
 namespace asiacad::bim {
@@ -269,12 +270,222 @@ bool parseLevel(const std::string& raw, double& v) {
     }
     return false;
 }
+
+// ---- tipik qavatlar: bitta yozuvdagi belgilar to'plami
+struct LvTok {
+    double v = 0;
+    bool sign = false;           // aniq ishora: + - − ±
+    bool minus = false;          // '-' yoki '−'
+    bool pm = false;             // '±' (±0.000 — nisbiy nol, plita belgisi emas)
+    int dec = 0;                 // kasr xonalari (2..3)
+    std::size_t b = 0, e = 0;    // [b, e) — ishora bilan
+};
+
+// s — vergul nuqtaga almashtirilgan matn
+std::vector<LvTok> levelTokens(const std::string& s) {
+    std::vector<LvTok> out;
+    auto dig = [&](std::size_t i) { return i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])); };
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        if (!dig(i) || (i > 0 && (dig(i - 1) || s[i - 1] == '.'))) continue;
+        std::size_t j = i;
+        while (dig(j)) ++j;
+        if (j - i > 3 || j >= s.size() || s[j] != '.' || !dig(j + 1)) {
+            i = j;
+            continue;
+        }
+        std::size_t k = j + 1;
+        while (dig(k)) ++k;
+        const int dec = static_cast<int>(k - j - 1);
+        if (dec < 2 || dec > 3 || (k + 1 < s.size() && s[k] == '.' && dig(k + 1))) {   // sana: 23.12.2025
+            i = k;
+            continue;
+        }
+        LvTok t;
+        t.v = std::stod(s.substr(i, k - i));
+        t.dec = dec;
+        t.b = i;
+        t.e = k;
+        std::size_t q = i;
+        if (q >= 2 && s[q - 1] == ' ' && s[q - 2] == '+') --q;   // "+ 11.300"
+        if (q >= 1 && (s[q - 1] == '+' || s[q - 1] == '-')) {
+            t.sign = true;
+            t.minus = s[q - 1] == '-';
+            t.b = q - 1;
+        } else if (q >= 3 && s.compare(q - 3, 3, "\xE2\x88\x92") == 0) {   // − (U+2212)
+            t.sign = t.minus = true;
+            t.b = q - 3;
+        } else if (q >= 2 && s.compare(q - 2, 2, "\xC2\xB1") == 0) {        // ±
+            t.sign = t.pm = true;
+            t.b = q - 2;
+        }
+        if (t.minus) t.v = -t.v;
+        out.push_back(t);
+        i = k;
+    }
+    return out;
+}
+
+void eraseAll(std::string& s, const std::string& w) {
+    for (std::size_t p = s.find(w); p != std::string::npos; p = s.find(w, p)) s.erase(p, w.size());
+}
+
+// Ikki belgi orasidagi matn: 1 — oraliq ("...", "÷", "-", "до", "dan"), 0 — ro'yxat (bo'sh joy, vergul, "и"), -1 — boshqa
+int levelSep(const std::string& between) {
+    std::string u = utf8::toUpper(between);
+    for (const char* kw : {"\xD0\x9E\xD0\xA2\xD0\x9C\xD0\x95\xD0\xA2\xD0\x9A\xD0\x98",   // ОТМЕТКИ
+                           "\xD0\x9E\xD0\xA2\xD0\x9C\xD0\x95\xD0\xA2\xD0\x9A\xD0\x90",   // ОТМЕТКА
+                           "\xD0\x9E\xD0\xA2\xD0\x9C\xD0\x95\xD0\xA2\xD0\x9E\xD0\x9A",   // ОТМЕТОК
+                           "\xD0\x9E\xD0\xA2\xD0\x9C",                                           // ОТМ
+                           "OTM", "BELGISI", "BELGI", "KOTU", "KOT", "LEVEL",
+                           "\xE2\x96\xBD", "\xE2\x88\x87",                                       // ▽ ∇
+                           "\xCA\xBB", "\xCA\xBC", "\xE2\x80\x98", "\xE2\x80\x99", "\xC2\xAB", "\xC2\xBB"})   // ʻ ʼ ‘ ’ « »
+        eraseAll(u, kw);
+    std::string c;
+    for (char ch : u)
+        if (!std::strchr(" \t'`\"()[]:", ch)) c += ch;
+    if (c.find("..") != std::string::npos || c.find("\xE2\x80\xA6") != std::string::npos) return 1;   // ... …
+    eraseAll(c, ".");
+    static const std::set<std::string> range{"-", "\xE2\x80\x93", "\xE2\x80\x94", "\xE2\x88\x92", "~", "\xC3\xB7",   // – — − ÷
+                                             "\xD0\x94\xD0\x9E", "\xD0\x9F\xD0\x9E",                                       // ДО ПО
+                                             "TO", "DAN", "\xD0\x94\xD0\x90\xD0\x9D", "DEN", "TAN", "TEN", "ILE", "BIS"};    // ДАН
+    if (range.count(c)) return 1;
+    static const std::set<std::string> list{"", ",", ";", "/", "\\", "|", "&", "\xD0\x98", "VA", "\xD0\x92\xD0\x90", "AND", "VE"};   // И ВА
+    return list.count(c) ? 0 : -1;
+}
+
+std::size_t letterCount(const std::string& text) {
+    std::size_t n = 0;
+    for (char32_t c : utf8::decode(text))
+        if ((c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z') || (c >= 0x400 && c <= 0x4FF) || (c >= 0xC0 && c <= 0x24F && c != 0xD7 && c != 0xF7)) ++n;
+    return n;
+}
 } // namespace
+
+LevelSet parseLevelSet(const std::string& text) {
+    LevelSet out;
+    std::string s = text;
+    for (auto& c : s)
+        if (c == ',') c = '.';
+    const auto toks = levelTokens(s);
+    if (toks.size() < 2) return out;
+    const std::string U = utf8::toUpper(text);
+    auto has = [&](std::initializer_list<const char*> ks) {
+        for (const char* k : ks)
+            if (U.find(k) != std::string::npos) return true;
+        return false;
+    };
+    // qavat emas: ustun / devor / zina balandligi ("Колонны от отм. -0.300 до +3.100") — "tipik" so'zi bo'lmasa
+    const bool typical = has({"\xD0\xA2\xD0\x98\xD0\x9F\xD0\x9E\xD0\x92", "\xD0\xA2\xD0\x98\xD0\x9F\xD0\x98\xD0\xA7",   // ТИПОВ ТИПИЧ
+                              "TIPOV", "TIPIK", "T\xC4\xB0P\xC4\xB0K", "TYPICAL", "\xD0\xA2\xD0\x98\xD0\x9F\xD0\x98\xD0\x9A"});   // TİPİK ТИПИК
+    const bool slab = has({"\xD0\x9F\xD0\x95\xD0\xA0\xD0\x95\xD0\x9A\xD0\xA0", "\xD0\x9F\xD0\x9E\xD0\x9A\xD0\xA0\xD0\xAB\xD0\xA2",   // ПЕРЕКР ПОКРЫТ
+                           "\xD0\x9F\xD0\x9B\xD0\x98\xD0\xA2", "\xD0\x9E\xD0\x9F\xD0\x90\xD0\x9B", "\xD0\x9F\xD0\x9B\xD0\x90\xD0\x9D",   // ПЛИТ ОПАЛ ПЛАН
+                           "\xD0\xAD\xD0\xA2\xD0\x90\xD0\x96",                                                                                 // ЭТАЖ
+                           "PLITA", "SLAB", "PLAN", "REJA", "QAVAT", "FLOOR", "STOREY", "D\xC3\x96\xC5\x9E" "EME", "DOSEME", "KAT"});
+    const bool vertical = has({"\xD0\x9A\xD0\x9E\xD0\x9B\xD0\x9E\xD0\x9D\xD0\x9D", "\xD0\xA1\xD0\xA2\xD0\x95\xD0\x9D",         // КОЛОНН СТЕН
+                               "\xD0\x92\xD0\xAB\xD0\x9F\xD0\xA3\xD0\xA1\xD0\x9A", "\xD0\x91\xD0\x95\xD0\xA2\xD0\x9E\xD0\x9D\xD0\x98\xD0\xA0",   // ВЫПУСК БЕТОНИР
+                               "\xD0\x9F\xD0\x98\xD0\x9B\xD0\x9E\xD0\x9D", "\xD0\x9B\xD0\x95\xD0\xA1\xD0\xA2\xD0\x9D",        // ПИЛОН ЛЕСТН
+                               "\xD0\x9C\xD0\x90\xD0\xA0\xD0\xA8",                                                                       // МАРШ
+                               "USTUN", "DEVOR", "COLUMN", "WALL", "KOLON", "PERDE", "PILON", "ZINA", "STAIR", "MERDIVEN"});
+    // ±0.000 ning absolyut belgisi haqidagi izoh ("±0,000 соответствует абс. 484,20 ... верх плиты +3.300") — qavatlar emas
+    if (has({"\xD0\x90\xD0\x91\xD0\xA1", "\xD0\xA1\xD0\x9E\xD0\x9E\xD0\xA2\xD0\x92\xD0\x95\xD0\xA2", "\xD0\x91\xD0\x90\xD0\x9B\xD0\xA2",   // АБС СООТВЕТ БАЛТ
+             "ABS", "BALT", "MUTLAK", "MUTLOQ", "BOLTIQ"}))
+        return out;
+    const bool pure = letterCount(text) <= 9;   // faqat belgi yozuvi: "отм. +11.300...+23.400", "+3.300 dan +6.600 gacha"
+    const bool accept = typical || pure || (slab && !vertical);
+    // oraliq: ikki qo'shni belgi orasida oraliq belgisi
+    for (std::size_t i = 0; i + 1 < toks.size(); ++i) {
+        const LvTok& a = toks[i];
+        const LvTok& b = toks[i + 1];
+        double va = a.v, vb = b.v;
+        int sep = b.b >= a.e ? levelSep(s.substr(a.e, b.b - a.e)) : -1;
+        if (sep != 1 && b.minus && b.b >= a.e && s.find_first_not_of(" \t", a.e) >= b.b && va >= 0 && -vb > va) {
+            vb = -vb;   // "+11.300-23.400": chiziqcha — oraliq belgisi
+            sep = 1;
+        }
+        if (sep != 1 || (!a.sign && !b.sign)) continue;
+        const double lo = std::min(va, vb), hi = std::max(va, vb);
+        if (hi - lo < 1.5 || hi - lo > 400) continue;
+        if (!accept) return out;
+        out.levels = {lo, hi};
+        out.range = true;
+        return out;
+    }
+    // ro'yxat: "+3.300; +6.600; +9.900" — yaqin belgilar (plita usti/osti) bitta qavat, qavatlar orasi >= 1.8 m
+    if (!accept) return out;
+    std::vector<double> v;
+    for (const auto& t : toks)
+        if (t.sign && !t.pm && t.dec == 3) v.push_back(t.v);
+    std::sort(v.begin(), v.end());
+    std::vector<double> tops;
+    for (double x : v) {
+        if (!tops.empty() && x - tops.back() < 1.0) tops.back() = x;
+        else tops.push_back(x);
+    }
+    if (tops.size() < 2) return out;
+    for (std::size_t i = 1; i < tops.size(); ++i)
+        if (tops[i] - tops[i - 1] < 1.8 || tops[i] - tops[i - 1] > 12) return out;
+    out.levels = tops;
+    return out;
+}
+
+std::vector<double> expandLevelSet(const LevelSet& s, double floorHeight, const std::vector<double>& hints) {
+    if (s.levels.empty()) return {};
+    if (!s.range) {
+        auto v = s.levels;
+        std::sort(v.begin(), v.end());
+        return v;
+    }
+    const double lo = s.levels.front(), hi = s.levels.back(), span = hi - lo;
+    if (span <= 1e-9) return {lo};
+    // qoldiq (metrda): x ga h butun son marta sig'masa
+    auto res = [](double x, double h) {
+        const double q = x / h;
+        return std::abs(q - std::max(1.0, std::round(q))) * h;
+    };
+    const double param = floorHeight >= 2.0 && floorHeight <= 8.0 ? floorHeight : 3.0;
+    double best = param, bestRes = res(span, param);
+    for (double h : hints)   // qo'shni varaqlardan qavat balandligi (bitta qavat bo'lishi mumkin bo'lganlari) — aniqroq mos kelsa
+        if (h >= 2.4 && h <= 4.5 && res(span, h) < bestRes - 0.02) {
+            best = h;
+            bestRes = res(span, h);
+        }
+    if (bestRes > 0.15) {
+        // parametr mos emas ("+6.600...+26.400", h = 3.0): oraliq ham, pastki belgi ham butun son marta sig'adigan
+        // odatiy qavat balandligi (parametrga eng yaqini)
+        double alt = 0;
+        for (double h : {2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.9, 4.2})
+            if (res(span, h) < 0.02 && (lo <= 0.5 || res(lo, h) < 0.02) && (alt == 0 || std::abs(h - param) < std::abs(alt - param))) alt = h;
+        if (alt > 0) best = alt;
+    }
+    const int n = std::max(1, static_cast<int>(std::lround(span / best)));
+    std::vector<double> out;
+    for (int i = 0; i <= n; ++i) out.push_back(i == n ? hi : std::round((lo + span * i / n) * 1000) / 1000);
+    return out;
+}
+
+std::vector<double> planLevels(const PlanInput& pl, double floorHeight, const std::vector<double>& hints) {
+    if (!pl.levelSet.empty()) return expandLevelSet(pl.levelSet, floorHeight, hints);
+    if (pl.levelTop) return {*pl.levelTop};
+    return {};
+}
+
+TypicalFloors typicalFloors(const PlanInput& typical, double floorHeight) {
+    TypicalFloors r;
+    if (typical.levelSet.empty()) return r;
+    r.levels = expandLevelSet(typical.levelSet, floorHeight);
+    if (r.levels.size() < 2) return {};
+    r.step = (r.levels.back() - r.levels.front()) / static_cast<double>(r.levels.size() - 1);
+    // pastdagi qavatlar: birinchi tipik plita belgisi / qadam (±0.000 — 1-qavat poli)
+    r.first = std::max(0, static_cast<int>(std::lround(r.levels.front() / r.step)) - 1) + 1;
+    r.count = static_cast<int>(r.levels.size());
+    return r;
+}
 
 PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& layerMap) {
     PlanInput in;
     std::vector<std::pair<Vec3, double>> thick;
     std::map<double, int> levels;
+    std::map<std::vector<long>, int> sets;   // tipik qavatlar to'plamlari (oraliq belgisi + belgilar, mm)
     std::function<void(const IEntity&)> texts = [&](const IEntity& e) {
         if (auto* ins = dynamic_cast<const InsertEntity*>(&e)) {
             for (const auto& part : ins->explode()) texts(*part);
@@ -286,6 +497,11 @@ PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& l
         double v;
         if (parseThickness(t->text(), v)) thick.push_back({t->insertion(), v});
         else if (parseLevel(t->text(), v)) levels[std::round(v * 1000) / 1000] += 1;
+        if (auto ls = parseLevelSet(t->text()); !ls.empty()) {
+            std::vector<long> key{ls.range ? 1L : 0L};
+            for (double x : ls.levels) key.push_back(std::lround(x * 1000));
+            ++sets[key];
+        }
     };
     doc.forEach([&](const IEntity& e) {
         auto it = layerMap.find(e.layer());
@@ -304,7 +520,55 @@ PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& l
     int best = 0;
     for (const auto& [lv, n] : levels)
         if (n >= best) { best = n; in.levelTop = lv; }
+    // tipik qavatlar: eng ko'p uchragan to'plam (teng bo'lsa — qavatlari ko'prog'i); plita usti — eng pastki qavatniki
+    int bestSet = 0;
+    for (const auto& [key, n] : sets) {
+        if (n < bestSet || (n == bestSet && key.size() <= in.levelSet.levels.size() + 1)) continue;
+        bestSet = n;
+        in.levelSet.range = key[0] == 1;
+        in.levelSet.levels.clear();
+        for (std::size_t i = 1; i < key.size(); ++i) in.levelSet.levels.push_back(key[i] / 1000.0);
+    }
+    if (!in.levelSet.empty()) in.levelTop = in.levelSet.levels.front();
     return in;
+}
+
+LevelSet docLevelSet(const Document& doc, std::optional<double>* single) {
+    std::map<double, int> levels;
+    std::map<std::vector<long>, int> sets;
+    std::function<void(const IEntity&)> texts = [&](const IEntity& e) {
+        if (auto* ins = dynamic_cast<const InsertEntity*>(&e)) {
+            for (const auto& part : ins->explode()) texts(*part);
+            for (const auto& a : ins->attributes()) texts(a.text);
+            return;
+        }
+        auto* t = dynamic_cast<const TextEntity*>(&e);
+        if (!t) return;
+        double v;
+        if (parseLevel(t->text(), v)) levels[std::round(v * 1000) / 1000] += 1;
+        if (auto ls = parseLevelSet(t->text()); !ls.empty()) {
+            std::vector<long> key{ls.range ? 1L : 0L};
+            for (double x : ls.levels) key.push_back(std::lround(x * 1000));
+            ++sets[key];
+        }
+    };
+    doc.forEach([&](const IEntity& e) { texts(e); });
+    LevelSet out;
+    int bestSet = 0;
+    for (const auto& [key, n] : sets) {
+        if (n < bestSet || (n == bestSet && key.size() <= out.levels.size() + 1)) continue;
+        bestSet = n;
+        out.range = key[0] == 1;
+        out.levels.clear();
+        for (std::size_t i = 1; i < key.size(); ++i) out.levels.push_back(key[i] / 1000.0);
+    }
+    if (single) {
+        single->reset();
+        int best = 0;
+        for (const auto& [lv, n] : levels)
+            if (n >= best) { best = n; *single = lv; }
+    }
+    return out;
 }
 
 double Prism::area() const {
@@ -400,7 +664,41 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
             lean(pad);
         }
     }
-    // ---- qavatlar (har qavat o'z plani; belgilar qolip chizmasidan yoki qavat balandligidan)
+    // ---- qavatlar belgilari (plita usti): o'z planidagi belgi; tipik plan to'plami ("+11.300...+23.400" — o'sha qavatlar);
+    //      belgisizlari — ikki ma'lum belgi orasida teng bo'linadi, eng yuqoridagilari — qavat balandligi bilan
+    const TypicalFloors typ = typicalFloors(typical, p.floorHeight);
+    std::vector<double> tops(static_cast<std::size_t>(std::max(0, p.floors)) + 1, 0.0);
+    {
+        std::vector<std::optional<double>> known(tops.size());
+        for (int k = 1; k <= p.floors; ++k) {
+            if (auto it = fp.floors.find(k); it != fp.floors.end()) {
+                if (it->second.levelTop) known[static_cast<std::size_t>(k)] = *it->second.levelTop;
+            } else if (typ.count && k >= typ.first && k < typ.first + typ.count) {
+                known[static_cast<std::size_t>(k)] = typ.levels[static_cast<std::size_t>(k - typ.first)];
+            }
+        }
+        double prev = 0;
+        for (int k = 1; k <= p.floors; ++k) {
+            const auto ku = static_cast<std::size_t>(k);
+            if (known[ku]) tops[ku] = *known[ku];
+            else {
+                int j = k + 1;
+                while (j <= p.floors && !known[static_cast<std::size_t>(j)]) ++j;
+                const double next = j <= p.floors ? *known[static_cast<std::size_t>(j)] : 0;
+                tops[ku] = j <= p.floors && next - prev > 0.5 * (j - k + 1) ? prev + (next - prev) / (j - k + 1) : prev + p.floorHeight;
+            }
+            prev = tops[ku];
+        }
+        if (typ.count) {
+            const int last = typ.first + typ.count - 1;
+            issue(false, "bim.chk.typical",
+                  {std::format("{:+.3f}", typ.levels.front()), std::format("{:+.3f}", typ.levels.back()), std::to_string(typ.count),
+                   std::to_string(typ.first), std::to_string(last), std::format("{:.3f}", typ.step)});
+            m.issues.back().info = true;
+            if (last > p.floors) issue(false, "bim.chk.typical_floors", {std::to_string(last), std::to_string(p.floors)});
+        }
+    }
+    // ---- qavatlar (har qavat o'z plani; belgilar yuqorida hisoblangan)
     double prevTop = 0;
     std::vector<std::vector<Vec3>> prevVerticals;
     for (int k = 1; k <= p.floors; ++k) {
@@ -408,7 +706,7 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
         const bool own = fp.floors.count(k) != 0;
         const bool roof = k == p.floors;
         const double t = pl.slabT > 0 ? pl.slabT : (roof ? p.roofT : p.slabT);
-        const double top = pl.levelTop && own ? *pl.levelTop : prevTop + p.floorHeight;
+        const double top = tops[static_cast<std::size_t>(k)];
         const double z0 = k == 1 ? ftop : prevTop;
         if (top - t <= z0 + 0.5) issue(true, "bim.chk.level", {std::to_string(k), std::format("{:.3f}", top)});
         const auto w = wallsOf(pl);

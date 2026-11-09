@@ -70,6 +70,9 @@ struct KjParams {
     double outletIn = 0.64, outletOut = 0.96;  // vypusk: plitada / plitadan yuqori
     double slabTop = 0;            // 0 — chizmadan (+3.050)
     double slabT = 0;              // 0 — chizmadan (+3.050 / +2.850 → 0.20)
+    // Tipik qavatlar: plita / ustun ko'rinishlarida "+11.300...+23.400" (yoki "+3.300; +6.600") — shuncha qavat
+    // (beton, armatura, PTO har qavatga takrorlanadi). Oraliq qavatlarga floorHeight bilan bo'linadi (uchlari aniq).
+    double floorHeight = 3.0;
     double meshStep = 0.2;         // belgi topilmasa
     bool columnCages = true;       // ustun karkaslari: vypusklar joyida asosiy sterjenlar + xomutlar
     double stirD = 0.010, stirS = 0.2, stirSEnd = 0.1;  // xomut ("Ø10 A-I шаг 100/200")
@@ -86,6 +89,7 @@ struct KjProject {
     std::vector<SpecRow> spec;     // chizmadagi spetsifikatsiya jadvallari
     double specMass = 0;
     double slabTop = 0, slabT = 0; // qo'llanilgan (nisbiy)
+    std::vector<double> typical;   // tipik qavatlar plita usti belgilari (nisbiy; bo'sh — bitta qavat)
     double foundTop = 0;           // qo'llanilgan (nisbiy)
     double datum = 0;              // ±0.000 absolyut belgisi; bm/bars z = nisbiy + datum
     bool datumKnown = false;       // chizmadan yoki foydalanuvchidan

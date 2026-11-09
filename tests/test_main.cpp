@@ -2043,6 +2043,135 @@ TEST(util_separate_files_clash) {
     CHECK(m.crossings.size() == 2);
 }
 
+// ---------- Tipik qavatlar: "+11.300...+23.400" — bir nechta qavat
+TEST(levels_typical_parse) {
+    auto range = [](const char* t, double lo, double hi) {
+        const auto ls = bim::parseLevelSet(t);
+        return ls.range && ls.levels.size() == 2 && std::abs(ls.levels[0] - lo) < 1e-9 && std::abs(ls.levels[1] - hi) < 1e-9;
+    };
+    CHECK(range("+11.300...+23.400", 11.3, 23.4));
+    CHECK(range("+11,300 \xE2\x80\xA6 +23,400", 11.3, 23.4));                         // …
+    CHECK(range("+11.300 \xC3\xB7 +23.400", 11.3, 23.4));                              // ÷
+    CHECK(range("+11.300-23.400", 11.3, 23.4));
+    CHECK(range("+11.300 \xE2\x80\x93 +23.400", 11.3, 23.4));                          // –
+    CHECK(range("\xD0\xBE\xD1\x82 +11.300 \xD0\xB4\xD0\xBE +23.400", 11.3, 23.4));     // от ... до
+    CHECK(range("\xD1\x81 \xD0\xBE\xD1\x82\xD0\xBC. +11.300 \xD0\xBF\xD0\xBE \xD0\xBE\xD1\x82\xD0\xBC. +23.400", 11.3, 23.4));   // с отм. ... по отм.
+    CHECK(range("+11.300 dan +23.400 gacha", 11.3, 23.4));
+    CHECK(range("+11.30 dan 23.40 gacha", 11.3, 23.4));
+    CHECK(range("Tipovoy qavat +11.300'dan +23.400'gacha", 11.3, 23.4));
+    CHECK(range("+11.300 to +23.400", 11.3, 23.4));
+    // "План типового этажа на отм. +6.600...+26.400"
+    CHECK(range("\xD0\x9F\xD0\xBB\xD0\xB0\xD0\xBD \xD1\x82\xD0\xB8\xD0\xBF\xD0\xBE\xD0\xB2\xD0\xBE\xD0\xB3\xD0\xBE \xD1\x8D\xD1\x82\xD0\xB0\xD0\xB6\xD0\xB0 "
+                "\xD0\xBD\xD0\xB0 \xD0\xBE\xD1\x82\xD0\xBC. +6.600...+26.400", 6.6, 26.4));
+    // ro'yxat
+    const auto l = bim::parseLevelSet("+3,300; +6,600; +9,900");
+    CHECK(!l.range && l.levels.size() == 3 && std::abs(l.levels[2] - 9.9) < 1e-9);
+    // qavat emas
+    CHECK(bim::parseLevelSet("+3.300").empty());
+    CHECK(bim::parseLevelSet("+3.050/+2.850").empty());                                  // plita usti / osti
+    CHECK(bim::parseLevelSet("\xD0\x92\xD0\xB5\xD1\x80\xD1\x85 \xD0\xBF\xD0\xBB\xD0\xB8\xD1\x82\xD1\x8B +3.050, \xD0\xBD\xD0\xB8\xD0\xB7 +2.850").empty());
+    // "Колонны от отм. -0.300 до +3.100" — ustun balandligi
+    CHECK(bim::parseLevelSet("\xD0\x9A\xD0\xBE\xD0\xBB\xD0\xBE\xD0\xBD\xD0\xBD\xD1\x8B \xD0\xBE\xD1\x82 \xD0\xBE\xD1\x82\xD0\xBC. -0.300 "
+                             "\xD0\xB4\xD0\xBE +3.100").empty());
+    CHECK(bim::parseLevelSet("23.12.2025 - 24.12.2025").empty());
+    CHECK(bim::parseLevelSet("\xC2\xB1" "0.000 = 484.20").empty());
+    // "±0,000 соответствует абс. 484,20, верх плиты +3,300" — nol izohi, qavatlar emas
+    CHECK(bim::parseLevelSet("\xC2\xB1" "0,000 \xD1\x81\xD0\xBE\xD0\xBE\xD1\x82\xD0\xB2\xD0\xB5\xD1\x82\xD1\x81\xD1\x82\xD0\xB2\xD1\x83\xD0\xB5\xD1\x82 "
+                             "\xD0\xB0\xD0\xB1\xD1\x81. 484,20, \xD0\xB2\xD0\xB5\xD1\x80\xD1\x85 \xD0\xBF\xD0\xBB\xD0\xB8\xD1\x82\xD1\x8B +3,300").empty());
+    CHECK(bim::parseLevelSet("\xC2\xB1" "0.000; +3.300").empty());
+    // qavatlarga bo'lish
+    auto ex = bim::expandLevelSet(bim::parseLevelSet("+11.300...+23.400"), 3.0);
+    CHECK(ex.size() == 5 && std::abs(ex[1] - 14.325) < 1e-9 && std::abs(ex[4] - 23.4) < 1e-9);
+    ex = bim::expandLevelSet(bim::parseLevelSet("+6.600...+26.400"), 3.0);   // 3.0 sig'maydi — 3.3 (6.6 = 2 × 3.3)
+    CHECK(ex.size() == 7 && std::abs(ex[1] - 9.9) < 1e-9);
+    ex = bim::expandLevelSet(bim::parseLevelSet("+6.600...+26.400"), 3.0, {3.3});
+    CHECK(ex.size() == 7);
+}
+
+namespace {
+std::shared_ptr<Document> typicalPlanDoc(const std::string& title) {
+    auto d = std::make_shared<Document>();
+    auto add = [&](const char* layer, std::vector<Vec3> pts) {
+        if (!d->layer(layer)) d->addLayer(Layer{layer});
+        auto e = std::make_unique<PolylineEntity>(std::move(pts), true);
+        e->setLayer(layer);
+        d->add(std::move(e));
+    };
+    for (double x : {0.0, 6.0, 12.0})
+        for (double y : {0.0, 6.0}) add("USTUN", {{x, y, 0}, {x + 0.4, y, 0}, {x + 0.4, y + 0.4, 0}, {x, y + 0.4, 0}});
+    add("PLITA", {{-0.3, -0.3, 0}, {12.7, -0.3, 0}, {12.7, 6.7, 0}, {-0.3, 6.7, 0}});
+    d->addLayer(Layer{"YOZUV"});
+    auto t = std::make_unique<TextEntity>(Vec3{3, 3, 0}, 0.3, title);
+    t->setLayer("YOZUV");
+    d->add(std::move(t));
+    return d;
+}
+civil::LoadedSheet typicalSheet(const std::string& name, const std::string& title, int from = 0, int to = 0) {
+    civil::LoadedSheet ls;
+    ls.file.path = name;
+    ls.file.role = "PLAN";
+    ls.file.floorFrom = from;
+    ls.file.floorTo = to;
+    ls.doc = typicalPlanDoc(title);
+    return ls;
+}
+std::map<int, double> slabTops(const bim::BuildingModel& m) {
+    std::map<int, double> t;
+    for (const auto& pr : m.prisms)
+        if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::Roof) t[pr.level] = pr.z1;
+    return t;
+}
+}  // namespace
+
+TEST(levels_typical_drawing_set) {
+    // avto: 1-qavat +3.300, tipik +6.600...+26.400 (7 qavat), tom +29.700 — 9 qavat
+    std::vector<civil::SheetFloors> pl;
+    auto fp = civil::floorPlansFrom({typicalSheet("q1.dxf", "+3.300"), typicalSheet("tip.dxf", "+6.600...+26.400"), typicalSheet("tom.dxf", "+29.700")}, 3.0, &pl);
+    CHECK(fp.floors.size() == 9 && pl.size() == 3);
+    if (pl.size() == 3) CHECK(pl[1].floors.size() == 7 && pl[1].floors.front() == 2 && pl[1].floors.back() == 8 && pl[2].floors == std::vector<int>{9});
+    bim::BuildingParams bp;
+    bp.floors = 9;
+    auto m = bim::buildModel(fp.floors.at(1), bp, fp);
+    auto tops = slabTops(m);
+    CHECK(tops.size() == 9);
+    NEAR(tops[2], 6.6);
+    NEAR(tops[5], 16.5);
+    NEAR(m.heightTop, 29.7);
+    // faqat tipik varaq "+11.300...+23.400": 5 qavat — 4..8 (pastda 3 qavat, 11.3 / 3.025 ≈ 4)
+    fp = civil::floorPlansFrom({typicalSheet("tip.dxf", "Tipovoy qavat +11.300 dan +23.400 gacha")}, 3.0, &pl);
+    CHECK(fp.floors.size() == 5 && fp.floors.begin()->first == 4 && fp.floors.rbegin()->first == 8);
+    NEAR(*fp.floors.at(5).levelTop, 14.325);
+    bp.floors = 8;
+    m = bim::buildModel(bim::readPlan(*typicalPlanDoc(""), {}), bp, fp);
+    tops = slabTops(m);
+    CHECK(tops.size() == 8);
+    NEAR(tops[3], 8.475);   // pastdagi 3 qavat 0..11.300 orasida teng
+    NEAR(tops[8], 23.4);
+    // qo'lda "4 dan 4 gacha" — chizmadagi qavatlar soni bo'yicha 4..8
+    fp = civil::floorPlansFrom({typicalSheet("tip.dxf", "+11.300...+23.400", 4, 4)}, 3.0);
+    CHECK(fp.floors.size() == 5 && fp.floors.count(8));
+    // aralash: qo'lda 1-2 (+3.300), 3-5 (+9.900), avto tom +19.800 — 6-qavat
+    fp = civil::floorPlansFrom({typicalSheet("a.dxf", "+3.300", 1, 2), typicalSheet("b.dxf", "+9.900", 3, 5), typicalSheet("tom.dxf", "+19.800")}, 3.3, &pl);
+    CHECK(fp.floors.size() == 6 && fp.floors.count(6) && fp.floors.at(6).levelTop && std::abs(*fp.floors.at(6).levelTop - 19.8) < 1e-9);
+    // asosiy chizma tipik: qavatlar 4..8, qavatlar soni kam bo'lsa — ogohlantirish
+    bim::PlanInput typ = bim::readPlan(*typicalPlanDoc("+11.300...+23.400"), {});
+    CHECK(typ.levelSet.range);
+    const auto tf = bim::typicalFloors(typ, 3.0);
+    CHECK(tf.first == 4 && tf.count == 5);
+    bp.floors = 8;
+    m = bim::buildModel(typ, bp);
+    tops = slabTops(m);
+    NEAR(tops[4], 11.3);
+    NEAR(tops[8], 23.4);
+    bool info = false, few = false;
+    for (const auto& i : m.issues) info |= i.key == "bim.chk.typical" && i.info;
+    CHECK(info);
+    bp.floors = 5;
+    m = bim::buildModel(typ, bp);
+    for (const auto& i : m.issues) few |= i.key == "bim.chk.typical_floors" && i.args[0] == "8";
+    CHECK(few);
+}
+
 TEST(building_per_floor_formwork_drawings) {
     const std::string dir = std::string(ASIACAD_EXAMPLES_DIR) + "/bino_qolip/";
     civil::SheetFile f0{dir + "fundament.dxf", "FOUND"}, f1{dir + "qavat_1_2.dxf", "PLAN", 1, 2}, f3{dir + "qavat_3_5.dxf", "PLAN", 3, 5};
@@ -2387,6 +2516,82 @@ TEST(kj_single_file_project) {
                               "\xD0\xB0\xD0\xB1\xD1\x81. 101,35", d) && std::abs(d.abs - 101.35) < 1e-9);
     CHECK(!bim::parseDatumText("\xC2\xB1" "0.000", d));
     CHECK(!bim::parseDatumText("23.12.2025 = 0.000", d));
+}
+
+TEST(kj_typical_floors) {
+    // "КЖ ТИП": plita ko'rinishida "+3.000...+15.000" — 5 ta tipik qavat: beton, armatura va PTO 5 qavat uchun
+    civil::SheetFile f;
+    f.path = std::string(ASIACAD_EXAMPLES_DIR) + "/kj_loyiha/kj_loyiha.dxf";
+    const auto ls = civil::loadSheet(f);
+    CHECK(ls.error.empty());
+    bim::KjParams kp;
+    const auto r1 = bim::buildKjProject(*ls.doc, ls.dims, kp);
+    auto t = std::make_unique<TextEntity>(Vec3{183.0, 4.2, 0}, 0.3, "+3.000...+15.000");   // plita ko'rinishi ichida (m)
+    ls.doc->add(std::move(t));
+    const auto r = bim::buildKjProject(*ls.doc, ls.dims, kp);
+    CHECK(r.typical.size() == 5);
+    if (r.typical.size() == 5) NEAR(r.typical[1], 6.0);
+    NEAR(r.slabTop, 3.0);
+    auto vol = [](const bim::KjProject& p, bim::ElemKind k) {
+        double v = 0;
+        for (const auto& row : p.bm.pto) if (row.kind == k) v += row.volume;
+        return v;
+    };
+    NEAR(vol(r, bim::ElemKind::Slab), 5 * 14 * 8 * 0.2);
+    NEAR(vol(r, bim::ElemKind::Column), 5 * 6 * 0.25 * 2.8);
+    NEAR(vol(r, bim::ElemKind::FoundationSlab), 14 * 8 * 0.4);   // fundament — bitta
+    int slabs = 0;
+    double top = 0;
+    for (const auto& pr : r.bm.prisms)
+        if (pr.kind == bim::ElemKind::Slab) { ++slabs; top = std::max(top, pr.z1); }
+    CHECK(slabs == 5);
+    NEAR(top, 484.2 + 15.0);
+    NEAR(r.bm.heightTop, 484.2 + 15.0);
+    // armatura: 1-qavat sterjenlari 5 marta, fundament va vypusklar — bir marta
+    auto count = [](const bim::KjProject& p, int level) {
+        int n = 0;
+        for (const auto& b : p.bars) n += b.level == level;
+        return n;
+    };
+    CHECK(count(r, 1) == count(r1, 1) && count(r, 5) == count(r1, 1) && count(r, 0) == count(r1, 0));
+    CHECK(r.bars.size() == r1.bars.size() + 4 * static_cast<std::size_t>(count(r1, 1)));
+    NEAR(r.totalMass - r1.totalMass, 4 * (r1.totalMass - [&] { double m = 0; for (const auto& row : r1.schedule) if (row.level == 0) m += row.mass; return m; }()));
+    bool info = false, err = false;
+    for (const auto& i : r.issues) {
+        info |= i.key == "kj.chk.typical" && i.info && i.args[2] == "5";
+        err |= i.error;
+    }
+    CHECK(info && !err);
+}
+
+TEST(rebar_import_auto_floors) {
+    // KJ varag'i "avto": chizmadagi "+9.900...+16.500" — bino 3..5-qavat plitalari
+    const std::string dir = std::string(ASIACAD_EXAMPLES_DIR) + "/bino_qolip/";
+    const auto sheets = civil::loadSheets({{dir + "fundament.dxf", "FOUND"}, {dir + "qavat_1_2.dxf", "PLAN", 1, 2}, {dir + "qavat_3_5.dxf", "PLAN", 3, 5}});
+    const auto fp = civil::floorPlansFrom(sheets);
+    bim::BuildingParams p;
+    p.floors = 5;
+    p.floorHeight = 3.3;
+    const auto bm = bim::buildModel(fp.floors.at(1), p, fp);
+    auto kj = civil::loadSheet({dir + "kj_plita_1_2.dxf", "SLAB", 0, 0});
+    CHECK(kj.error.empty());
+    kj.doc->add(std::make_unique<TextEntity>(Vec3{2.0, 9.0, 0}, 0.25, "+9.900...+16.500"));
+    const auto r = bim::importRebar({{kj.doc.get(), bim::ElemKind::Slab, 0, 0, "kj"}}, bm);
+    std::set<int> levels;
+    for (const auto& b : r.bars) levels.insert(b.level);
+    CHECK(levels == std::set<int>({3, 4, 5}));
+    CHECK(r.bars.size() == 3 * (61 + 91 + 13));
+    NEAR(r.specMass, 3 * (61 * 15.98 + 95 * 10.66 + 13 * 3.79));
+    bool info = false;
+    for (const auto& i : r.issues) info |= i.key == "rbi.chk.auto_floors" && i.info && i.args[1] == "3, 4, 5";
+    CHECK(info);
+    // belgisi bino plitalariga mos kelmasa — 1-qavat va ogohlantirish
+    auto kj2 = civil::loadSheet({dir + "kj_plita_1_2.dxf", "SLAB", 0, 0});
+    kj2.doc->add(std::make_unique<TextEntity>(Vec3{2.0, 9.0, 0}, 0.25, "+50.000"));
+    const auto r2 = bim::importRebar({{kj2.doc.get(), bim::ElemKind::Slab, 0, 0, "kj"}}, bm);
+    bool nofloor = false;
+    for (const auto& i : r2.issues) nofloor |= i.key == "rbi.chk.auto_nofloor";
+    CHECK(nofloor && r2.bars.size() == 61 + 91 + 13);
 }
 
 TEST(kj_auto_scale_text_height) {

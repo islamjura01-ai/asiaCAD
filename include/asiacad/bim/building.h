@@ -77,6 +77,19 @@ struct Prism {
     double formwork() const;                // qolip, m² (tur bo'yicha qoida)
 };
 
+// Tipik qavatlar belgilari bitta yozuvda: oraliq "+11.300...+23.400" ("…", "÷", "-", "до", "по", "dan ... gacha", "to")
+// yoki ro'yxat "+3.300; +6.600; +9.900". Qavat emas: plita usti/osti jufti (+3.050 / +2.850) va ustun/devor balandligi
+// ("Колонны от отм. -0.300 до +3.100") — rad etiladi.
+struct LevelSet {
+    std::vector<double> levels;   // ro'yxat — belgilar (o'sish tartibida); oraliq — {past, yuqori}
+    bool range = false;
+    bool empty() const { return levels.size() < 2; }
+};
+LevelSet parseLevelSet(const std::string& text);
+// Oraliq -> qavatlar belgilari: n = round(oraliq / h) + 1, teng qadamda (uchlari — chizmadagidek). hints — boshqa
+// manbalardan qavat balandligi (qo'shni varaqlar belgilari): oraliqqa eng mos (qoldig'i kichik) qadam tanlanadi.
+std::vector<double> expandLevelSet(const LevelSet& s, double floorHeight, const std::vector<double>& hints = {});
+
 struct PlanInput {
     std::vector<std::vector<Vec3>> columns, walls, slabs, openings, outlines;
     std::vector<std::vector<Vec3>> stairs, shafts;  // zinapoya kataklari, lift shaxtalari (ichki kontur)
@@ -86,6 +99,7 @@ struct PlanInput {
     std::vector<std::pair<Vec3, Vec3>> wallLines;  // markaz chiziqlari (wallT bilan)
     double slabT = 0;                       // qolip chizmasidagi "h=200" / "δ=200" (0 — parametrdan)
     std::optional<double> levelTop;         // qolip chizmasidagi plita usti belgisi "+3.000"
+    LevelSet levelSet;                      // tipik qavatlar: "+11.300...+23.400" (bo'sh — bitta belgi yoki yo'q)
     std::optional<double> zeroAbs;          // "±0,000 = 484,20 абс." — nisbiy nolning absolyut (Boltiq) belgisi
     bool empty() const {
         return columns.empty() && walls.empty() && wallLines.empty() && slabs.empty() && foundations.empty() && strips.empty() && stairs.empty() &&
@@ -102,12 +116,24 @@ struct FloorPlans {
 
 // Hujjatdan: qatlam -> tur xaritasi bo'yicha (bo'sh bo'lsa guessKind). Bloklar ichidagi geometriya ham olinadi.
 PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& layerMap);
+// Plan qaysi plita usti belgilariga tegishli: tipik to'plam (qavatlarga bo'lingan) yoki bitta belgi; bo'sh — belgi yo'q
+std::vector<double> planLevels(const PlanInput& pl, double floorHeight, const std::vector<double>& hints = {});
+// Hujjat yozuvlaridan: eng ko'p uchragan tipik to'plam (bo'lmasa — bo'sh) va eng ko'p uchragan bitta belgi
+LevelSet docLevelSet(const Document& doc, std::optional<double>* single = nullptr);
+// Tipik plan (asosiy chizma) to'plami bilan kerakli qavatlar: pastdagi qavatlar soni (belgi / qadam bo'yicha) + to'plam
+struct TypicalFloors {
+    int first = 0, count = 0;               // first..first+count-1 qavatlar (0 — to'plam yo'q)
+    std::vector<double> levels;
+    double step = 0;
+};
+TypicalFloors typicalFloors(const PlanInput& typical, double floorHeight);
 std::map<std::string, ElemKind> autoLayerMap(const Document& doc);
 
 struct BuildingIssue {
     bool error = false;
     std::string key;
     std::vector<std::string> args;
+    bool info = false;                      // eslatma (xato ham, ogohlantirish ham emas)
 };
 
 struct PtoRow {

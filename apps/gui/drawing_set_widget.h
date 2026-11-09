@@ -22,10 +22,14 @@ public:
                      QWidget* parent = nullptr);
     std::vector<civil::SheetFile> sheets() const;
     void setSheets(const std::vector<civil::SheetFile>& s);
-    void addFile(const QString& path, const QString& role, int from = 1, int to = 1);
+    // from = 0 — avto: qavatlar chizmadagi belgilardan ("+11.300...+23.400" — tipik qavatlar)
+    void addFile(const QString& path, const QString& role, int from = 0, int to = 0);
+    // modul hisoblagan joylashuv: har varaq qaysi qavatlarga qo'llandi (holat satrida ko'rsatiladi)
+    void setPlacement(const std::vector<civil::SheetFloors>& placed);
     // yoqilgan fayllar, yuklangan (kesh: yo'l + masshtab), rol va qavatlar joriy jadvaldan
     std::vector<civil::LoadedSheet> loaded();
     int count() const;
+    QString statusText() const;   // sinov uchun: holat satri (yuklangan fayllar, varaqlar qavatlari)
 
 signals:
     void changed();
@@ -39,6 +43,7 @@ private:
     QTableWidget* table_ = nullptr;
     QLabel* status_ = nullptr;
     std::map<std::string, civil::LoadedSheet> cache_;
+    std::vector<civil::SheetFloors> placed_;
     bool updating_ = false;
 };
 

@@ -615,11 +615,20 @@ void MainWindow::buildActions() {
         lastDir_ = QFileInfo(files.front()).absolutePath();
         BuildingDialog* bd = openBuilding();
         static const QRegularExpression foundRx(QStringLiteral("fund|фунд|temel|found"), QRegularExpression::CaseInsensitiveOption);
-        static const QRegularExpression floorRx(QStringLiteral("(\\d+)\\D+(\\d+)"));
+        // fayl nomida qavat so'zi bilan: "qavat_3_5", "etaj 3-5", "3-5 этаж" — aks holda avto (chizmadagi belgilar bo'yicha)
+        static const QRegularExpression floorRx(
+            QStringLiteral("(?:qavat|etaj|этаж|kat|floor)\\D{0,3}(\\d+)(?:\\D{1,3}(\\d+))?|(\\d+)(?:\\D{1,3}(\\d+))?\\D{0,3}(?:qavat|etaj|этаж|kat|floor)"),
+            QRegularExpression::CaseInsensitiveOption);
         for (const QString& f : files) {
             const QString base = QFileInfo(f).completeBaseName();
-            int from = 1, to = 1;
-            if (const auto m = floorRx.match(base); m.hasMatch()) { from = m.captured(1).toInt(); to = std::max(from, m.captured(2).toInt()); }
+            int from = 0, to = 0;
+            if (const auto m = floorRx.match(base); m.hasMatch()) {
+                const bool first = !m.captured(1).isEmpty();
+                from = (first ? m.captured(1) : m.captured(3)).toInt();
+                const QString t2 = first ? m.captured(2) : m.captured(4);
+                to = std::max(from, t2.isEmpty() ? from : t2.toInt());
+                if (from <= 0 || from > 200) from = to = 0;
+            }
             bd->drawings()->addFile(f, foundRx.match(base).hasMatch() ? QStringLiteral("FOUND") : QStringLiteral("PLAN"), from, to);
         }
     });

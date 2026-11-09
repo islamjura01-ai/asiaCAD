@@ -591,7 +591,7 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
                                 std::format("{:.2f}", r.formwork), r.concrete});
         for (const auto& [c, v] : model.byConcrete) say("bim.msg.concrete", {c, std::format("{:.2f}", v)});
         for (const auto& is : model.issues)
-            out_ << "  " << loc_.tr(is.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(is.key, is.args) << '\n';
+            out_ << "  " << loc_.tr(is.error ? "sewer.lvl.error" : is.info ? "sewer.lvl.info" : "sewer.lvl.warning") << ": " << loc_.tr(is.key, is.args) << '\n';
         say("bim.msg.total", {std::to_string(bp.floors), std::format("{:.2f}", model.totalVolume), std::format("{:.2f}", model.totalFormwork),
                               std::format("{:.3f}", model.heightTop)});
         if (a.size() > k) {  // PTO jadvalini chizmaga
@@ -873,12 +873,12 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
                               std::format("{:.2f}", r.slabT)});
         say("kj.msg.concrete", {std::format("{:.1f}", r.bm.totalVolume), r.concrete, std::format("{:.1f}", r.bm.totalFormwork)});
         for (const auto& row : r.bm.pto)
-            out_ << "  " << loc_.tr(std::string("bim.kind.") + bim::kindKey(row.kind)) << ": " << row.count << " — "
-                 << std::format("{:.2f} m3", row.volume) << '\n';
+            out_ << "  " << (r.typical.empty() ? std::string() : (row.level == 0 ? loc_.tr("bim.level.found") : loc_.tr("bim.level.n", {std::to_string(row.level)})) + " · ")
+                 << loc_.tr(std::string("bim.kind.") + bim::kindKey(row.kind)) << ": " << row.count << " — " << std::format("{:.2f} m3", row.volume) << '\n';
         say("kj.msg.steel", {std::to_string(r.bars.size()), std::format("{:.2f}", r.totalMass / 1000)});
         for (const auto& [d, kg] : r.massByDia) out_ << "  " << d << ": " << std::format("{:.0f} kg", kg) << '\n';
         for (const auto& i : r.issues)
-            out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args) << '\n';
+            out_ << "  " << loc_.tr(i.error ? "sewer.lvl.error" : i.info ? "sewer.lvl.info" : "sewer.lvl.warning") << ": " << loc_.tr(i.key, i.args) << '\n';
     } else if (cmd == "UTIL") {
         // UTIL — chizmani tahlil; UTIL + — 3D ni chizmaga; UTIL fayl.json — GUI'da tuzatilgan modelni chizish
         auto p = civil::defaultUtilParams();

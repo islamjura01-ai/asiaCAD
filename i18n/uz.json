@@ -2612,6 +2612,15 @@
     "gui.norm.rules.saved": "ShNQ qoidalari saqlandi: {0} ta ({1})",
     "gui.bim.norm": "ShNQ tekshiruvi",
     "gui.bim.norm.tip": "Elementlar va armatura ShNQ qoidalari boʻyicha tekshiriladi: buzilgan — qizil (xato) va sariq (ogohlantirish), qolganlari xira. Roʻyxat — «Tekshiruv» varagʻida.",
-    "gui.bim.norm.head": "ShNQ: {0} ta xato, {1} ta ogohlantirish ({2} ta obyekt tekshirildi)"
+    "gui.bim.norm.head": "ShNQ: {0} ta xato, {1} ta ogohlantirish ({2} ta obyekt tekshirildi)",
+    "bim.chk.typical": "Tipik qavatlar {0} … {1}: {2} qavat ({3}–{4}-qavatlar), qadam {5} m",
+    "bim.chk.typical_floors": "Tipik qavatlar {0}-qavatgacha, qavatlar soni esa {1} — qavatlar sonini oshiring",
+    "kj.chk.typical": "Tipik qavatlar {0} … {1}: {2} qavat (qadam {3} m) — beton, armatura va PTO {2} qavat uchun; chizmadagi spetsifikatsiya 1 qavat uchun deb {2} ga koʻpaytirildi",
+    "rbi.chk.auto_floors": "{0}: chizmadagi belgilar ({2}) boʻyicha {1}-qavat",
+    "rbi.chk.auto_nofloor": "{0}: chizmadagi belgi ({1}) bino plitalariga mos kelmadi — 1-qavat olindi, qavatni qoʻlda kiriting",
+    "gui.ds.placed": "{0}: {1}-qavat ({2}, {3} qavat)",
+    "gui.ds.placed.nolevel": "{0}: {1}-qavat",
+    "gui.ds.placed.none": "{0}: qavat aniqlanmadi — «Qavat dan»ni kiriting",
+    "gui.ds.floors.tip": "Avto — qavatlar chizmadagi belgilardan: «+11.300...+23.400» — tipik qavatlar (har biriga oʻz belgisi)"
   }
 }

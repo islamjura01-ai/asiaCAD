@@ -11,6 +11,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <format>
 
 namespace asiacad::gui {
@@ -84,7 +85,9 @@ void DrawingSetWidget::addRow(const civil::SheetFile& f) {
     for (int c : {CFrom, CTo}) {
         auto* sp = new QSpinBox(table_);
         sp->setRange(0, 200);
-        sp->setValue(c == CFrom ? f.floorFrom : f.floorTo);
+        sp->setSpecialValueText(QString::fromStdString(loc_.tr("gui.ds.auto")));   // 0 — avto (chizmadagi belgilar bo'yicha)
+        sp->setToolTip(QString::fromStdString(loc_.tr("gui.ds.floors.tip")));
+        sp->setValue(c == CFrom ? f.floorFrom : (f.floorFrom <= 0 ? 0 : f.floorTo));
         connect(sp, &QSpinBox::valueChanged, this, [this] { if (!updating_) emit changed(); });
         table_->setCellWidget(r, c, sp);
     }
@@ -118,7 +121,7 @@ std::vector<civil::SheetFile> DrawingSetWidget::sheets() const {
         f.enabled = table_->item(r, CFile)->checkState() == Qt::Checked;
         if (auto* c = qobject_cast<QComboBox*>(table_->cellWidget(r, CRole))) f.role = c->currentData().toString().toStdString();
         if (auto* s = qobject_cast<QSpinBox*>(table_->cellWidget(r, CFrom))) f.floorFrom = s->value();
-        if (auto* s = qobject_cast<QSpinBox*>(table_->cellWidget(r, CTo))) f.floorTo = std::max(f.floorFrom, s->value());
+        if (auto* s = qobject_cast<QSpinBox*>(table_->cellWidget(r, CTo))) f.floorTo = f.floorFrom <= 0 ? 0 : std::max(f.floorFrom, s->value());
         if (auto* c = qobject_cast<QComboBox*>(table_->cellWidget(r, CScale))) f.scale = c->currentData().toDouble();
         out.push_back(f);
     }
@@ -134,6 +137,8 @@ void DrawingSetWidget::setSheets(const std::vector<civil::SheetFile>& s) {
 
 int DrawingSetWidget::count() const { return table_->rowCount(); }
 
+QString DrawingSetWidget::statusText() const { return status_->text(); }
+
 std::vector<civil::LoadedSheet> DrawingSetWidget::loaded() {
     std::vector<civil::LoadedSheet> out;
     for (const auto& f : sheets()) {
@@ -148,6 +153,28 @@ std::vector<civil::LoadedSheet> DrawingSetWidget::loaded() {
     return out;
 }
 
+void DrawingSetWidget::setPlacement(const std::vector<civil::SheetFloors>& placed) {
+    placed_ = placed;
+    refreshStatus();
+}
+
+namespace {
+// 4, 5, 6, 8 -> "4–6, 8"
+std::string floorsText(std::vector<int> v) {
+    std::sort(v.begin(), v.end());
+    std::string o;
+    for (std::size_t i = 0; i < v.size();) {
+        std::size_t j = i;
+        while (j + 1 < v.size() && v[j + 1] == v[j] + 1) ++j;
+        if (!o.empty()) o += ", ";
+        o += std::to_string(v[i]);
+        if (j > i) o += "\xE2\x80\x93" + std::to_string(v[j]);
+        i = j + 1;
+    }
+    return o;
+}
+} // namespace
+
 void DrawingSetWidget::refreshStatus() {
     int n = 0, bad = 0;
     QString errs;
@@ -158,8 +185,24 @@ void DrawingSetWidget::refreshStatus() {
             errs += "\n" + QString::fromStdString(civil::fileName(ls.file.path) + ": " + ls.error);
         }
     }
+    // qaysi varaq qaysi qavatlarga (belgilari bilan): "tip.dxf: 4–8-qavat (+11.300 … +23.400, 5 qavat)"
+    QString where;
+    if (floors_)
+        for (const auto& p : placed_) {
+            if (p.floors.empty()) {
+                where += "\n" + QString::fromStdString(loc_.tr("gui.ds.placed.none", {p.file}));
+                continue;
+            }
+            std::string lv;
+            if (!p.levels.empty()) {
+                const auto [lo, hi] = std::minmax_element(p.levels.begin(), p.levels.end());
+                lv = std::format("{:+.3f}", *lo) + (p.levels.size() > 1 ? std::format(" \xE2\x80\xA6 {:+.3f}", *hi) : std::string());
+            }
+            where += "\n" + QString::fromStdString(loc_.tr(lv.empty() ? "gui.ds.placed.nolevel" : "gui.ds.placed",
+                                                             {p.file, floorsText(p.floors), lv, std::to_string(p.floors.size())}));
+        }
     status_->setText(n == 0 ? QString::fromStdString(loc_.tr("gui.ds.none"))
-                            : QString::fromStdString(loc_.tr("gui.ds.status", {std::to_string(n), std::to_string(bad)})) + errs);
+                            : QString::fromStdString(loc_.tr("gui.ds.status", {std::to_string(n), std::to_string(bad)})) + errs + where);
 }
 
 } // namespace asiacad::gui

@@ -2612,6 +2612,15 @@
     "gui.norm.rules.saved": "ShNQ rules saved: {0} ({1})",
     "gui.bim.norm": "ShNQ check",
     "gui.bim.norm.tip": "Elements and rebar are checked against the ShNQ rules: violations in red (error) and amber (warning), the rest dimmed. The list is on the \"Checks\" tab.",
-    "gui.bim.norm.head": "ShNQ: {0} errors, {1} warnings ({2} objects checked)"
+    "gui.bim.norm.head": "ShNQ: {0} errors, {1} warnings ({2} objects checked)",
+    "bim.chk.typical": "Typical floors {0} … {1}: {2} floors (floors {3}–{4}), step {5} m",
+    "bim.chk.typical_floors": "Typical floors go up to floor {0}, but the number of floors is {1} — increase it",
+    "kj.chk.typical": "Typical floors {0} … {1}: {2} floors (step {3} m) — concrete, rebar and quantities for {2} floors; the drawing specification is taken as per floor and multiplied by {2}",
+    "rbi.chk.auto_floors": "{0}: by the drawing levels ({2}) — floors {1}",
+    "rbi.chk.auto_nofloor": "{0}: the drawing level ({1}) matches no slab of the building — floor 1 was used, enter the floor manually",
+    "gui.ds.placed": "{0}: floors {1} ({2}, {3} floors)",
+    "gui.ds.placed.nolevel": "{0}: floors {1}",
+    "gui.ds.placed.none": "{0}: floor not detected — enter \"Floor from\"",
+    "gui.ds.floors.tip": "Auto — floors from the drawing levels: \"+11.300...+23.400\" means typical floors (each with its own level)"
   }
 }

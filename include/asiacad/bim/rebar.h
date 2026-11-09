@@ -61,6 +61,7 @@ struct RebarIssue {
     bool error = false;
     std::string key;
     std::vector<std::string> args;
+    bool info = false;   // eslatma
 };
 
 struct RebarModel {

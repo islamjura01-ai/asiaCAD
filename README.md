@@ -290,6 +290,27 @@ AsiaCAD faylni o'zi tahlil qiladi — rol berish shart emas ("Armatura 3D" → K
   asosiy sterjenlar va xomutlar ("100/200").
 - CLI: `KJ fayl.dxf [fundament usti] [qalinligi]`. Namuna: `examples/kj_loyiha/` (`make_kj.py` — generator).
 
+## Tipik qavatlar: "+11.300...+23.400" — bir nechta qavat (v0.32) — `bim::parseLevelSet`
+
+Chizmadagi belgilar to'plami endi bitta qavat emas, shuncha qavat deb o'qiladi:
+
+* **Yozilishi:** oraliq — `+11.300...+23.400`, `+11,300 … +23,400`, `+11.300 ÷ +23.400`, `+11.300-23.400`, `от +11.300 до +23.400`,
+  `с отм. +11.300 по отм. +23.400`, `+11.300 dan +23.400 gacha`, `+11.300 to +23.400`; ro'yxat — `+3.300; +6.600; +9.900`.
+  Plita usti/osti jufti (`+3.050 / +2.850`) va ustun/devor/zina balandligi (`Колонны от отм. -0.300 до +3.100`) qavat emas.
+* **Qavatlar soni:** oraliq qavat balandligiga bo'linadi, uchlari chizmadagidek (`+11.300...+23.400`, h = 3.0 → 5 qavat, qadam 3.025).
+  Parametr sig'masa (`+6.600...+26.400`, h = 3.0) — oraliq ham, pastki belgi ham butun son marta sig'adigan odatiy balandlik (3.3 → 7 qavat);
+  qo'shni varaqlar belgilari ham hisobga olinadi.
+* **Monolit bino:** qavat planlari jadvalida «Qavat dan / gacha» — *Avto* (yangi varaqlar shunday qo'shiladi): qavat raqamlari belgilar
+  tartibidan, eng pastki belgidan pastdagi qavatlar soni — belgi / qadam. Qo'lda «4 dan 4 gacha» kiritilsa — 4..8. Holat satrida har varaq
+  qaysi qavatlarga tushgani ko'rinadi; qavatlar soni kerak bo'lsa oshiriladi. Asosiy chizmadagi tipik plan ham shunday (Tekshiruv — eslatma).
+  Belgisiz qavatlar ikki ma'lum belgi orasida teng bo'linadi.
+* **Armatura (KJ varaqlari):** *Avto* varaq — chizmadagi belgilar bino plitalari bilan solishtiriladi (masalan 3–5-qavat), spetsifikatsiya
+  qavatlar soniga ko'paytiriladi.
+* **Bitta faylda KJ loyiha ("КЖ ТИП"):** plita/ustun ko'rinishida tipik belgilar bo'lsa — beton, armatura, vedomost va PTO har qavatga
+  takrorlanadi (birinchi tipik qavat ustunlari pastdagi qavat plitasidan), fundament bo'lmasa xato berilmaydi; chizmadagi spetsifikatsiya
+  1 qavat uchun deb qavatlar soniga ko'paytiriladi (eslatmada aytiladi).
+* Namuna: `examples/bino_qolip/qavat_tipik.dxf` (`+9.900...+16.500` — 3..5-qavat).
+
 ## Har menyuda uch yo'l: 0 dan chizish · import · tuzatish (v0.16) — `civil/generators`
 
 Har bir modul (Bino, Yo'l, Suv yo'li, Koridor, Yer osti) oynasining pastida **✚ 0 dan** tugmasi bor. Kiritish oynasi

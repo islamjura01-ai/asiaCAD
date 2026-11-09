@@ -80,6 +80,7 @@ private:
     void computeNorms();
 private:
     QPushButton* sample_ = nullptr;
+    bool autoFloors_ = true;   // keyingi recompute: chizma / varaqlar bo'yicha qavatlar soni oshirilsin
     QString t(const char* key, const QStringList& args = {}) const;
     void buildUi();
     void fillLayers();

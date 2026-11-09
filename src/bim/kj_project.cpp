@@ -489,6 +489,7 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
 
     // ---- belgilar va beton sinfi (butun fayl bo'yicha)
     std::map<long, int> lvCount;   // faqat plita/ustun ko'rinishlari atrofidagi (kesimlar bilan) belgilar
+    std::map<std::vector<long>, int> typVotes;   // tipik qavatlar to'plamlari (oraliq belgisi + belgilar, mm)
     for (const auto& t : sc.texts) {
         bool near = false;
         for (const auto& v : r.views) {
@@ -501,15 +502,43 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         }
         double l;
         if (near && parseLevelText(t.s, l) && std::abs(l) < 200) lvCount[std::lround(l * 1000)]++;
+        if (near)
+            if (auto ls = parseLevelSet(t.s); !ls.empty()) {
+                std::vector<long> key{ls.range ? 1L : 0L};
+                for (double x : ls.levels) key.push_back(std::lround(x * 1000));
+                ++typVotes[key];
+            }
+    }
+    // ko'rinish sarlavhalari ham ("Опалубочный план плиты перекрытия на отм. +11.300...+23.400")
+    for (const auto& v : r.views)
+        if (v.kind == KjViewKind::SlabMain || v.kind == KjViewKind::SlabExtraBottom || v.kind == KjViewKind::SlabExtraTop || v.kind == KjViewKind::Columns)
+            if (auto ls = parseLevelSet(v.title); !ls.empty()) {
+                std::vector<long> key{ls.range ? 1L : 0L};
+                for (double x : ls.levels) key.push_back(std::lround(x * 1000));
+                typVotes[key] += 2;
+            }
+    {
+        int best = 0;
+        LevelSet bestSet;
+        for (const auto& [key, n] : typVotes) {
+            if (n < best || (n == best && key.size() <= bestSet.levels.size() + 1)) continue;
+            best = n;
+            bestSet.range = key[0] == 1;
+            bestSet.levels.clear();
+            for (std::size_t i = 1; i < key.size(); ++i) bestSet.levels.push_back(key[i] / 1000.0);
+        }
+        if (!bestSet.empty()) r.typical = expandLevelSet(bestSet, p.floorHeight);
+        if (r.typical.size() < 2) r.typical.clear();
     }
     // plita: (ust, ost) belgilar jufti, farqi 0.12..0.45 — ikkalasi ham ko'p uchraydigan ("+3.050" / "+2.850")
     double slabTop = p.slabTop, slabT = p.slabT;
+    if (slabTop <= 0 && !r.typical.empty() && r.typical.front() > 0) slabTop = r.typical.front();   // birinchi tipik qavat
     if (slabTop <= 0 || slabT <= 0) {
         int bestScore = 0;
         double bt = 0, bb = 0;
         for (auto [kt, ct] : lvCount) {
-            if (kt < 1000 || kt > 12000) continue;
-            if (p.slabTop > 0 && std::abs(kt - std::lround(p.slabTop * 1000)) > 1) continue;
+            if (slabTop <= 0 && (kt < 1000 || kt > 12000)) continue;
+            if (slabTop > 0 && std::abs(kt - std::lround(slabTop * 1000)) > 1) continue;
             for (auto [kb, cb] : lvCount) {
                 const long d = kt - kb;
                 if (d < 120 || d > 450) continue;
@@ -827,6 +856,10 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         }
     }
 
+    // ---- tipik qavatlar: birinchi tipik qavat ustunlari pastdagi qavat plitasi ustidan (qadam — tipik qavat balandligi)
+    const double typStep = r.typical.size() >= 2 ? (r.typical.back() - r.typical.front()) / static_cast<double>(r.typical.size() - 1) : 0;
+    double colBase = fTop;
+    if (typStep > 0 && std::abs(slabTop - r.typical.front()) < 0.005) colBase = std::max(foundRings.empty() ? -1e9 : fTop, slabTop - typStep);
     // ---- ustun karkaslari (vypusklar ustun ichida bo'lsa — asosiy sterjenlar shu joyda, ust plitaga kiradi)
     const double colTop0 = slabRings.empty() ? slabTop : slabTop - slabT;
     if (p.columnCages) {
@@ -842,12 +875,12 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
             if (in.empty()) continue;
             ++caged;
             const double zTop = slabRings.empty() ? colTop0 : slabTop - p.cover;
-            for (const auto& [q, d] : in) cx.bar(ElemKind::Column, 1, BarRole::Main, d, cx.cls, {Vec3{q.x, q.y, fTop}, Vec3{q.x, q.y, zTop}});
+            for (const auto& [q, d] : in) cx.bar(ElemKind::Column, 1, BarRole::Main, d, cx.cls, {Vec3{q.x, q.y, colBase}, Vec3{q.x, q.y, zTop}});
             const double inset = p.cover + p.stirD / 2;
             if (b.max.x - b.min.x < 2 * inset + 0.05 || b.max.y - b.min.y < 2 * inset + 0.05) continue;
-            const double H = colTop0 - fTop, endZ = std::max(0.5, H / 6);
+            const double H = colTop0 - colBase, endZ = std::max(0.5, H / 6);
             std::vector<double> zs;
-            for (double z = 0.05; z < H - 0.04; z += (z < endZ || z > H - endZ) ? stirSEnd : stirS) zs.push_back(fTop + z);
+            for (double z = 0.05; z < H - 0.04; z += (z < endZ || z > H - endZ) ? stirSEnd : stirS) zs.push_back(colBase + z);
             for (double z : zs)
                 cx.bar(ElemKind::Column, 1, BarRole::Stirrup, p.stirD, "A240",
                        {Vec3{b.min.x + inset, b.min.y + inset, z}, Vec3{b.max.x - inset, b.min.y + inset, z},
@@ -894,10 +927,47 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         prism(ElemKind::FoundationSlab, 0, foundRings, fBot, fTop, concrete);
     }
     const double colTop = slabRings.empty() ? slabTop : slabTop - slabT;
-    for (const auto& c : columns) prism(ElemKind::Column, 1, {c}, fTop, colTop, concrete);
-    for (const auto& w : walls) prism(ElemKind::Wall, 1, {w}, fTop, colTop, concrete);
+    for (const auto& c : columns) prism(ElemKind::Column, 1, {c}, colBase, colTop, concrete);
+    for (const auto& w : walls) prism(ElemKind::Wall, 1, {w}, colBase, colTop, concrete);
     if (!slabRings.empty()) prism(ElemKind::Slab, 1, slabRings, slabTop - slabT, slabTop, concrete);
     r.bm.heightTop = slabTop;
+    // ---- tipik qavatlar: 1-qavat (birinchi tipik) beton va armaturasi har belgiga ko'chiriladi
+    if (typStep > 0 && std::abs(slabTop - r.typical.front()) < 0.005) {
+        const std::size_t np = r.bm.prisms.size(), nb = r.bars.size();
+        for (std::size_t i = 1; i < r.typical.size(); ++i) {
+            const double dz = r.typical[i] - r.typical.front();
+            const int lv = 1 + static_cast<int>(i);
+            for (std::size_t j = 0; j < np; ++j) {
+                if (r.bm.prisms[j].level != 1) continue;
+                Prism q = r.bm.prisms[j];
+                q.level = lv;
+                q.z0 += dz;
+                q.z1 += dz;
+                r.bm.prisms.push_back(std::move(q));
+            }
+            for (std::size_t j = 0; j < nb; ++j) {
+                if (r.bars[j].level != 1) continue;
+                Bar b = r.bars[j];
+                b.level = lv;
+                for (auto& q : b.pts) q.z += dz;
+                auto& row = cx.rows[{static_cast<int>(b.kind), lv, static_cast<int>(b.role), std::lround(b.d * 1000), b.cls}];
+                row.kind = b.kind;
+                row.level = lv;
+                row.role = b.role;
+                row.d = b.d;
+                row.cls = b.cls;
+                row.count += 1;
+                row.totalLength += b.length;
+                r.bars.push_back(std::move(b));
+            }
+        }
+        r.bm.heightTop = r.typical.back();
+        issue(false, "kj.chk.typical", {std::format("{:+.3f}", r.typical.front()), std::format("{:+.3f}", r.typical.back()),
+                                        std::to_string(r.typical.size()), std::format("{:.3f}", typStep)});
+        r.issues.back().info = true;
+    } else {
+        r.typical.clear();
+    }
     computePto(r.bm);
     // ---- absolyut belgilar va geodezik bog'lash (PTO hajmlari o'zgarmaydi)
     {
@@ -928,7 +998,7 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         r.bm.zeroAbsKnown = r.datumKnown;
         if (!r.georef) issue(false, "kj.chk.local_xy");
     }
-    if (foundRings.empty()) issue(true, "kj.chk.no_found");
+    if (foundRings.empty() && r.typical.empty()) issue(true, "kj.chk.no_found");   // tipik qavatlar KJ sida fundament bo'lmaydi
     if (columns.empty()) issue(false, "kj.chk.no_columns");
     // ustunlar plita ichidami
     if (!slabRings.empty()) {
@@ -953,6 +1023,11 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         r.schedule.push_back(row);
     }
     r.spec = readSpecification(doc);
+    if (!r.typical.empty())   // tipik qavat spetsifikatsiyasi — bir qavat uchun deb olinadi (eslatmada aytiladi)
+        for (auto& s : r.spec) {
+            s.count *= static_cast<int>(r.typical.size());
+            s.mass *= static_cast<double>(r.typical.size());
+        }
     for (const auto& s : r.spec) r.specMass += s.mass;
     for (const auto& v : r.views)
         if (v.use && !v.title.empty() && (v.kind == KjViewKind::Other || v.kind == KjViewKind::FoundSupports))

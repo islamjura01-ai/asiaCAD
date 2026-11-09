@@ -17,7 +17,7 @@ namespace asiacad::civil {
 struct SheetFile {
     std::string path;
     std::string role = "AUTO";
-    int floorFrom = 1, floorTo = 1;
+    int floorFrom = 1, floorTo = 1;   // floorFrom = 0 — avto: chizmadagi belgilar bo'yicha ("+11.300...+23.400" — 5 qavat)
     double scale = 0;            // 0 — avto ($INSUNITS yoki o'lcham bo'yicha), 0.001 — mm, 1 — m
     double dx = 0, dy = 0;       // metrda, masshtabdan keyin
     bool enabled = true;
@@ -39,9 +39,20 @@ std::vector<LoadedSheet> loadSheets(const std::vector<SheetFile>& files);
 double autoScale(int insUnits, const BBox& extents, double medianTextHeight = 0);
 std::string fileName(const std::string& path);
 
-// Bino: role "FOUND" — fundament plani, "PLAN" — qavat plani/qolip chizmasi (floorFrom..floorTo).
-// Belgi ("+3.300") faqat oraliqning birinchi qavatiga qo'llanadi; qavat qatlamlari nomidan avto taniladi.
-bim::FloorPlans floorPlansFrom(const std::vector<LoadedSheet>& sheets);
+// Bino: role "FOUND" — fundament plani, "PLAN" — qavat plani/qolip chizmasi.
+//  * Qo'lda (floorFrom >= 1): floorFrom..floorTo; chizmada tipik to'plam ("+11.300...+23.400", "+3.300; +6.600") bo'lsa
+//    har qavatga o'z belgisi, "gacha" kiritilmagan bo'lsa (= "dan") — to'plamdagi qavatlar soni bo'yicha kengaytiriladi.
+//    Bitta belgi ("+3.300") — oraliqning birinchi qavatiga.
+//  * Avto (floorFrom = 0): qavat raqamlari belgilar tartibidan (barcha varaqlar belgilari o'sish tartibida); eng pastki
+//    belgidan pastdagi qavatlar soni — belgi / qavat qadami. Belgisiz avto varaq — 1-qavat (band bo'lmasa).
+// floorHeight — oraliqni qavatlarga bo'lish uchun (qo'shni varaqlar belgilari aniqroq bo'lsa — ular).
+struct SheetFloors {
+    std::string file;
+    std::vector<int> floors;        // qo'llangan qavatlar (bo'sh — qo'llanmadi)
+    std::vector<double> levels;     // shu qavatlarning plita usti belgilari
+    bool autoMode = false, range = false;
+};
+bim::FloorPlans floorPlansFrom(const std::vector<LoadedSheet>& sheets, double floorHeight = 3.0, std::vector<SheetFloors>* placed = nullptr);
 
 std::string sheetsToJson(const std::vector<SheetFile>& s);
 std::vector<SheetFile> sheetsFromJson(const std::string& text);

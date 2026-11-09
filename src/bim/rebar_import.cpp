@@ -251,7 +251,45 @@ ImportedRebar importRebar(const std::vector<RebarSheetInput>& sheets, const Buil
         for (const auto& l : lbls)
             if (!table.valid() || !(l.at.x >= table.min.x && l.at.x <= table.max.x && l.at.y >= table.min.y && l.at.y <= table.max.y))
                 marks.push_back(l);
-        const int nFloors = std::max(1, sh.floorTo - sh.floorFrom + 1);
+        // qavatlar: qo'lda (floorFrom..floorTo) yoki avto — chizmadagi belgilar ("+11.300...+23.400") bino plitalari bilan
+        std::vector<int> floors;
+        if (sh.element == ElemKind::FoundationSlab) {
+            floors = {1};   // fundament — bitta (level 0)
+        } else if (sh.floorFrom > 0) {
+            for (int k = sh.floorFrom; k <= std::max(sh.floorFrom, sh.floorTo); ++k) floors.push_back(k);
+        } else {
+            std::map<int, double> tops;   // qavat -> plita usti (nisbiy)
+            for (const auto& pr : bm.prisms)
+                if (pr.kind == ElemKind::Slab || pr.kind == ElemKind::Roof) {
+                    auto [it, ins] = tops.emplace(pr.level, pr.z1 - bm.zeroAbs);
+                    if (!ins) it->second = std::max(it->second, pr.z1 - bm.zeroAbs);
+                }
+            std::vector<double> gaps;   // bino qavat balandligi (oraliqni bo'lish uchun)
+            for (auto it = tops.begin(); it != tops.end() && std::next(it) != tops.end(); ++it) gaps.push_back(std::next(it)->second - it->second);
+            double h = 3.0;
+            if (!gaps.empty()) {
+                std::nth_element(gaps.begin(), gaps.begin() + static_cast<std::ptrdiff_t>(gaps.size() / 2), gaps.end());
+                h = gaps[gaps.size() / 2];
+            }
+            std::optional<double> single;
+            const LevelSet ls = docLevelSet(*sh.doc, &single);
+            std::vector<double> lv = !ls.empty() ? expandLevelSet(ls, h) : (single ? std::vector<double>{*single} : std::vector<double>{});
+            for (double l : lv)
+                for (const auto& [k, z] : tops)
+                    if (std::abs(z - l) < 0.06 && std::find(floors.begin(), floors.end(), k) == floors.end()) floors.push_back(k);
+            std::string lvText;
+            if (!lv.empty()) lvText = std::format("{:+.3f}", lv.front()) + (lv.size() > 1 ? std::format(" \xE2\x80\xA6 {:+.3f}", lv.back()) : std::string());
+            if (floors.empty()) {
+                floors = {1};
+                if (!lv.empty()) issue(false, "rbi.chk.auto_nofloor", {sh.tag, lvText});
+            } else {
+                std::string fl;
+                for (std::size_t i = 0; i < floors.size(); ++i) fl += (i ? ", " : "") + std::to_string(floors[i]);
+                issue(false, "rbi.chk.auto_floors", {sh.tag, fl, lvText});
+                R.issues.back().info = true;
+            }
+        }
+        const int nFloors = static_cast<int>(floors.size());
         for (auto r : spec) {
             r.count *= nFloors;
             r.mass *= nFloors;
@@ -347,7 +385,7 @@ ImportedRebar importRebar(const std::vector<RebarSheetInput>& sheets, const Buil
             double drawnLen = 0;
             for (std::size_t i = 0; i + 1 < shape.size(); ++i) drawnLen += shape[i].distanceTo(shape[i + 1]);
             const double L = m.length > 0 ? m.length : drawnLen;
-            for (int k = sh.floorFrom; k <= std::max(sh.floorFrom, sh.floorTo); ++k) {
+            for (int k : floors) {
                 const int level = sh.element == ElemKind::FoundationSlab ? 0 : k;
                 double z0 = 0, z1 = 0;
                 bool found = false;

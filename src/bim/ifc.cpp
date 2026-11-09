@@ -10,6 +10,7 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <unordered_map>
@@ -867,6 +868,7 @@ public:
         relations();
         storeys();
         products();
+        grids();
         finish();
     }
 
@@ -1040,9 +1042,10 @@ private:
         m_.unitScale = L_;
     }
     void georeference() {
-        if (!wantGeo_) return;
         for (int id : s_.order) {
             if (T(id) != "IFCMAPCONVERSION") continue;
+            m_.hasMapConversion = true;
+            if (!wantGeo_) break;
             const auto a = A(id);
             if (a.size() < 5) break;
             double mapU = L_;
@@ -2141,12 +2144,35 @@ private:
                 el.bars.push_back(std::move(b));
             }
             el.volume = mesh.volume;
+            el.origin = f.p({0, 0, 0});
+            el.angle = std::atan2(f.m[1][0], f.m[0][0]);
             if (el.storey >= 0) ++m_.storeys[static_cast<std::size_t>(el.storey)].elements;
             if (el.box.valid()) {
                 m_.box.expand(el.box.min);
                 m_.box.expand(el.box.max);
             }
             m_.elements.push_back(std::move(el));
+        }
+    }
+    // Koordinata o'qlari: IfcGrid(..., ObjectPlacement, Representation, UAxes, VAxes, WAxes, ...)
+    void grids() {
+        for (int id : s_.order) {
+            if (T(id) != "IFCGRID") continue;
+            const auto a = A(id);
+            if (a.size() < 9) continue;
+            const Xf f = geo_ * placement(ref(a[5]));
+            for (std::size_t k = 7; k <= 9 && k < a.size(); ++k)
+                for (const auto& v : listOf(a[k])) {
+                    const auto ga = A(ref(v));   // IfcGridAxis(AxisTag, AxisCurve, SameSense)
+                    if (ga.size() < 2) continue;
+                    IfcGridAxis ax;
+                    ax.tag = str(ga[0]);
+                    curve(ref(ga[1]), ax.pts);
+                    if (ax.pts.size() < 2) continue;
+                    for (auto& p : ax.pts) p = f.p(p);
+                    if (ga.size() > 2 && !boolOf(ga[2], true)) std::reverse(ax.pts.begin(), ax.pts.end());
+                    m_.axes.push_back(std::move(ax));
+                }
         }
     }
     void finish() {
@@ -2295,6 +2321,101 @@ std::vector<IfcSummaryRow> ifcSummary(const IfcModel& m) {
     std::vector<IfcSummaryRow> out;
     for (auto& [k, v] : rows) out.push_back(v);
     std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.count > b.count; });
+    return out;
+}
+
+std::vector<IfcSectionLoop> ifcSection(const IfcModel& m, double z, const std::vector<int>& only, const std::vector<std::string>& skipCats) {
+    std::vector<IfcSectionLoop> out;
+    auto doElement = [&](int ei) {
+        const auto& e = m.elements[static_cast<std::size_t>(ei)];
+        if (!e.box.valid() || e.box.min.z > z || e.box.max.z < z) return;
+        if (std::find(skipCats.begin(), skipCats.end(), ifcCategory(e.type)) != skipCats.end()) return;
+        // tekislik bilan kesishish kesmalari (tekislikda yotgan yuzalar — tashlanadi)
+        std::vector<std::pair<Vec3, Vec3>> segs;
+        for (const auto& part : e.parts)
+            for (const auto& t : part.tris) {
+                const double d0 = t[0].z - z, d1 = t[1].z - z, d2 = t[2].z - z;
+                if ((d0 > 0 && d1 > 0 && d2 > 0) || (d0 < 0 && d1 < 0 && d2 < 0)) continue;
+                if (std::abs(d0) < 1e-9 && std::abs(d1) < 1e-9 && std::abs(d2) < 1e-9) continue;
+                std::vector<Vec3> x;
+                const double d[3] = {d0, d1, d2};
+                for (int i = 0; i < 3; ++i) {
+                    const int j = (i + 1) % 3;
+                    if (std::abs(d[i]) < 1e-9) x.push_back(t[i]);
+                    else if ((d[i] < 0) != (d[j] < 0) && std::abs(d[j]) >= 1e-9) x.push_back(t[i] + (t[j] - t[i]) * (d[i] / (d[i] - d[j])));
+                }
+                if (x.size() >= 2 && !x[0].equals(x[1], 1e-7)) segs.emplace_back(Vec3{x[0].x, x[0].y, z}, Vec3{x[1].x, x[1].y, z});
+            }
+        // armatura o'qlari — kesim nuqtalari kichik doiracha sifatida emas, o'tkazib yuboriladi
+        if (segs.empty()) return;
+        // takrorlarni olib tashlash (bir xil qirra ikki uchburchakdan)
+        auto key = [](const Vec3& p) { return std::make_pair(std::llround(p.x * 1e5), std::llround(p.y * 1e5)); };
+        std::map<std::pair<std::pair<long long, long long>, std::pair<long long, long long>>, std::size_t> uniq;
+        std::vector<std::pair<Vec3, Vec3>> us;
+        for (const auto& sg : segs) {
+            auto a = key(sg.first), b = key(sg.second);
+            if (a == b) continue;
+            if (b < a) std::swap(a, b);
+            if (uniq.emplace(std::make_pair(a, b), us.size()).second) us.push_back(sg);
+        }
+        // zanjirlash
+        std::multimap<std::pair<long long, long long>, std::size_t> at;
+        for (std::size_t i = 0; i < us.size(); ++i) {
+            at.emplace(key(us[i].first), i);
+            at.emplace(key(us[i].second), i);
+        }
+        std::vector<bool> used(us.size(), false);
+        auto takeFrom = [&](const Vec3& p) -> std::optional<Vec3> {
+            auto r = at.equal_range(key(p));
+            for (auto it = r.first; it != r.second; ++it) {
+                const std::size_t i = it->second;
+                if (used[i]) continue;
+                used[i] = true;
+                return key(us[i].first) == key(p) ? us[i].second : us[i].first;
+            }
+            return std::nullopt;
+        };
+        for (std::size_t s0 = 0; s0 < us.size(); ++s0) {
+            if (used[s0]) continue;
+            used[s0] = true;
+            std::vector<Vec3> fwd{us[s0].first, us[s0].second};
+            while (auto n = takeFrom(fwd.back())) fwd.push_back(*n);
+            IfcSectionLoop L;
+            L.element = ei;
+            if (fwd.size() > 2 && key(fwd.front()) == key(fwd.back())) {
+                fwd.pop_back();
+                L.closed = true;
+            } else {
+                std::vector<Vec3> back{fwd.front()};
+                while (auto n = takeFrom(back.back())) back.push_back(*n);
+                std::reverse(back.begin(), back.end());
+                back.pop_back();
+                back.insert(back.end(), fwd.begin(), fwd.end());
+                fwd.swap(back);
+            }
+            // bir chiziqda yotgan oraliq uchlarni olib tashlash
+            std::vector<Vec3> simp;
+            const std::size_t n = fwd.size();
+            for (std::size_t i = 0; i < n; ++i) {
+                if (!L.closed && (i == 0 || i + 1 == n)) { simp.push_back(fwd[i]); continue; }
+                const Vec3& p = fwd[(i + n - 1) % n];
+                const Vec3& q = fwd[i];
+                const Vec3& r = fwd[(i + 1) % n];
+                const double cr = (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x);
+                const double l = (q - p).length() * (r - q).length();
+                if (l > 0 && std::abs(cr) / l < 1e-6 && (q - p).dot(r - q) > 0) continue;
+                simp.push_back(q);
+            }
+            if (simp.size() < 2) continue;
+            L.pts = std::move(simp);
+            out.push_back(std::move(L));
+        }
+    };
+    if (only.empty())
+        for (std::size_t i = 0; i < m.elements.size(); ++i) doElement(static_cast<int>(i));
+    else
+        for (int i : only)
+            if (i >= 0 && i < static_cast<int>(m.elements.size())) doElement(i);
     return out;
 }
 

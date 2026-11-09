@@ -83,6 +83,9 @@ public:
     int triangleCount() const { return static_cast<int>(tri_.size() / kTriStride / 3); }
     int selected() const { return sel_; }
     bool selectAt(const QPoint& px);    // ekran nuqtasi bo'yicha tanlash
+    // Obyektni tanlash (ro'yxatdan): zoom — kamerani unga yaqinlashtirish
+    bool selectObject(int k, bool zoom = true);
+    int findObject(const QString& propLine) const;   // xossalar orasida aynan shu satr bor obyekt (masalan "GUID: ...")
     QString selectionInfo() const;
     QVector3D cameraDir() const;
     QImage snapshot();

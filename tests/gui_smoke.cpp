@@ -1444,6 +1444,43 @@ int main(int argc, char** argv) {
                 picked = v->selectAt(at) && v->selectionInfo().contains("GUID:");
             }
             CHECK(picked);
+            // Elementlar varag'i: qidiruv, 3D da topish
+            CHECK(p->tabs()->count() == 3 && p->elementTable()->rowCount() == 6);
+            p->searchEdit()->setText(QString::fromStdString(loc.tr("ifc.cat.WALL")));
+            CHECK(p->elementTable()->rowCount() == 1);
+            p->searchEdit()->setText("W1");   // Tag bo'yicha
+            CHECK(p->elementTable()->rowCount() == 1);
+            v->setView(Model3DView::Home);
+            emit p->elementTable()->cellDoubleClicked(0, 0);
+            QApplication::processEvents();
+            CHECK(v->selected() >= 0 && v->selectionInfo().contains("GUID: 0010"));
+            p->searchEdit()->clear();
+            CHECK(p->elementTable()->rowCount() == 6);
+            // loyiha bilan saqlash: chizma lug'atida havola
+            CHECK(QString::fromStdString(w.document().dictGet("ifc:links")).contains("revit_sinov.ifc"));
+            // Reja: 1-qavat, +1.0 m kesim — devor (2 bo'lak), deraza, marsh; o'qlar (4 chiziq, 8 doiracha, 8 belgi)
+            IfcPlanOptions po;
+            po.storey = 0;
+            po.z = 1.0;
+            const std::size_t before = w.document().size();
+            const int added = w.ifcPlanToDrawing(0, po);
+            CHECK(added == 24 && w.document().size() == before + 24);
+            CHECK(w.document().layer(std::string("IFC-") + loc.tr("ifc.cat.WALL")).has_value() && w.document().layer(loc.tr("gui.ifc.layer.axes")).has_value());
+            CHECK(!w.is3D());
+            // 2-qavat: ustun kesimi + razbivka nuqtasi va belgisi
+            po.storey = 1;
+            po.z = 4.0;
+            po.axes = false;
+            CHECK(w.ifcPlanToDrawing(0, po) == 3);
+            w.runLine("UNDO");
+            w.runLine("UNDO");
+            CHECK(w.document().size() == before);
+            const QString st = QDir::tempPath() + "/asiacad_ifc_razbivka.xlsx";
+            CHECK(p->exportStakeout(st));
+            const auto sw = xlsx::load(st.toStdString());
+            CHECK(sw.sheets.size() == 2 && sw.sheets[0].rows.size() == 2 && sw.sheets[1].rows.size() == 5);
+            QFile::remove(st);
+            w.show3D(true);
             // xuddi shu fayl qayta yuklansa — almashtiriladi, ikkinchi nusxa qo'shilmaydi
             CHECK(w.importIfc({f}, false) == 1 && w.ifcModels().size() == 1);
             emit p->removeRequested(0);

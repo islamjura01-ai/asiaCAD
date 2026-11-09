@@ -88,7 +88,9 @@ public:
     BuildingDialog* openBuilding();         // "Monolit bino" menyusi
     RebarDialog* openRebar();               // "Armatura 3D" menyusi
     // IFC (Revit, ArchiCAD, Tekla, SketchUp...): fayllarni o'qib 3D ga qo'shish; muvaffaqiyatli yuklanganlar soni
-    int importIfc(const QStringList& files, bool showPanel = true);
+    int importIfc(const QStringList& files, bool showPanel = true, bool georef = true);
+    // IFC -> chizma: qavat kesimi (toifa qatlamlari), o'qlar, razbivka nuqtalari. Qo'shilgan obyektlar soni
+    int ifcPlanToDrawing(int model, const IfcPlanOptions& opt);
     IfcPanel* openIfcPanel();
     const std::vector<IfcLoaded>& ifcModels() const { return ifc_; }
     UtilityDialog* openUtility();           // "Yer osti tarmoqlari 3D" menyusi
@@ -126,6 +128,8 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* e) override;
+    void dragEnterEvent(QDragEnterEvent* e) override;
+    void dropEvent(QDropEvent* e) override;
     bool eventFilter(QObject* o, QEvent* e) override;
 
 private:
@@ -178,6 +182,10 @@ private:
     RebarDialog* rebar_ = nullptr;
     std::vector<IfcLoaded> ifc_;
     IfcPanel* ifcPanel_ = nullptr;
+    QString ifcDocFile_;                 // IFC havolalari shu chizmadan o'qilgan
+    bool ifcLinking_ = false;            // havolalardan yuklanmoqda — lug'at qayta yozilmaydi
+    void syncIfcLinks();                 // yuklangan IFC lar -> chizma lug'ati ("ifc:links"), loyiha bilan saqlanadi
+    void loadIfcLinks();                 // chizma ochilganda — havoladagi IFC larni yuklash
     UtilityDialog* util_ = nullptr;
     RoadDialog* road_ = nullptr;
     WaterwayDialog* waterway_ = nullptr;

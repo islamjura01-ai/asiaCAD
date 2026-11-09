@@ -631,3 +631,11 @@ Revit, ArchiCAD, Tekla, SketchUp, Allplan, Renga eksportlari (IFC2X3, IFC4, IFC4
 * **IFC modellar oynasi:** modellar va qavatlar (belgilash — ko'rinish), tur bo'yicha soni / hajm / armatura (PTO), qavat tanlansa —
   shu qavat bo'yicha; *Excelga (PTO)* — Jamlama, Qavatlar, Elementlar varaqlari.
 * Tezlik: 41 MB, 36 000 element, 2.3 mln uchburchak — 1.7 s (o'qish fon oqimida, oyna qotmaydi).
+* **Elementlar varag'i:** qidiruv (nomi, turi, material, Tag, GUID, qavat), tur filtri, saralash; ikki marta bosish — element
+  3D da tanlanadi va kamera unga yaqinlashadi (yashirin qavat avtomatik ochiladi); 3D da tanlansa — ro'yxatda belgilanadi.
+* **Reja va razbivka:** qavat + kesim balandligi bo'yicha gorizontal kesim chizmaga (har tur o'z qatlamida: IFC-Devor,
+  IFC-Ustun...), koordinata o'qlari (IfcGrid — doirachali belgilar), ustun/qoziq/fundament razbivka nuqtalari (Z — tagi);
+  bitta Ctrl+Z bilan bekor qilinadi. *Razbivka jadvali (Excel)* — markazlar X, Y, Z, burilish va o'qlar koordinatalari.
+* **Loyiha bilan:** yuklangan IFC lar chizma lug'atida (`ifc:links`) saqlanadi — .acad ochilganda qayta yuklanadi
+  (papka ko'chgan bo'lsa — chizma yonidan qidiriladi). Fayllarni oynaga sudrab tashlash (.ifc, .acad, .dxf, .dwg).
+* **Xarita / mahalliy koordinatalar:** IfcMapConversion bor modelda — Tarkib varag'idagi belgi bilan almashtiriladi.

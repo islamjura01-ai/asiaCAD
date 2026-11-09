@@ -2638,6 +2638,25 @@ TEST(ifc_revit_style_sample) {
         if (r.category == "REBAR") rebar = r.barMass;
     CHECK(rows.size() == 6 && std::abs(rebar - bar->barMass) < 1e-12);
     CHECK(std::string(bim::ifcCategory("IFCWALLSTANDARDCASE")) == "WALL" && std::string(bim::ifcCategory("IFCFLOWSEGMENT")) == "PIPE");
+    // joylashuv (razbivka): ustun markazi va burilishi
+    CHECK(col && col->origin.equals({1, 1, 3}, 1e-9) && std::abs(col->angle) < 1e-12);
+    // koordinata o'qlari (IfcGrid): 4 ta, SameSense=.F. — teskari yo'nalish
+    CHECK(m.axes.size() == 4 && m.axes[0].tag == "A" && m.axes[3].tag == "2");
+    CHECK(m.axes[0].pts.front().equals({-1, 0, 0}, 1e-9) && m.axes[3].pts.front().equals({6, -1, 0}, 1e-9) && m.axes[3].pts.back().equals({6, 5, 0}, 1e-9));
+    // reja kesimi z=1.0: devor teshik orqali ikki bo'lakka, deraza, marsh — hammasi yopiq to'rtburchak
+    const auto sec = bim::ifcSection(m, 1.0);
+    CHECK(sec.size() == 4);
+    int wallLoops = 0;
+    double wallLen = 0;
+    for (const auto& L : sec) {
+        CHECK(L.closed && L.pts.size() == 4 && std::abs(L.pts[0].z - 1.0) < 1e-12);
+        if (m.elements[static_cast<std::size_t>(L.element)].type == "IFCWALL") {
+            ++wallLoops;
+            for (std::size_t i = 0; i < L.pts.size(); ++i) wallLen += L.pts[i].distanceTo(L.pts[(i + 1) % L.pts.size()]);
+        }
+    }
+    CHECK(wallLoops == 2 && std::abs(wallLen - 2 * (2 + 0.2) - 2 * (3 + 0.2)) < 1e-9);   // 2×0.2 va 3×0.2 to'rtburchaklar
+    CHECK(bim::ifcSection(m, 3.5).size() == 1 && sec.size() == 4 && bim::ifcSection(m, 10).empty());   // 2-qavat: faqat I-ustun (plita 3.0 da tugaydi)
 }
 
 TEST(ifc_strings_units_errors) {
@@ -2696,7 +2715,7 @@ END-ISO-10303-21;
 
 TEST(ifc_cli_and_ifczip) {
     const auto s = runScript("uz", {"IFC \"" + dataPath("revit_sinov.ifc") + "\""});
-    CHECK(s.find("IFC IFC4, dastur: Autodesk Revit 2024 (sinov), yozuvlar: 144") != std::string::npos);
+    CHECK(s.find("IFC IFC4, dastur: Autodesk Revit 2024 (sinov), yozuvlar: 161") != std::string::npos);
     CHECK(s.find("Qavat \xC2\xAB\xD0\xAD\xD1\x82\xD0\xB0\xD0\xB6 1\xC2\xBB +0.000 m \xE2\x80\x94 4 ta element") != std::string::npos);
     CHECK(s.find("Devor: 1 ta \xE2\x80\x94 3.060 m\xC2\xB3") != std::string::npos);
     CHECK(s.find("Armatura: 1 ta \xE2\x80\x94 2.31 m, 2.1 kg") != std::string::npos);

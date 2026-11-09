@@ -60,6 +60,9 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QProgressDialog>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -400,6 +403,12 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     col->addWidget(viewTabs_);
     viewStack_ = new QStackedWidget(central);
     view3d_ = new Model3DView(viewStack_);
+    setAcceptDrops(true);   // .ifc / .acad / .dxf / .dwg sudrab tashlash
+    connect(view3d_, &Model3DView::objectSelected, this, [this](const QString&, const QStringList& props) {
+        if (!ifcPanel_ || !ifcPanel_->isVisible()) return;
+        for (const auto& p : props)
+            if (p.startsWith(QStringLiteral("GUID: "))) ifcPanel_->highlightGuid(p.mid(6));
+    });
     view3d_->setObjectName("view3d");
     Model3DView::setGlobalTr([this](const char* k) {
         const std::string key = std::string("gui.") + k;
@@ -1785,6 +1794,10 @@ bool MainWindow::selectTag(const QString& tag) {
 
 void MainWindow::refreshTitle() {
     const QString file = QString::fromStdString(interp_->currentFile());
+    if (file != ifcDocFile_) {
+        ifcDocFile_ = file;
+        if (!file.isEmpty()) QTimer::singleShot(0, this, [this] { loadIfcLinks(); });
+    }
     if (!file.isEmpty() && (recent_.isEmpty() || recent_.front() != QFileInfo(file).absoluteFilePath())) noteRecent(file);
     const QString name = file.isEmpty() ? t("gui.untitled") : QFileInfo(file).fileName();
     setWindowTitle(QStringLiteral("%1%2 — AsiaCAD").arg(name, stack_.isDirty() ? " *" : ""));
@@ -3090,7 +3103,7 @@ void MainWindow::openFile() {
     runLine(QStringLiteral("OPEN \"%1\" !").arg(f));
 }
 
-int MainWindow::importIfc(const QStringList& files, bool showPanel) {
+int MainWindow::importIfc(const QStringList& files, bool showPanel, bool georef) {
     int ok = 0;
     QStringList errors;
     for (const QString& f : files) {
@@ -3100,7 +3113,7 @@ int MainWindow::importIfc(const QStringList& files, bool showPanel) {
         bool res = false;
         // katta fayl (100+ MB) — o'qish fon oqimida, oyna qotmaydi
         std::thread th([&] {
-            res = bim::readIfc(f.toStdString(), *model, err);
+            res = bim::readIfc(f.toStdString(), *model, err, georef);
             done = true;
         });
         QProgressDialog pd(t("gui.ifc.reading", {QFileInfo(f).fileName()}), QString(), 0, 0, this);
@@ -3124,14 +3137,19 @@ int MainWindow::importIfc(const QStringList& files, bool showPanel) {
         IfcLoaded L;
         L.path = abs;
         L.model = model;
-        if (it != ifc_.end()) *it = L;
-        else ifc_.push_back(L);
+        L.georef = georef;
+        if (it != ifc_.end()) {
+            L.visible = it->visible;
+            L.hiddenStoreys = it->hiddenStoreys;
+            *it = L;
+        } else ifc_.push_back(L);
         noteRecent(abs);
         statusBar()->showMessage(t("gui.ifc.loaded", {QFileInfo(f).fileName(), QString::number(model->elements.size()), QString::number(model->storeys.size())}), 8000);
         ++ok;
     }
     if (!errors.isEmpty()) QMessageBox::warning(this, t("gui.act.ifcimport"), errors.join("\n\n"));
     if (ok == 0) return 0;
+    syncIfcLinks();
     show3D(true);
     rebuild3D(false);
     view3d_->setCategoryVisible(t("ifc.cat.SPACE"), false);   // xonalar (shaffof hajmlar) — boshida yashirin
@@ -3158,7 +3176,33 @@ IfcPanel* MainWindow::openIfcPanel() {
             if (i < 0 || i >= static_cast<int>(ifc_.size())) return;
             ifc_.erase(ifc_.begin() + i);
             ifcPanel_->refresh();
+            syncIfcLinks();
             if (is3D()) rebuild3D(true);
+        });
+        // ro'yxatdan element — 3D da tanlash va yaqinlashtirish
+        connect(ifcPanel_, &IfcPanel::elementActivated, this, [this](int mi, const QString& guid) {
+            if (mi < 0 || mi >= static_cast<int>(ifc_.size())) return;
+            auto& L = ifc_[static_cast<std::size_t>(mi)];
+            bool rebuild = !L.visible;
+            L.visible = true;
+            // yashirin qavatdagi element — qavat ko'rsatiladi
+            for (const auto& e : L.model->elements)
+                if (QString::fromStdString(e.guid) == guid && L.hiddenStoreys.erase(e.storey)) rebuild = true;
+            if (rebuild) ifcPanel_->refresh();
+            show3D(true);
+            if (rebuild) rebuild3D(true);
+            const int k = view3d_->findObject(QStringLiteral("GUID: ") + guid);
+            if (k >= 0) view3d_->selectObject(k, true);
+        });
+        connect(ifcPanel_, &IfcPanel::planRequested, this, [this](int mi, const IfcPlanOptions& o) {
+            const int n = ifcPlanToDrawing(mi, o);
+            statusBar()->showMessage(n > 0 ? t("gui.ifc.plan.done", {QString::number(n)}) : t("gui.ifc.plan.none"), 8000);
+            if (n == 0) QMessageBox::information(ifcPanel_, t("gui.ifc.tab.plan"), t("gui.ifc.plan.none"));
+        });
+        connect(ifcPanel_, &IfcPanel::reloadRequested, this, [this](int mi, bool geo) {
+            if (mi < 0 || mi >= static_cast<int>(ifc_.size())) return;
+            importIfc({ifc_[static_cast<std::size_t>(mi)].path}, false, geo);
+            view3d_->fit();
         });
     } else {
         ifcPanel_->refresh();
@@ -3167,6 +3211,173 @@ IfcPanel* MainWindow::openIfcPanel() {
     ifcPanel_->raise();
     ifcPanel_->activateWindow();
     return ifcPanel_;
+}
+
+void MainWindow::syncIfcLinks() {
+    if (ifcLinking_) return;
+    // satr: georef|ko'rinish|yo'l  (yo'l — mutlaq; ochishda chizma papkasidan ham qidiriladi)
+    QStringList lines;
+    for (const auto& L : ifc_) lines << QStringLiteral("%1|%2|%3").arg(L.georef ? 1 : 0).arg(L.visible ? 1 : 0).arg(L.path);
+    const std::string v = lines.join('\n').toStdString();
+    if (doc_.dictGet("ifc:links") == v) return;
+    try {
+        stack_.execute(std::make_unique<DictCommand>("ifc:links", v, "IFC"));
+    } catch (const std::exception&) {
+    }
+    refreshTitle();
+}
+
+void MainWindow::loadIfcLinks() {
+    const QString v = QString::fromStdString(doc_.dictGet("ifc:links"));
+    if (v.isEmpty()) return;
+    const QString docDir = QFileInfo(QString::fromStdString(interp_->currentFile())).absolutePath();
+    QStringList missing;
+    int loaded = 0;
+    // boshqa chizmaning modellari o'rniga — shu chizmaniki
+    ifc_.clear();
+    ifcLinking_ = true;
+    for (const auto& line : v.split('\n', Qt::SkipEmptyParts)) {
+        const auto p = line.split('|');
+        if (p.size() < 3) continue;
+        QString path = p.mid(2).join('|');
+        if (!QFileInfo::exists(path)) {
+            const QString alt = docDir + "/" + QFileInfo(path).fileName();   // loyiha papkasi ko'chirilgan bo'lsa
+            if (QFileInfo::exists(alt)) path = alt;
+            else { missing << QDir::toNativeSeparators(path); continue; }
+        }
+        const QString abs = QFileInfo(path).absoluteFilePath();
+        const bool already = std::any_of(ifc_.begin(), ifc_.end(), [&](const IfcLoaded& L) { return QFileInfo(L.path).absoluteFilePath() == abs; });
+        if (already) continue;
+        if (importIfc({abs}, false, p[0] != "0") > 0) {
+            ++loaded;
+            for (auto& L : ifc_)
+                if (L.path == abs) L.visible = p[1] != "0";
+        }
+    }
+    ifcLinking_ = false;
+    if (ifcPanel_) ifcPanel_->refresh();
+    if (loaded > 0) {
+        show3D(false);   // chizma ochildi — avval 2D; IFC 3D da tayyor turadi
+        statusBar()->showMessage(t("gui.ifc.links.loaded", {QString::number(loaded)}), 8000);
+    }
+    if (!missing.isEmpty()) statusBar()->showMessage(t("gui.ifc.links.missing", {missing.join(", ")}), 12000);
+}
+
+int MainWindow::ifcPlanToDrawing(int mi, const IfcPlanOptions& o) {
+    if (mi < 0 || mi >= static_cast<int>(ifc_.size())) return 0;
+    const auto& m = *ifc_[static_cast<std::size_t>(mi)].model;
+    auto cmd = std::make_unique<CompositeCommand>("IFCPLAN");
+    // toifa -> qatlam rangi (ACI)
+    static const std::map<std::string, int> aci{{"WALL", 7}, {"CURTAIN", 4}, {"SLAB", 8}, {"COLUMN", 5}, {"BEAM", 6}, {"FOOTING", 34},
+                                                {"PILE", 34}, {"STAIR", 3}, {"WINDOW", 4}, {"DOOR", 30}, {"ROOF", 14}, {"RAILING", 9},
+                                                {"REBAR", 1}, {"PIPE", 150}, {"DUCT", 151}, {"MEP", 92}, {"FURNITURE", 42}};
+    auto layerFor = [&](const std::string& cat) {
+        const std::string name = "IFC-" + loc_.tr("ifc.cat." + cat);
+        if (!doc_.layer(name)) {
+            Layer l;
+            l.name = name;
+            auto it = aci.find(cat);
+            l.color = it == aci.end() ? 8 : it->second;
+            doc_.addLayer(l);
+        }
+        return name;
+    };
+    int count = 0;
+    auto add = [&](std::unique_ptr<IEntity> e, const std::string& layer) {
+        e->setLayer(layer);
+        cmd->add(std::make_unique<AddEntityCommand>(std::move(e), "IFCPLAN"));
+        ++count;
+    };
+    // 1. kesim konturlari (z = 0 — reja; kesim balandligi xossada emas, qatlam nomida emas — sarlavha matnida)
+    if (o.cut) {
+        std::vector<int> only;
+        if (o.storey >= 0)
+            for (std::size_t i = 0; i < m.elements.size(); ++i)
+                if (m.elements[i].storey == o.storey || m.elements[i].storey < 0) only.push_back(static_cast<int>(i));
+        if (o.storey < 0 || !only.empty())
+            for (auto& L : bim::ifcSection(m, o.z, only)) {
+                for (auto& p : L.pts) p.z = 0;
+                const std::string cat = bim::ifcCategory(m.elements[static_cast<std::size_t>(L.element)].type);
+                auto pl = std::make_unique<PolylineEntity>(L.pts, L.closed);
+                pl->xset("ifc", m.elements[static_cast<std::size_t>(L.element)].guid);
+                add(std::move(pl), layerFor(cat));
+            }
+    }
+    // 2. koordinata o'qlari: chiziq + uchlarida doiracha va belgi
+    if (o.axes && !m.axes.empty()) {
+        const std::string lay = loc_.tr("gui.ifc.layer.axes");
+        if (!doc_.layer(lay)) doc_.addLayer(Layer{lay, 1});
+        const double r = 0.4;
+        for (const auto& a : m.axes) {
+            std::vector<Vec3> pts;
+            for (const auto& p : a.pts) pts.push_back({p.x, p.y, 0});
+            add(std::make_unique<PolylineEntity>(pts, false), lay);
+            auto unit = [](const Vec3& v) { const double l = v.length(); return l > 1e-12 ? v / l : Vec3{1, 0, 0}; };
+            const Vec3 d0 = unit(pts[0] - pts[1]), d1 = unit(pts.back() - pts[pts.size() - 2]);
+            for (const auto& [end, dir] : {std::make_pair(pts.front(), d0), std::make_pair(pts.back(), d1)}) {
+                const Vec3 c = end + dir * r;
+                add(std::make_unique<CircleEntity>(c, r), lay);
+                add(std::make_unique<TextEntity>(c, r * 0.9, a.tag, 0, TextHAlign::Center, TextVAlign::Middle), lay);
+            }
+        }
+    }
+    // 3. razbivka nuqtalari: ustun, qoziq, fundament joylashuvi (Z — element tagi)
+    if (o.points) {
+        const std::string lay = loc_.tr("gui.ifc.layer.stake");
+        for (const auto& e : m.elements) {
+            if (!ifcIsStakeoutElement(e)) continue;
+            if (o.storey >= 0 && e.storey != o.storey) continue;
+            if (!doc_.layer(lay)) doc_.addLayer(Layer{lay, 2});
+            const double z = e.box.valid() ? e.box.min.z : e.origin.z;
+            auto pt = std::make_unique<PointEntity>(Vec3{e.origin.x, e.origin.y, z});
+            pt->xset("ifc", e.guid);
+            add(std::move(pt), lay);
+            if (o.labels) {
+                const std::string label = !e.tag.empty() ? e.tag : ifcElementName(loc_, e).toStdString();
+                add(std::make_unique<TextEntity>(Vec3{e.origin.x + 0.15, e.origin.y + 0.15, 0}, 0.25, label), lay);
+            }
+        }
+    }
+    if (count == 0) return 0;
+    try {
+        stack_.execute(std::move(cmd));
+    } catch (const std::exception& ex) {
+        QMessageBox::warning(this, t("gui.ifc.tab.plan"), QString::fromUtf8(ex.what()));
+        return 0;
+    }
+    show3D(false);
+    view_->documentChanged();
+    view_->setSelection({});
+    view_->zoomExtents();
+    refreshLayers();
+    refreshProperties();
+    refreshTitle();
+    return count;
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* e) {
+    if (!e->mimeData()->hasUrls()) return;
+    for (const auto& u : e->mimeData()->urls()) {
+        const QString f = u.toLocalFile().toLower();
+        if (f.endsWith(".ifc") || f.endsWith(".ifczip") || f.endsWith(".acad") || f.endsWith(".dxf") || f.endsWith(".dwg")) {
+            e->acceptProposedAction();
+            return;
+        }
+    }
+}
+
+void MainWindow::dropEvent(QDropEvent* e) {
+    QStringList ifc;
+    QString drawing;
+    for (const auto& u : e->mimeData()->urls()) {
+        const QString f = u.toLocalFile();
+        const QString l = f.toLower();
+        if (l.endsWith(".ifc") || l.endsWith(".ifczip")) ifc << f;
+        else if (drawing.isEmpty() && (l.endsWith(".acad") || l.endsWith(".dxf") || l.endsWith(".dwg"))) drawing = f;
+    }
+    e->acceptProposedAction();
+    if (!drawing.isEmpty() && maybeSave()) runLine(QStringLiteral("OPEN \"%1\" !").arg(drawing));
+    if (!ifc.isEmpty()) importIfc(ifc);
 }
 
 void MainWindow::saveFile(bool saveAs) {

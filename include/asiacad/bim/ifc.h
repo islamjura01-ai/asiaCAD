@@ -40,6 +40,8 @@ struct IfcElement {
     std::vector<std::pair<std::vector<Vec3>, double>> bars;   // armatura o'qi (IfcSweptDiskSolid) va radiusi, m
     std::vector<std::pair<std::string, std::string>> props;   // "Pset_WallCommon.IsExternal" -> "TRUE"
     BBox box;
+    Vec3 origin;                      // joylashuv nuqtasi (ObjectPlacement boshi) — ustun/qoziq markazi, razbivka
+    double angle = 0;                 // rejadagi burilish (lokal X o'qi), radian
     double volume = 0;                // yopiq jism hajmi, m³ (geometriyadan)
     double barLength = 0;             // armatura o'qlari uzunligi, m
     double barMass = 0;               // armatura massasi, kg (7850 kg/m³)
@@ -53,6 +55,12 @@ struct IfcStorey {
     int elements = 0;
 };
 
+// Koordinata o'qi (IfcGrid / IfcGridAxis): "A", "1"...
+struct IfcGridAxis {
+    std::string tag;
+    std::vector<Vec3> pts;            // dunyo koordinatalari, m (odatda 2 nuqta)
+};
+
 struct IfcModel {
     std::string schema;               // "IFC2X3", "IFC4"...
     std::string application;          // eksport qilgan dastur (FILE_NAME)
@@ -60,12 +68,14 @@ struct IfcModel {
     double unitScale = 1.0;           // fayl birligi -> m
     std::vector<IfcStorey> storeys;   // belgisi bo'yicha tartiblangan
     std::vector<IfcElement> elements;
+    std::vector<IfcGridAxis> axes;
     int entityCount = 0;              // fayldagi STEP yozuvlari
     int skipped = 0;                  // geometriyasi o'qilmagan elementlar
     int openings = 0;                 // teshiklar (IfcOpeningElement) jami
     int openingsCut = 0;              // ulardan ayirilgani (qavariq element va teshik)
     BBox box;
     bool georef = false;              // IfcMapConversion qo'llangan (koordinatalar xarita tizimida)
+    bool hasMapConversion = false;    // faylda IfcMapConversion bor (qo'llanmagan bo'lsa ham)
     std::vector<std::string> warnings;
 
     std::size_t triangleCount() const;
@@ -92,6 +102,16 @@ struct IfcSummaryRow {
     double barLength = 0, barMass = 0;   // armatura: m, kg
 };
 std::vector<IfcSummaryRow> ifcSummary(const IfcModel& m);
+
+// Gorizontal kesim (reja): z balandlikdagi tekislik bilan kesish -> elementlar konturlari.
+// only — faqat shu indeksli elementlar (bo'sh — hammasi); skipCats — o'tkazib yuboriladigan toifalar ("SPACE"...)
+struct IfcSectionLoop {
+    int element = -1;                 // IfcModel::elements indeksi
+    std::vector<Vec3> pts;            // z = kesim balandligi
+    bool closed = false;
+};
+std::vector<IfcSectionLoop> ifcSection(const IfcModel& m, double z, const std::vector<int>& only = {},
+                                       const std::vector<std::string>& skipCats = {"SPACE", "SITE"});
 
 // STEP satridagi \X2\...\X0\, \X\hh, \S\c kodlarini UTF-8 ga
 std::string ifcDecodeString(const std::string& s);

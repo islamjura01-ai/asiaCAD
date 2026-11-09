@@ -1157,6 +1157,29 @@ bool Model3DView::selectAt(const QPoint& px) {
     return ok;
 }
 
+bool Model3DView::selectObject(int k, bool zoom) {
+    if (k < 0 || k >= static_cast<int>(objs_.size())) return false;
+    const Obj& o = objs_[static_cast<std::size_t>(k)];
+    sel_ = k;
+    if (zoom && o.bmin.x() <= o.bmax.x()) {
+        target_ = (o.bmin + o.bmax) * 0.5f;
+        const double R = std::max(0.6, double((o.bmax - o.bmin).length()) / 2) * 2.2;   // atrofi ham ko'rinsin
+        const double asp = double(std::max(1, width())) / double(std::max(1, height()));
+        const double half = std::atan(std::tan(fov_ * kDeg / 2) * std::min(1.0, asp));
+        dist_ = R / std::sin(half);
+        userMoved_ = true;
+    }
+    update();
+    emit objectSelected(o.name, o.props);
+    return true;
+}
+
+int Model3DView::findObject(const QString& propLine) const {
+    for (std::size_t i = 0; i < objs_.size(); ++i)
+        if (objs_[i].props.contains(propLine)) return static_cast<int>(i);
+    return -1;
+}
+
 QImage Model3DView::snapshot() { return grabFramebuffer(); }
 
 // ---------------------------------------------------------------- navigatsiya

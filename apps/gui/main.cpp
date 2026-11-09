@@ -28,6 +28,7 @@
 #include <QSurfaceFormat>
 #include <QFile>
 #include <QTimer>
+#include <QTabWidget>
 #include <QSettings>
 
 #include <cstdio>
@@ -96,7 +97,8 @@ int main(int argc, char** argv) {
     QStringList points;
     QStringList cmds;
     QStringList ifcFiles;
-    bool ifcPanelShot = false;
+    bool ifcPanelShot = false, ifcPlan = false;
+    int ifcTab = 0;
     bool selectAll = false;
     const QStringList args = app.arguments();
     for (int i = 1; i < args.size(); ++i) {
@@ -152,6 +154,8 @@ int main(int argc, char** argv) {
         else if (a == "--polar") polar = true;
         else if (a == "--ifc") ifcFiles << next();              // IFC model(lar) -> 3D (bir necha marta)
         else if (a == "--ifc-panel") ifcPanelShot = true;        // skrinshot: IFC modellar oynasi
+        else if (a == "--ifc-tab") ifcTab = next().toInt();      // skrinshot: panel varag'i (0..2)
+        else if (a == "--ifc-plan") ifcPlan = true;              // 1-qavat rejasini chizmaga (+1.0 m)
         else if (a.endsWith(".ifc", Qt::CaseInsensitive) || a.endsWith(".ifczip", Qt::CaseInsensitive)) ifcFiles << a;   // "Bilan ochish"
         else file = a;
     }
@@ -188,7 +192,17 @@ int main(int argc, char** argv) {
     if (!ifcFiles.isEmpty()) {
         QStringList abs;
         for (const auto& f : ifcFiles) abs << QFileInfo(f).absoluteFilePath();
-        QTimer::singleShot(0, &w, [&w, abs, show = shot.isEmpty() || ifcPanelShot] { w.importIfc(abs, show); });
+        QTimer::singleShot(0, &w, [&w, abs, show = shot.isEmpty() || ifcPanelShot, ifcTab, ifcPlan] {
+            w.importIfc(abs, show);
+            if (auto* p = w.findChild<asiacad::gui::IfcPanel*>("ifcPanel")) p->tabs()->setCurrentIndex(ifcTab);
+            if (ifcPlan && !w.ifcModels().empty()) {
+                asiacad::gui::IfcPlanOptions o;
+                const auto& m = *w.ifcModels().front().model;
+                o.storey = m.storeys.empty() ? -1 : 0;
+                o.z = (m.storeys.empty() ? 0.0 : m.storeys.front().elevation) + 1.0;
+                w.ifcPlanToDrawing(0, o);
+            }
+        });
     }
 
     if (!shot.isEmpty()) {

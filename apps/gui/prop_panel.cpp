@@ -5,6 +5,7 @@
 #include <QPointer>
 #include <QSpinBox>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -21,6 +22,15 @@ namespace {
 QString num(double v, int dec) {
     if (std::abs(v) < 0.5 * std::pow(10.0, -dec)) v = 0;
     return QString::number(v, 'f', dec);
+}
+// uzun tugma matni tor panelda ikki qatorga (o'rtasiga yaqin bo'shliqdan) — panel kengaymaydi
+QString wrapButton(const QString& s) {
+    if (s.size() <= 22 || s.contains('\n')) return s;
+    int best = -1;
+    for (int i = 0; i < s.size(); ++i)
+        if (s[i] == ' ' && (best < 0 || std::abs(i - s.size() / 2) < std::abs(best - s.size() / 2))) best = i;
+    if (best <= 0) return s;
+    return s.left(best) + '\n' + s.mid(best + 1);
 }
 bool parseNum(QString s, double& v) {
     s = s.trimmed().replace(',', '.').replace(QChar(0x2212), '-');
@@ -111,7 +121,7 @@ void PropPanel::number(const QString& key, const QString& label, double value, i
     h->setSpacing(4);
     auto* e = new QLineEdit(num(value, dec), w);
     e->setObjectName("p_" + key);
-    e->setMinimumWidth(80);
+    e->setMinimumWidth(64);
     h->addWidget(e, 1);
     if (!unit.isEmpty()) {
         auto* u = new QLabel(unit, w);
@@ -183,9 +193,10 @@ void PropPanel::choice(const QString& key, const QString& label, const QStringLi
 
 void PropPanel::action(const QString& key, const QString& label, std::function<void()> fn, bool danger) {
     if (!form_) section(QString());
-    auto* b = new QPushButton(label, body_);
+    auto* b = new QPushButton(wrapButton(label), body_);
     b->setObjectName("p_" + key);
     b->setCursor(Qt::PointingHandCursor);
+    b->setToolTip(label);
     if (danger) b->setStyleSheet(QStringLiteral("QPushButton { color: #FF8A8F; }"));
     form_->addRow(b);
     actions_[key] = [fn](const QList<double>&) { fn(); };
@@ -203,24 +214,30 @@ void PropPanel::action(const QString& key, const QString& label, const QList<In>
     auto* v = new QVBoxLayout(w);
     v->setContentsMargins(0, 4, 0, 2);
     v->setSpacing(2);
-    auto* h = new QHBoxLayout;
-    h->setSpacing(4);
+    // kiritmalar — qatorda ikkitadan (tor panelda ham sig'adi: teshik b/h/x/y, zona b/h/x/y/Ø/s/yuqori)
+    auto* g = new QGridLayout;
+    g->setHorizontalSpacing(4);
+    g->setVerticalSpacing(2);
+    g->setColumnStretch(1, 1);
+    g->setColumnStretch(3, 1);
     QList<QLineEdit*> eds;
     for (const auto& in : inputs) {
+        const int i = static_cast<int>(eds.size());
         auto* l = new QLabel(in.label, w);
         l->setObjectName("muted");
         auto* e = new QLineEdit(num(in.value, in.dec), w);
-        e->setObjectName(QStringLiteral("p_%1_%2").arg(key).arg(eds.size()));
-        e->setMinimumWidth(46);
+        e->setObjectName(QStringLiteral("p_%1_%2").arg(key).arg(i));
+        e->setMinimumWidth(40);
         e->setToolTip(in.label);
-        h->addWidget(l);
-        h->addWidget(e, 1);
+        g->addWidget(l, i / 2, (i % 2) * 2);
+        g->addWidget(e, i / 2, (i % 2) * 2 + 1);
         eds << e;
     }
-    auto* b = new QPushButton(label, w);
+    auto* b = new QPushButton(wrapButton(label), w);
     b->setObjectName("p_" + key);
     b->setCursor(Qt::PointingHandCursor);
-    v->addLayout(h);
+    b->setToolTip(label);
+    v->addLayout(g);
     v->addWidget(b);
     form_->addRow(w);
     actions_[key] = fn;

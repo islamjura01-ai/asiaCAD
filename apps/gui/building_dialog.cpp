@@ -69,6 +69,11 @@ BuildingDialog::BuildingDialog(const i18n::Localizer& loc, const Document& doc, 
     view_->setDark(dark);
     fillLayers();
     recompute();
+    // menyu tarixi: bino parametrlari (qavatlar, balandlik, qalinliklar, beton sinflari) va qatlam -> element turi
+    hist_ = std::make_unique<MenuHistory<State>>(
+        this, [this] { return State{params(), layerMap()}; }, [](const State& s) { return bim::paramsToJson(s.p, s.layers); },
+        [this](const State& s) { setParams(s.p, s.layers); });
+    hist_->reset();
 }
 
 QString BuildingDialog::t(const char* key, const QStringList& args) const {
@@ -556,6 +561,7 @@ void BuildingDialog::recompute() {
                            ? " · " + t("gui.bim.facade", {QString::number(model_.windows), QString::number(model_.doors), f2(model_.masonry), f2(model_.glazing)})
                            : QString()));
     render();
+    if (hist_) hist_->note();   // menyu tarixi (kechiktirib)
 }
 
 int BuildingDialog::groupOf(ElemKind k) {

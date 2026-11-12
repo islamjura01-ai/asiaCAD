@@ -75,6 +75,11 @@ SewerDialog::SewerDialog(const i18n::Localizer& loc, std::function<std::vector<V
     }
     setNetwork(n);
     selectTemplate(1);  // ko'cha tarmog'i PVX Ø200
+    // menyu tarixi: tarmoq (quduqlar, quvurlar, parametrlar) — har hisobdan keyin o'zgargan bo'lsa
+    hist_ = std::make_unique<MenuHistory<SewerNetwork>>(
+        this, [this] { return network(); }, [](const SewerNetwork& s) { return civil::toJson(s); },
+        [this](const SewerNetwork& s) { setNetwork(s); });
+    hist_->reset();
 }
 
 QString SewerDialog::t(const char* key, const QStringList& args) const {
@@ -646,6 +651,7 @@ void SewerDialog::recompute() {
         status_->setStyleSheet(res_.errors() ? "color:#E8464F;" : "color:#E6A01E;");
     }
     updating_ = false;
+    if (hist_) hist_->note();   // menyu tarixi (kechiktirib)
 }
 
 // ---------------------------------------------------------------- amallar

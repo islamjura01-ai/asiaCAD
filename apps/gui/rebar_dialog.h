@@ -8,6 +8,7 @@
 #include "template_sidebar.h"
 #include "drawing_set_widget.h"
 #include "excel_link.h"
+#include "menu_history.h"
 
 #include <asiacad/bim/rebar.h>
 #include <asiacad/bim/rebar_import.h>
@@ -55,6 +56,7 @@ public:
     QString templatesPath() const;
     PropPanel* props() const { return props_; }
     void documentChanged() { recompute(); }   // chizma o'zgardi (Xossalar buyrug'i) — model qayta quriladi
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida)
 
 signals:
     void scheduleRequested(const QString& jsonPath);
@@ -91,6 +93,8 @@ private:
     bim::ImportedRebar imp_;
     bim::KjProject kj_;
     bim::KjParams kp_;
+    struct State { bim::RebarSettings rs; bim::KjParams kp; };
+    std::unique_ptr<MenuHistory<State>> hist_;
     bool projectMode_ = false;
     QWidget* kjBox_ = nullptr;
     QDoubleSpinBox *kjDatum_ = nullptr, *kjX0_ = nullptr, *kjY0_ = nullptr, *kjRot_ = nullptr;

@@ -247,6 +247,7 @@ void SteelPanel::update_() {
 // ---------------------------------------------------------------- massiv
 ArrayDialog::ArrayDialog(const i18n::Localizer& loc, const QString& selArg, const Vec3& c, EntityId pathId, QWidget* parent)
     : QDialog(parent), sel_(selArg) {
+    windowButtons(this);
     auto T = [&](const char* k) { return QString::fromStdString(loc.tr(k)); };
     setWindowTitle(T("gui.arr.title"));
     auto* v = new QVBoxLayout(this);

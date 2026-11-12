@@ -5,6 +5,7 @@
 //  o'ng — Piketlar (loyiha belgisi qo'lda tuzatiladi), Hajmlar, Tekshiruv
 //  past — Excelga/Exceldan, "3D va profilni chizmaga" (ROAD fayl.json + x,y)
 #include "excel_link.h"
+#include "menu_history.h"
 #include "model3d_view.h"
 #include "prop_panel.h"
 #include "template_sidebar.h"
@@ -58,6 +59,7 @@ public:
     void setDesign(int station, double z);      // qo'lda tuzatish
     void applyCategory(const QString& id);
     void showTab(int i);
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida)
     PropPanel* props() const { return props_; }   // Xossalar: 3D da tanlangan piket
 
 signals:
@@ -82,6 +84,8 @@ private:
     const Document& doc_;
     civil::RoadParams p_;
     civil::RoadModel m_;
+    struct State { civil::RoadModel m; civil::RoadParams p; };
+    std::unique_ptr<MenuHistory<State>> hist_;
     bool updating_ = false;
 
     TemplateSidebar* side_ = nullptr;

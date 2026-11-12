@@ -110,6 +110,16 @@ RoadDialog::RoadDialog(const i18n::Localizer& loc, const Document& doc, bool dar
     paramsToUi();
     fillLayers();
     reread();
+    hist_ = std::make_unique<MenuHistory<State>>(
+        this, [this] { return State{m_, p_}; }, [](const State& s) { return civil::roadToJson(s.m, s.p); },
+        [this](const State& s) {
+            p_ = s.p;
+            paramsToUi();
+            m_ = s.m;
+            fillTables();
+            render();
+        });
+    hist_->reset();
 }
 
 QString RoadDialog::t(const char* key, const QStringList& args) const {
@@ -637,6 +647,7 @@ void RoadDialog::render() {
         }
     }
     view_->endScene(true);
+    if (hist_) hist_->note();   // menyu tarixi: o'zgarish bo'lsa — yangi qadam (kechiktirib)
 }
 
 } // namespace asiacad::gui

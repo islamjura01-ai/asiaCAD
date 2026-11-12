@@ -1,4 +1,5 @@
 #include "ifc_panel.h"
+#include "theme.h"
 
 #include <asiacad/core/error.h>
 #include <asiacad/io/xlsx.h>
@@ -39,7 +40,7 @@ QString ifcElementName(const i18n::Localizer& loc, const bim::IfcElement& e) {
 IfcPanel::IfcPanel(const i18n::Localizer& loc, std::vector<IfcLoaded>& models, QWidget* parent)
     : QDialog(parent), loc_(loc), models_(models) {
     setObjectName("ifcPanel");
-    setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+    windowButtons(this);   // IFC palitrasi — suzuvchi oyna (3D bilan yonma-yon)
     resize(1020, 640);
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(12, 12, 12, 12);

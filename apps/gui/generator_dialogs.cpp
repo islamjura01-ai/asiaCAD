@@ -1,4 +1,5 @@
 #include "generator_dialogs.h"
+#include "theme.h"
 
 #include <asiacad/core/entities.h>
 #include <asiacad/core/error.h>
@@ -139,7 +140,7 @@ void PlanPreview::paintEvent(QPaintEvent*) {
 }
 
 // ---------------------------------------------------------------- umumiy
-GenBase::GenBase(const i18n::Localizer& loc, bool dark, QWidget* parent) : QDialog(parent), loc_(loc), dark_(dark) {}
+GenBase::GenBase(const i18n::Localizer& loc, bool dark, QWidget* parent) : QDialog(parent), loc_(loc), dark_(dark) { windowButtons(this); }
 
 QString GenBase::t(const char* key, const QStringList& args) const {
     std::vector<std::string> a;
@@ -684,6 +685,11 @@ CityDialog::CityDialog(const i18n::Localizer& loc, const Document& doc, bool dar
     connect(close, &QPushButton::clicked, this, &QDialog::close);
     connect(draw, &QPushButton::clicked, this, [this] { emit drawRequested(writeTemp(civil::cityToJson(spec()), "asiacad_city.json")); });
     recompute();
+    // menyu tarixi: shahar parametrlari, bino tuzatmalari (qavatlar, olib tashlash, nusxalar)
+    hist_ = std::make_unique<MenuHistory<civil::CitySpec>>(
+        this, [this] { return spec(); }, [](const civil::CitySpec& s) { return civil::cityToJson(s); },
+        [this](const civil::CitySpec& s) { setSpec(s); });
+    hist_->reset();
 }
 
 civil::CitySpec CityDialog::spec() const {
@@ -716,6 +722,7 @@ void CityDialog::setSpec(const civil::CitySpec& c) {
 }
 
 void CityDialog::recompute() {
+    if (hist_) hist_->note();   // menyu tarixi (kechiktirib)
     const auto c = spec();
     int gp = 0;
     const auto gf = civil::groundFromDoc(doc_, &gp);

@@ -108,6 +108,8 @@ public:
     void zoomExtents();
     void zoomBy(double factor);  // markaz atrofida
     void setView(const Vec3& center, double pixelsPerUnit);
+    Vec3 viewCenter() const { return center_; }
+    double viewScale() const { return scale_; }   // piksel / birlik
 
     Tool tool() const { return tool_; }
     void setTool(Tool t);

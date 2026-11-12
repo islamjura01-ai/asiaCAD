@@ -33,7 +33,14 @@ jobs:
 
       - name: Testlar (yadro)
         continue-on-error: true
-        run: build\asiacad_tests.exe
+        shell: pwsh
+        run: |
+          # natija faylga (PowerShell konsolga chiqmaydigan holatlarda ham ko'rinsin), so'ng jurnalga
+          $p = Start-Process -FilePath build\asiacad_tests.exe -NoNewWindow -Wait -PassThru `
+                 -RedirectStandardOutput core-tests.txt -RedirectStandardError core-tests-err.txt
+          Get-Content core-tests.txt, core-tests-err.txt -ErrorAction SilentlyContinue | Select-Object -Last 400
+          "exit code: $($p.ExitCode)"
+          exit $p.ExitCode
 
       - name: Tarqatma papkasi
         shell: pwsh

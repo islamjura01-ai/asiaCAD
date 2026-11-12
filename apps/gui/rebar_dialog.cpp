@@ -99,6 +99,47 @@ RebarDialog::RebarDialog(const i18n::Localizer& loc, const Document& doc, bool d
     layers_ = bim::autoLayerMap(doc_);
     loadEditor();
     recompute();
+    // menyu tarixi: armatura shablonlari (tur bo'yicha Ø/qadam) va KJ parametrlari, plita tuzatmalari (teshik, zona, belgi)
+    hist_ = std::make_unique<MenuHistory<State>>(
+        this, [this] { return State{rs_, kp_}; },
+        [](const State& s) {
+            std::ostringstream o;
+            o.precision(12);
+            const auto& k = s.kp;
+            o << bim::rebarToJson(s.rs) << '|' << k.datumAuto << ' ' << k.datum << ' ' << k.originX << ' ' << k.originY << ' ' << k.rotDeg << ' '
+              << k.foundTopAuto << ' ' << k.foundTop << ' ' << k.foundT << ' ' << k.leanT << ' ' << k.cover << ' ' << k.outletIn << ' ' << k.outletOut
+              << ' ' << k.slabTop << ' ' << k.slabT << ' ' << k.meshStep << ' ' << k.columnCages << ' ' << k.stirD << ' ' << k.stirS << ' '
+              << k.stirSEnd << ' ' << k.concrete;
+            for (const auto& e : k.slabEdits) {
+                o << "|S" << e.tag << ' ' << e.t << ' ' << e.meshD << ' ' << e.meshS;
+                for (double l : e.levels) o << " L" << l;
+                for (const auto& h : e.holes) o << " H" << h.x << ',' << h.y << ',' << h.w << ',' << h.h;
+                for (const auto& z : e.zones) o << " Z" << z.x << ',' << z.y << ',' << z.w << ',' << z.h << ',' << z.d << ',' << z.s << ',' << z.top;
+            }
+            return o.str();
+        },
+        [this](const State& s) {
+            rs_ = s.rs;
+            const double fh = kp_.floorHeight;
+            kp_ = s.kp;
+            kp_.floorHeight = fh;
+            updating_ = true;
+            kjDatumAuto_->setChecked(kp_.datumAuto);
+            kjDatum_->setValue(kp_.datum);
+            kjFTopAuto_->setChecked(kp_.foundTopAuto);
+            kjX0_->setValue(kp_.originX);
+            kjY0_->setValue(kp_.originY);
+            kjRot_->setValue(kp_.rotDeg);
+            kjFTop_->setValue(kp_.foundTop);
+            kjFT_->setValue(kp_.foundT);
+            kjCover_->setValue(kp_.cover);
+            kjIn_->setValue(kp_.outletIn);
+            kjOut_->setValue(kp_.outletOut);
+            updating_ = false;
+            loadEditor();
+            recompute();
+        });
+    hist_->reset();
 }
 
 QString RebarDialog::t(const char* key, const QStringList& args) const {
@@ -730,6 +771,7 @@ void RebarDialog::recompute() {
     if (!problems) checks_->addItem(t("gui.bim.ok"));
     summary_->setText(t("gui.rb.summary", {QString::number(nbars), f3(rm_.totalMass / 1000), f1(rm_.wireKg), QString::number(rm_.nodes)}));
     render();
+    if (hist_) hist_->note();   // menyu tarixi (kechiktirib)
 }
 
 void RebarDialog::render() {

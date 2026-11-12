@@ -1,4 +1,5 @@
 #include "norm_rules_dialog.h"
+#include "theme.h"
 
 #include <QComboBox>
 #include <QDir>
@@ -31,7 +32,7 @@ NormRulesDialog::NormRulesDialog(const i18n::Localizer& loc, std::vector<bim::No
     : QDialog(parent), loc_(loc), rules_(std::move(rules)) {
     setObjectName("normRulesDialog");
     setWindowTitle(t("gui.norm.rules.title"));
-    setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+    windowButtons(this);
     resize(1180, 620);
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(12, 12, 12, 12);

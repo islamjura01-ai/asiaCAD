@@ -354,6 +354,7 @@ void Interpreter::addLayered(const std::string& name, std::vector<std::unique_pt
 
 bool Interpreter::run(const std::string& rawLine) {
     std::string line = rawLine;
+    lastOk_ = true;
     if (auto hash = line.find('#'); hash != std::string::npos && line.find('"') > hash) line.resize(hash);
     auto toks = tokenize(line);
     if (toks.empty()) return true;
@@ -374,8 +375,10 @@ bool Interpreter::run(const std::string& rawLine) {
             updateLinks(false, 0, stack_.pushCount() > before);
         }
     } catch (const Error& ex) {
+        lastOk_ = false;
         say("err.prefix", {loc_.tr(ex.key(), ex.args())});
     } catch (const std::exception& ex) {
+        lastOk_ = false;
         say("err.prefix", {ex.what()});
     }
     return true;

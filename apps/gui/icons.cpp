@@ -214,6 +214,15 @@ void glyph(QPainter& p, const QString& n) {
         a.closeSubpath();
         p.save(); p.setBrush(p.pen().color()); p.drawPath(a); p.restore();
     }
+    // varaqlar paneli (AutoCAD kabi): yopish, yig'ish, butun ekran, ro'yxat, yangi, bosh sahifa
+    else if (n == "x") { L(6, 6, 18, 18); L(18, 6, 6, 18); }
+    else if (n == "min") { L(5, 17, 19, 17); }
+    else if (n == "max") { R(5, 5, 14, 14, 1); }
+    else if (n == "unmax") { R(4, 8, 12, 12, 1); P({{8, 8}, {8, 4}, {20, 4}, {20, 16}, {16, 16}}); }
+    else if (n == "chev") { P({{6, 9}, {12, 15}, {18, 9}}); }
+    else if (n == "plus") { L(12, 5, 12, 19); L(5, 12, 19, 12); }
+    else if (n == "home") { P({{3, 11}, {12, 3}, {21, 11}}); P({{5, 9.5}, {5, 21}, {19, 21}, {19, 9.5}}); R(10, 14, 4, 7, 0.5); }
+    else if (n == "menu") { R(4, 4, 7, 7, 1.5); R(13, 4, 7, 7, 1.5); R(4, 13, 7, 7, 1.5); R(13, 13, 7, 7, 1.5); }
     else { C(12, 12, 6); }
 }
 

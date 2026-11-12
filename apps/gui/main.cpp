@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QTimer>
 #include <QTabWidget>
+#include <QTabBar>
 #include <QSettings>
 
 #include <cstdio>
@@ -81,6 +82,8 @@ int main(int argc, char** argv) {
     int surveyKind = -1;
     int earthTab = -1;
     bool show3d = false;
+    bool startTab = false;   // --start: "Start" varag'i (skrinshot)
+    int extraTabs = 0;       // --tabs N: yana N ta bo'sh chizma varag'i (skrinshot)
     QString pdfOut;
     QStringList sheetSpecs;  // --paper A3[:SCREEN] — list yaratib, ko'rinish qo'shish va Listlar sahifasini ko'rsatish
     QString surveyRef;
@@ -145,6 +148,8 @@ int main(int argc, char** argv) {
         else if (a == "--kj") kjArgs << next();        // ROL,yo'l,dan,gacha — armatura KJ chizmalari  // Yo'l 3D (--sewer-tab 1 — profil)  // Armatura 3D menyusi (bino --building N dan)
         else if (a == "--rebar-kind") rebarKind = next();
         else if (a == "--pick") pick = next();
+        else if (a == "--start") startTab = true;
+        else if (a == "--tabs") extraTabs = next().toInt();
         else if (a == "--no-concrete") noConcrete = true;
         else if (a == "--upto") upTo = next().toInt();  // FOUND/STRIP/COLUMN/WALL/SLAB/ROOF
         else if (a == "--building") {   // Monolit bino menyusi: qavatlar soni yoki "auto" — chizma / varaqlar belgilari bo'yicha
@@ -193,7 +198,7 @@ int main(int argc, char** argv) {
     }
     else if (tooBig) { w.resize(av.size() - QSize(16, 40)); w.move(av.topLeft()); w.show(); }
     else w.show();
-    if (!file.isEmpty()) w.runLine(QStringLiteral("OPEN \"%1\" !").arg(QFileInfo(file).absoluteFilePath()));
+    if (!file.isEmpty()) w.openPath(QFileInfo(file).absoluteFilePath());   // "Chizma1" varag'ida (bo'sh bo'lsa) yoki yangi varaqda
     for (const auto& c : cmds) w.runLine(c);
     if (!ifcFiles.isEmpty()) {
         QStringList abs;
@@ -258,6 +263,12 @@ int main(int argc, char** argv) {
             if (tplPage >= 0) w.openTemplates(tplPage);
             if (geoDlg) w.openGeoPlace();
             if (show3d) w.show3D(true);
+            if (extraTabs > 0) {   // varaqlar ko'rinishi uchun: qo'shimcha chizmalar, so'ng birinchi chizmaga qaytiladi
+                const int first = w.activeDrawing();
+                for (int i = 0; i < extraTabs; ++i) w.newDrawing();
+                w.showDrawing(first);
+            }
+            if (startTab) w.showStart();
             for (const QString& sa : sheetSpecs) {  // masalan: --paper A3  yoki  --paper A1:SCREEN  (SHOW — faqat ko'rsatish)
                 if (sa == "SHOW") continue;
                 const QStringList parts = sa.split(':');
@@ -308,17 +319,29 @@ int main(int argc, char** argv) {
                 }
                 if (!sewerTab.isEmpty()) d->showTab(sewerTab.toInt());
             }
-            if (!pick.isEmpty())   // Xossalar: menyu 3D sida element tanlanadi
-                for (QWidget* tl : QApplication::topLevelWidgets()) {
-                    if (!tl->isVisible() || tl == &w) continue;
+            if (!pick.isEmpty()) {   // Xossalar: menyu (varaq yoki oyna) 3D sida element tanlanadi
+                QList<QWidget*> menus;
+                if (QWidget* m = w.currentMenu()) menus << m;
+                for (QWidget* tl : QApplication::topLevelWidgets())
+                    if (tl->isVisible() && tl != &w) menus << tl;
+                for (QWidget* tl : menus) {
                     if (auto* sd = qobject_cast<asiacad::gui::SewerDialog*>(tl)) {
                         sd->showTab(1);
                         sd->netView()->selectKey(pick);
                         continue;
                     }
-                    for (auto* v : tl->findChildren<asiacad::gui::Model3DView*>())
-                        if (v->selectKey(pick, false)) break;
+                    for (auto* v : tl->findChildren<asiacad::gui::Model3DView*>()) {
+                        QString key = pick;
+                        if (key.endsWith('*'))   // "kj:*" — shu prefiksli birinchi element
+                            for (int i = 0; i < v->objectCount(); ++i)
+                                if (v->objectKey(i).startsWith(pick.chopped(1))) {
+                                    key = v->objectKey(i);
+                                    break;
+                                }
+                        if (v->selectKey(key, false)) break;
+                    }
                 }
+            }
             if (!value.isEmpty()) {
                 w.viewport()->setOffsetDistance(value.toDouble());
                 w.viewport()->setFilletRadius(value.toDouble());

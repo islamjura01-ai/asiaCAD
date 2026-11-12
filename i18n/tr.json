@@ -2766,6 +2766,26 @@
     "gui.xp.base": "Taban kotu",
     "gui.xp.gfa": "Toplam inşaat alanı",
     "gui.xp.citynote": "Düzeltmeler şehir projesinde saklanır ve çizime de öyle yazılır",
-    "kj.chk.hole_outside": "Döşeme {0}: boşluk {1} ({2}) döşeme içinde değil veya başka bir boşluğa değiyor — eklenmedi"
+    "kj.chk.hole_outside": "Döşeme {0}: boşluk {1} ({2}) döşeme içinde değil veya başka bir boşluğa değiyor — eklenmedi",
+    "gui.tab.start": "Başlangıç",
+    "gui.tab.drawing": "Çizim{0}",
+    "gui.tab.new": "Yeni çizim (Ctrl+N)",
+    "gui.tab.list": "Açık sekmeler",
+    "gui.tab.close": "Sekmeyi kapat",
+    "gui.tab.closeothers": "Diğerlerini kapat",
+    "gui.tab.owner": "{0} — çizim: {1}",
+    "gui.win.min": "Simge durumuna küçült",
+    "gui.win.full": "Tam ekran",
+    "gui.win.normal": "Tam ekrandan çık",
+    "gui.start.sub": "Çizim, bina ve altyapı tasarımı",
+    "gui.start.begin": "Başla",
+    "gui.start.menus": "Modüller",
+    "gui.start.recent": "Son dosyalar",
+    "gui.start.samples": "Örnekler",
+    "gui.start.none": "Henüz dosya açılmadı",
+    "gui.start.hint": "Her çizim ve her modül kendi sekmesinde açılır: sekmeler arasında tıklayarak geçin (Ctrl+Tab), × veya Ctrl+F4 kapatır, Ctrl+0 — tam ekran. Ctrl+Z / Ctrl+Y modüllerde de çalışır: modüldeki son değişiklik geri alınır veya yinelenir.",
+    "gui.undo.menu": "{0}: son değişiklik geri alındı (Ctrl+Y — yinele)",
+    "gui.redo.menu": "{0}: değişiklik yinelendi",
+    "gui.win.close": "AsiaCAD’i kapat"
   }
 }

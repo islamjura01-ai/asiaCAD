@@ -5,6 +5,7 @@
 //  * AlignInputDialog — yo'l/kanal/koridor o'qi: burilish nuqtalari (X, Y, R) va loyiha profili (PK, belgi); jonli plan
 //  * NetInputDialog   — yer osti tarmog'i: quduqlar va quvurlar jadvali; jonli plan
 //  * CityDialog       — shahar mavzesi: shablonlar, parametrlar, plan va 3D massiv, ko'rsatkichlar
+#include "menu_history.h"
 #include "model3d_view.h"
 #include "prop_panel.h"
 #include "template_sidebar.h"
@@ -128,12 +129,14 @@ public:
     PlanPreview* preview() const { return prev_; }
     void recompute();
     PropPanel* props() const { return props_; }   // Xossalar: 3D da tanlangan bino (qavatlar, nusxa, olib tashlash)
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida)
 
 signals:
     void drawRequested(const QString& jsonPath);
 
 private:
     void onPicked(const QString& key);
+    std::unique_ptr<MenuHistory<civil::CitySpec>> hist_;
     const Document& doc_;
     civil::CityResult r_;
     std::vector<civil::CitySpec::Edit> edits_;

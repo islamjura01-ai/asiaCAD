@@ -6,6 +6,7 @@
 #include "prop_panel.h"
 #include "template_sidebar.h"
 #include "excel_link.h"
+#include "menu_history.h"
 
 #include <asiacad/civil/sewer.h>
 #include <asiacad/i18n/localizer.h>
@@ -50,6 +51,7 @@ public:
     Pipe3DView* pipeView() const { return pipe3d_; }
     Pipe3DView* netView() const { return net3d_; }
     PropPanel* props() const { return props_; }   // Xossalar: tarmoq 3D da tanlangan quduq / quvur
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida)
 
 signals:
     void drawRequested(const QString& jsonPath, bool profile);
@@ -81,6 +83,7 @@ private:
     std::function<std::vector<Vec3>()> pick_;
     std::vector<civil::PipeTemplate> templates_;
     civil::SewerResult res_;
+    std::unique_ptr<MenuHistory<civil::SewerNetwork>> hist_;
     bool updating_ = false;
 
     QComboBox* tpl_ = nullptr;

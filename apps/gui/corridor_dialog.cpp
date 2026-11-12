@@ -263,6 +263,21 @@ CorridorDialog::CorridorDialog(const i18n::Localizer& loc, const Document& doc, 
     selIndex_ = p_.assemblies.front().right.empty() ? -1 : 0;
     fillAssembly();
     reread();
+    hist_ = std::make_unique<MenuHistory<State>>(
+        this, [this] { return State{c_, p_}; }, [](const State& s) { return civil::corridorToJson(s.c, s.p); },
+        [this](const State& s) {
+            p_ = s.p;
+            c_ = s.c;
+            const auto& a = p_.assemblies.front();
+            const auto& v = (selSide_ > 0 || a.symmetric) ? a.right : a.left;
+            if (selIndex_ >= static_cast<int>(v.size())) selIndex_ = static_cast<int>(v.size()) - 1;
+            fillAssembly();
+            fillParams();
+            updatePreview();
+            fillTables();
+            render();
+        });
+    hist_->reset();
 }
 
 QString CorridorDialog::t(const char* key, const QStringList& args) const {
@@ -1022,6 +1037,7 @@ void CorridorDialog::render() {
         }
     }
     view_->endScene(true);
+    if (hist_) hist_->note();   // menyu tarixi: o'zgarish bo'lsa — yangi qadam (kechiktirib)
 }
 
 } // namespace asiacad::gui

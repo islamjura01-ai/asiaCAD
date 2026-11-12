@@ -2766,6 +2766,26 @@
     "gui.xp.base": "Base elevation",
     "gui.xp.gfa": "Gross floor area",
     "gui.xp.citynote": "Corrections are stored in the city project and written to the drawing too",
-    "kj.chk.hole_outside": "Slab {0}: opening {1} ({2}) is not inside the slab or touches another opening — not added"
+    "kj.chk.hole_outside": "Slab {0}: opening {1} ({2}) is not inside the slab or touches another opening — not added",
+    "gui.tab.start": "Start",
+    "gui.tab.drawing": "Drawing{0}",
+    "gui.tab.new": "New drawing (Ctrl+N)",
+    "gui.tab.list": "Open tabs",
+    "gui.tab.close": "Close tab",
+    "gui.tab.closeothers": "Close others",
+    "gui.tab.owner": "{0} — drawing: {1}",
+    "gui.win.min": "Minimize",
+    "gui.win.full": "Full screen",
+    "gui.win.normal": "Exit full screen",
+    "gui.start.sub": "Drafting, building and infrastructure design",
+    "gui.start.begin": "Get started",
+    "gui.start.menus": "Modules",
+    "gui.start.recent": "Recent files",
+    "gui.start.samples": "Samples",
+    "gui.start.none": "No files opened yet",
+    "gui.start.hint": "Each drawing and each module opens in its own tab: click between tabs (Ctrl+Tab), × or Ctrl+F4 closes, Ctrl+0 — full screen. Ctrl+Z / Ctrl+Y work in modules too: the last change in the module is undone or redone.",
+    "gui.undo.menu": "{0}: last change undone (Ctrl+Y — redo)",
+    "gui.redo.menu": "{0}: change redone",
+    "gui.win.close": "Close AsiaCAD"
   }
 }

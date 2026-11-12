@@ -16,6 +16,7 @@
 
 #include <QHash>
 #include <QMainWindow>
+#include <QPointer>
 
 #include <memory>
 #include <sstream>
@@ -26,6 +27,7 @@ class QDialog;
 class QDockWidget;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QPlainTextEdit;
 class QPushButton;
 class QTabWidget;
@@ -61,6 +63,7 @@ class GeoPlaceDialog;
 class DriveDialog;
 class SymbolPalette;
 class SteelPanel;
+class MenuUndo;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -133,6 +136,27 @@ public:
     void makeSampleBuilding();             // namuna bino (o'qlar to'ri) — bo'sh chizmada  // yer ishlari: 0 yuza, 1 profil, 2 kesimlar, 3 kartogramma, 4 hajm  // geodezik tahlil: 0 reja, 1 balandlik, 2 vertikal, 3 qiya o'q, 4 loyiha nuqtasi (civil::DevKind)          // tanlovni haqiqiy koordinata / belgiga o'tkazish
     QDialog* openScratch(const QString& module);  // "0 dan chizish": building | road | waterway | corridor | util
     void locate(double x, double y);        // tuzatish: chizmada joyni ko'rsatish
+
+    // Varaqlar (AutoCAD kabi): Start · ochiq chizmalar (bir nechta) · menyular (yordamchi oynalar shu yerda ochiladi)
+    int newDrawing();                            // yangi bo'sh chizma varag'i (faollashadi), id qaytaradi
+    bool openPath(const QString& file);          // chizma — yangi varaqda (joriy chizma bo'sh va o'zgarmagan bo'lsa — shu varaqda)
+    int drawingCount() const { return static_cast<int>(docs_.size()); }
+    int activeDrawing() const { return activeDoc_; }
+    bool activateDrawing(int id);                // chizma hujjatini faollashtirish (hujjat, tarix, ko'rinish almashadi)
+    void showDrawing(int id);                    // chizma varag'ini ochish
+    bool closeTabAt(int index);                  // saqlanmagan bo'lsa so'raydi; bekor qilinsa false
+    QTabBar* docTabs() const { return docTabs_; }
+    QString drawingName(int id) const;           // varaq nomi ("Chizma1", "bino.acad")
+    bool drawingDirty(int id) const;
+    void showStart();                            // "Start" varag'i: yangi / ochish / oxirgi fayllar / namunalar / menyular
+    bool isStart() const;
+    QWidget* startPage() const { return startPage_; }
+    QWidget* currentMenu() const;                // faol varaq menyu bo'lsa — u
+    int menuOwner(const QWidget* m) const;       // menyu qaysi chizmaga bog'langan (0 — hech biri)
+    void toggleFullScreen();                     // F11: butun ekran / oddiy oyna
+    bool menuOpen(const QWidget* m) const;       // menyu varag'i ochiqmi (ko'rinmasa ham)
+    void showMenu(QWidget* m);                   // menyu — varaq bo'lib (birinchi marta joylanadi) va faollashadi
+    void undoRedo(bool undo);                    // Ctrl+Z / Ctrl+Y: faol menyu tarixi yoki chizma
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -292,6 +316,68 @@ private:
     QStringList cmdHistory_;
     int cmdHistoryPos_ = 0;
     bool updatingUi_ = false;
+
+    // ---- varaqlar
+    struct DocSlot {
+        int id = 0;
+        int untitled = 0;                        // "ChizmaN" raqami (fayl bo'lmasa)
+        std::unique_ptr<Document> doc;           // faol bo'lmaganda shu yerda (faol chizma — doc_ ichida)
+        CommandStack::History hist;
+        cli::Interpreter::DocState ist;
+        QString source;                          // ochilgan fayl (DXF/DWG da joriy .acad fayl yo'q — nom shundan)
+        std::vector<IfcLoaded> ifc;              // shu chizmaga bog'langan IFC modellar
+        QString ifcDocFile;
+        Vec3 center;
+        double scale = 0;
+        bool hasView = false;
+        int viewMode = 0;                        // 0 — 2D, 1 — 3D, 2 — listlar
+    };
+    std::vector<DocSlot> docs_;
+    int activeDoc_ = 0, docSeq_ = 0, untitledN_ = 0;
+    QTabBar* docTabs_ = nullptr;
+    QStackedWidget* pages_ = nullptr;
+    QWidget* drawPage_ = nullptr;
+    QWidget* startPage_ = nullptr;
+    QListWidget* startRecent_ = nullptr;
+    QListWidget* startSamples_ = nullptr;
+    QToolButton* tabMax_ = nullptr;
+    QLabel* startRecentNone_ = nullptr;
+    QList<QPair<QLabel*, QByteArray>> startLabels_;   // Start sahifasi yozuvlari (til almashganda)
+    std::map<const QWidget*, int> menuDoc_;     // menyu -> egasi (chizma id); varaq yopilsa ham saqlanadi (3D da model)
+    std::map<const QWidget*, QWidget*> menuWrap_;   // menyu -> varaq sahifasi (aylantirish maydoni)
+    bool tabSwitching_ = false;
+    bool stale3d_ = false;                      // chizma almashdi — 3D keyingi ko'rsatishda qayta quriladi
+    bool wasMaximized_ = true;
+    bool menuChrome_ = false;                   // Start / menyu varag'i: lenta va chizma panellari yashirin
+    bool ribbonWasVisible_ = true;
+    QList<QPointer<QWidget>> chromeHidden_;
+    QPointer<QWidget> pickReturn_;              // menyu chizmadan nuqta so'radi — tugagach shu menyuga qaytiladi
+    QWidget* buildDocBar();
+    void addTabClose(int index);
+    void initTabs();
+    QWidget* buildStartPage();
+    QWidget* menuAt(int index) const;
+    QWidget* menuPage(QWidget* m);
+    bool ownedHere(const QWidget* m) const { return m && menuOwner(m) == activeDoc_; }
+    MenuUndo* historyOf(QWidget* m) const;
+    void menuDocumentChanged(QWidget* m);        // chizma o'zgardi (UNDO/REDO) — menyu yangilanadi
+    bool menuRun(QWidget* m, const QStringList& lines);   // menyu nomidan chizmaga: bitta undo qadami + menyu tarixiga belgi
+    void retranslateTabs();
+    static void invalidateLayoutTree(QWidget* root);
+    void refreshStartPage();
+    DocSlot* slotOf(int id);
+    const DocSlot* slotOf(int id) const;
+    int tabOfDoc(int id) const;
+    int tabOfMenu(const QWidget* m) const;
+    QString docName(const DocSlot& s) const;
+    bool docDirty(const DocSlot& s) const;
+    void onDocTabChanged(int index);
+    void setMenuChrome(bool on);
+    void refreshDocTabs();
+    void removeMenuTab(QWidget* m);
+    void menuAway(QWidget* m);                  // chizmadan nuqta olish: egasi chizma varag'iga
+    void menuBack(QWidget* m);
+    void startPick(int n, const QStringList& prompts);
 };
 
 } // namespace asiacad::gui

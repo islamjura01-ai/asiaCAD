@@ -19,8 +19,26 @@ public:
 
     // Bitta qatorni bajaradi. EXIT bo'lsa false qaytaradi.
     bool run(const std::string& line);
+    bool lastOk() const { return lastOk_; }   // oxirgi buyruq xatosiz bajarildimi
     const std::string& currentLayer() const { return layer_; }
     const std::string& currentFile() const { return currentFile_; }
+    // Bir nechta ochiq chizma (varaqlar): chizmaga tegishli holat (joriy qatlam, rang, LAST, fayl ...) almashtiriladi
+    struct DocState {
+        std::string layer = "0";
+        int color = kColorByLayer;
+        std::vector<EntityId> last;
+        Vec3 lastPt;
+        std::string currentFile;
+        std::vector<Layer> isoSaved;
+    };
+    void swapDocState(DocState& s) {
+        std::swap(layer_, s.layer);
+        std::swap(color_, s.color);
+        std::swap(last_, s.last);
+        std::swap(lastPt_, s.lastPt);
+        std::swap(currentFile_, s.currentFile);
+        std::swap(isoSaved_, s.isoSaved);
+    }
 
 private:
     using Args = std::vector<std::string>;
@@ -70,7 +88,8 @@ private:
     double filletR_ = 0.0;        // FILLET radiusi (AutoCAD FILLETRAD kabi eslab qolinadi)
     double dimHeight_ = 2.5;      // o'lcham matni balandligi (DIM* buyruqlarida [h] berilmasa)
     double aperture_ = 1.0;
-    bool regen_ = false, quiet_ = false;  // bog'lanishni qayta qurish: yangi bog'lanish yaratilmaydi, xabarlar jim
+    bool regen_ = false, quiet_ = false;
+    bool lastOk_ = true;  // bog'lanishni qayta qurish: yangi bog'lanish yaratilmaydi, xabarlar jim
     std::vector<Layer> isoSaved_;   // LAYISO dan oldingi holat (LAYUNISO uchun)       // OSNAP va PICK radiusi (chizma birligida)
 };
 

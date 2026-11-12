@@ -198,6 +198,8 @@ public:
     std::string undoName() const { return canUndo() ? undo_.back()->name() : std::string{}; }
     std::string redoName() const { return canRedo() ? redo_.back()->name() : std::string{}; }
     std::size_t undoCount() const { return undo_.size(); }
+    const ICommand* undoTop() const { return undo_.empty() ? nullptr : undo_.back().get(); }   // menyu tarixi: shu amal hali tepadami
+    const ICommand* redoTop() const { return redo_.empty() ? nullptr : redo_.back().get(); }
     // Oxirgi n ta buyruqni bitta undo qadamiga birlashtiradi (dinamik yangilanish foydalanuvchi amali bilan birga qaytadi)
     void squash(std::size_t n);
     std::size_t pushCount() const { return pushes_; }  // execute() chaqiruvlari soni (o'zgarish bo'ldimi)
@@ -205,6 +207,19 @@ public:
     // Saqlangandan keyin o'zgarish bo'lganmi
     bool isDirty() const { return undo_.size() != cleanIndex_ || cleanLost_; }
     void markClean() { cleanIndex_ = undo_.size(); cleanLost_ = false; }
+    // Bir nechta ochiq chizma (varaqlar): har chizmaning undo/redo tarixi alohida saqlanadi va almashtiriladi
+    struct History {
+        std::deque<std::unique_ptr<ICommand>> undo;
+        std::vector<std::unique_ptr<ICommand>> redo;
+        std::size_t cleanIndex = 0;
+        bool cleanLost = false;
+    };
+    void swapHistory(History& h) {
+        std::swap(undo_, h.undo);
+        std::swap(redo_, h.redo);
+        std::swap(cleanIndex_, h.cleanIndex);
+        std::swap(cleanLost_, h.cleanLost);
+    }
     // Yangi hujjat ochilganda: tarix tozalanadi, holat "saqlangan"
     void clear() {
         undo_.clear();

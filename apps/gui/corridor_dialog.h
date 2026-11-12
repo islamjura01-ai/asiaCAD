@@ -7,6 +7,7 @@
 //  o'rta — 3D | Kesimlar (piket bo'yicha, material ranglari, kesma/to'kma) | Profil
 //  o'ng — Hajmlar (o'rtacha maydon va aniq: prizmoidal + egrilik), Piketlar (loyiha belgisi tahrirlanadi), Tekshiruv, Qatlamlar
 #include "excel_link.h"
+#include "menu_history.h"
 #include "model3d_view.h"
 #include "prop_panel.h"
 #include "template_sidebar.h"
@@ -68,6 +69,7 @@ public:
     void setDesign(int station, double z);
     void showStation(int i);
     void showTab(int i);
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida)
     QTabWidget* palette() const { return palette_; }
     ExcelLink* excel() const { return excel_; }
     Model3DView* view() const { return view_; }
@@ -99,6 +101,8 @@ private:
     civil::Corridor c_;
     std::vector<civil::Assembly> asms_;
     civil::Section preview_;
+    struct State { civil::Corridor c; civil::CorridorParams p; };
+    std::unique_ptr<MenuHistory<State>> hist_;
     bool updating_ = false;
     int selSide_ = 1, selIndex_ = -1;
 

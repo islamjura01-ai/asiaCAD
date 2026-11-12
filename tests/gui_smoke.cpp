@@ -43,6 +43,9 @@
 #include <QKeyEvent>
 #include <QTabWidget>
 #include <QDockWidget>
+#include <QStatusBar>
+#include <QTabBar>
+#include "menu_history.h"
 #include <QScrollArea>
 #include "command_palette.h"
 #include <QHash>
@@ -543,7 +546,8 @@ int main(int argc, char** argv) {
         CHECK(bd->view()->selectKey(col));
         CHECK(bd->props()->trigger("erase"));
         CHECK(bd->props()->title().isEmpty());                         // o'chirildi — tanlov yo'q
-        for (int i = 0; i < 6; ++i) w.runLine("UNDO");                 // erase, chprop, rectang, layer, copy, setprop
+        // menyu amali — bitta undo qadami: erase, teshik (layer + rectang + chprop), copy, setprop
+        for (int i = 0; i < 4; ++i) w.runLine("UNDO");
         bd->documentChanged();
         CHECK(doc.size() == n0);
         CHECK(!doc.layer("TESHIK").has_value());
@@ -1822,6 +1826,120 @@ int main(int argc, char** argv) {
         bd->runNormCheck(false);
         CHECK(!bd->normOn());
         bd->close();
+    }
+    // 50. Varaqlar (AutoCAD kabi): Start · chizmalar · menyular; har chizma o'z hujjati va tarixi bilan; menyuda Ctrl+Z / Ctrl+Y
+    {
+        MainWindow tw(loc);
+        tw.resize(1400, 900);
+        tw.show();
+        QApplication::processEvents();
+        QTabBar* tabs = tw.docTabs();
+        Document& d = tw.document();
+        CHECK(tabs && tabs->count() == 2 && tw.drawingCount() == 1 && !tw.isStart());   // Start + Chizma1
+        const int a = tw.activeDrawing();
+        CHECK(tw.drawingName(a) == QString::fromStdString(loc.tr("gui.tab.drawing", {"1"})));
+        tw.runLine("LINE 0,0 10,0");
+        CHECK(d.size() == 1 && tw.drawingDirty(a) && tabs->tabText(tabs->currentIndex()).endsWith("*"));
+        const int b = tw.newDrawing();
+        CHECK(tw.drawingCount() == 2 && tw.activeDrawing() == b && d.size() == 0 && !tw.drawingDirty(b));
+        tw.runLine("CIRCLE 0,0 5");
+        tw.runLine("CIRCLE 10,0 5");
+        CHECK(d.size() == 2);
+        tw.showDrawing(a);
+        CHECK(tw.activeDrawing() == a && d.size() == 1 && tw.drawingDirty(a));
+        tw.runLine("UNDO");   // undo — faqat shu chizmada
+        CHECK(d.size() == 0);
+        tw.runLine("REDO");
+        tw.showDrawing(b);
+        CHECK(d.size() == 2);
+        tw.runLine("UNDO");
+        CHECK(d.size() == 1);
+        // ochish: yangi varaqda; ochiq fayl — o'sha varaqqa o'tiladi
+        const QString ex = QStringLiteral(ASIACAD_EXAMPLES_DIR) + "/yol.acad";
+        CHECK(tw.openPath(ex));
+        const int c = tw.activeDrawing();
+        CHECK(tw.drawingCount() == 3 && c != a && c != b && d.size() > 0 && tw.drawingName(c) == "yol.acad" && !tw.drawingDirty(c));
+        tw.showDrawing(a);
+        CHECK(tw.openPath(ex) && tw.activeDrawing() == c && tw.drawingCount() == 3);
+        // menyu — varaq bo'lib ochiladi (alohida oyna emas), o'z chizmasiga bog'lanadi; lenta yashiriladi
+        RoadDialog* rd = tw.openRoad();
+        QApplication::processEvents();
+        CHECK(tw.currentMenu() == rd && tw.menuOpen(rd) && tw.menuOwner(rd) == c && rd->isVisible() && !rd->isWindow());
+        CHECK(!tw.ribbon()->isVisibleTo(&tw) && rd->windowTitle().startsWith(tabs->tabText(tabs->currentIndex())));
+        QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QApplication::sendEvent(rd, &esc);
+        CHECK(tw.menuOpen(rd) && rd->isVisible());   // Esc menyu varag'ini yopmaydi
+        // Ctrl+Z / Ctrl+Y menyuda: parametr o'zgarishi bekor qilinadi va qaytariladi
+        const std::string cat0 = rd->params().cat.id;
+        std::string cat1;
+        for (const auto& k : asiacad::civil::roadCategories())
+            if (k.id != cat0) { cat1 = k.id; break; }
+        rd->applyCategory(QString::fromStdString(cat1));
+        rd->menuHistory()->flush();
+        CHECK(rd->params().cat.id == cat1 && rd->menuHistory()->undoCount() >= 1);
+        tw.undoRedo(true);
+        CHECK(rd->params().cat.id == cat0);
+        tw.undoRedo(false);
+        CHECK(rd->params().cat.id == cat1);
+        // menyu chizmaga yozdi — menyuda Ctrl+Z shu amalni qaytaradi (bitta qadam), Ctrl+Y — qayta
+        const auto n0 = d.size();
+        for (auto* pb : rd->findChildren<QPushButton*>())
+            if (pb->text() == QString::fromStdString(loc.tr("gui.rd.draw"))) pb->click();
+        CHECK(d.size() > n0 && tw.drawingDirty(c));
+        tw.undoRedo(true);
+        CHECK(d.size() == n0 && rd->params().cat.id == cat1);
+        tw.undoRedo(false);
+        CHECK(d.size() > n0);
+        // boshqa chizmaga o'tish: menyu varag'i qoladi; menyuga qaytilganda — o'z chizmasi faollashadi
+        tw.showDrawing(a);
+        CHECK(tw.activeDrawing() == a && !rd->isVisible() && tw.menuOpen(rd) && tw.ribbon()->isVisibleTo(&tw) && d.size() == 1);
+        auto tabOf = [&](QObject* o) {
+            for (int i = 0; i < tabs->count(); ++i)
+                if (tabs->tabData(i).value<QObject*>() == o) return i;
+            return -1;
+        };
+        tabs->setCurrentIndex(tabOf(rd));   // menyu varag'i bosildi
+        CHECK(tw.currentMenu() == rd && tw.activeDrawing() == c && d.size() > n0 && rd->isVisible());
+        CHECK(tw.closeTabAt(tabs->currentIndex()));   // × / Ctrl+F4
+        CHECK(!tw.menuOpen(rd) && tw.currentMenu() == nullptr && tw.activeDrawing() == c);
+        // "Monolit bino": Xossalar tuzatishi chizmaga yoziladi — menyuda Ctrl+Z / Ctrl+Y
+        tw.showDrawing(a);
+        tw.runLine("LAYER USTUN");
+        tw.runLine("CLAYER USTUN");
+        tw.runLine("PLINE 0,0 0.4,0 0.4,0.4 0,0.4 " + QString::fromStdString(loc.keywordName("CLOSE")));
+        tw.runLine("COPY LAST 6,0 2");
+        tw.runLine("LAYER PLITA");
+        tw.runLine("CLAYER PLITA");
+        tw.runLine("PLINE -0.3,-0.3 12.7,-0.3 12.7,0.7 -0.3,0.7 " + QString::fromStdString(loc.keywordName("CLOSE")));
+        BuildingDialog* bdg = tw.openBuilding();
+        CHECK(tw.menuOwner(bdg) == a && tw.currentMenu() == bdg);
+        QString col;
+        for (int i = 0; i < bdg->view()->objectCount() && col.isEmpty(); ++i)
+            if (const QString k = bdg->view()->objectKey(i); k.startsWith("e:") && k.endsWith(":1:COLUMN")) col = k;
+        CHECK(!col.isEmpty() && bdg->view()->selectKey(col));
+        const double v0 = bdg->model().totalVolume;
+        CHECK(bdg->props()->edit("rectw", "0.6") && bdg->model().totalVolume > v0);
+        tw.undoRedo(true);
+        CHECK(std::abs(bdg->model().totalVolume - v0) < 1e-9);
+        tw.undoRedo(false);
+        CHECK(bdg->model().totalVolume > v0 + 1e-9);
+        // bino menyusi faqat o'z chizmasining 3D sida (boshqa chizmada yo'q)
+        tw.showDrawing(b);
+        tw.show3D(true);
+        bool bim = false;
+        for (int i = 0; i < tw.view3d()->objectCount(); ++i) bim |= tw.view3d()->objectKey(i).startsWith("bim:");
+        CHECK(!bim);
+        tw.show3D(false);
+        // Start varag'i: namunalar; bosilsa — yangi varaqda ochiladi
+        tw.showStart();
+        CHECK(tw.isStart() && !tw.ribbon()->isVisibleTo(&tw));
+        auto* samples = tw.startPage()->findChild<QListWidget*>("startSamples");
+        CHECK(samples && samples->count() >= 3);
+        // bo'sh chizma varag'ini yopish (so'ralmaydi)
+        const int e = tw.newDrawing();
+        const int nd = tw.drawingCount();
+        CHECK(tw.closeTabAt(tabs->currentIndex()) && tw.drawingCount() == nd - 1 && tw.activeDrawing() != e);
+        CHECK(!tw.ribbon()->isHidden() || !tw.isStart());
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

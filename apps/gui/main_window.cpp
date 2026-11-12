@@ -66,6 +66,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -183,11 +184,12 @@ public:
     DialogLocalizer(std::function<QString(const char*)> tr, QObject* parent) : QObject(parent), tr_(std::move(tr)) {}
 protected:
     bool eventFilter(QObject* o, QEvent* e) override {
-        if (e->type() == QEvent::Show && o->isWidgetType() && static_cast<QWidget*>(o)->isWindow()) {
+        if (e->type() == QEvent::Show && o->isWidgetType() && (static_cast<QWidget*>(o)->isWindow() || qobject_cast<QDialog*>(o))) {
             auto* w = static_cast<QWidget*>(o);
             for (auto* bb : w->findChildren<QDialogButtonBox*>()) localize(bb);
             // katta dialog kichik ekranda (1366×768) chetidan chiqib ketmasin: ekranga sig'diriladi va markazlanadi
-            if (qobject_cast<QDialog*>(w) && w->windowType() != Qt::Popup && !w->property("fitDone").toBool()) {
+            // (varaq bo'lib ochilgan menyu — oyna emas, aylantirish maydonida)
+            if (w->isWindow() && qobject_cast<QDialog*>(w) && w->windowType() != Qt::Popup && !w->property("fitDone").toBool()) {
                 w->setProperty("fitDone", true);
                 if (QScreen* sc = w->screen()) {
                     const QRect av = sc->availableGeometry();
@@ -381,12 +383,8 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
 
     buildActions();
 
-    auto* central = new QWidget(this);
-    auto* col = new QVBoxLayout(central);
-    col->setContentsMargins(0, 0, 0, 0);
-    col->setSpacing(0);
     buildRibbon();
-    {   // yuqori qism: doimiy ilova sarlavhasi + lenta (butun kenglikda, panellar ustida — AutoCAD kabi)
+    {   // yuqori qism: doimiy ilova sarlavhasi + lenta + varaqlar (butun kenglikda, panellar ustida — AutoCAD kabi)
         auto* top = new QWidget(this);
         top->setObjectName("topArea");
         auto* tv = new QVBoxLayout(top);
@@ -394,10 +392,18 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
         tv->setSpacing(0);
         tv->addWidget(buildAppBar());
         tv->addWidget(ribbon_);
+        tv->addWidget(buildDocBar());
         setMenuWidget(top);
     }
+    // markaz: varaq sahifalari — Start · chizma (2D/3D/listlar) · menyular
+    pages_ = new QStackedWidget(this);
+    pages_->setObjectName("pages");
+    drawPage_ = new QWidget(pages_);
+    auto* col = new QVBoxLayout(drawPage_);
+    col->setContentsMargins(0, 0, 0, 0);
+    col->setSpacing(0);
     // 2D chizma / 3D model (Revit kabi ko'rinish yorliqlari)
-    viewTabs_ = new QTabBar(central);
+    viewTabs_ = new QTabBar(drawPage_);
     viewTabs_->setObjectName("viewTabs");
     viewTabs_->setExpanding(false);
     viewTabs_->setDrawBase(false);
@@ -405,7 +411,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     viewTabs_->addTab(QString());
     viewTabs_->addTab(QString());
     col->addWidget(viewTabs_);
-    viewStack_ = new QStackedWidget(central);
+    viewStack_ = new QStackedWidget(drawPage_);
     view3d_ = new Model3DView(viewStack_);
     setAcceptDrops(true);   // .ifc / .acad / .dxf / .dwg sudrab tashlash
     connect(view3d_, &Model3DView::objectSelected, this, [this](const QString&, const QStringList& props) {
@@ -445,7 +451,10 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(viewTabs_, &QTabBar::currentChanged, this, [this](int i) {
         if (i == 2) showSheets(); else show3D(i == 1);
     });
-    setCentralWidget(central);
+    pages_->addWidget(buildStartPage());
+    pages_->addWidget(drawPage_);
+    pages_->setCurrentWidget(drawPage_);
+    setCentralWidget(pages_);
 
     buildModuleBars();
     buildDocks();
@@ -485,6 +494,8 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     });
     connect(view_, &Viewport::textRequested, this, [this](const Vec3& at) {
         QDialog dlg(this);
+        windowButtons(&dlg);
+    windowButtons(&dlg);
         dlg.setWindowTitle(t("gui.text.title"));
         auto* form = new QFormLayout(&dlg);
         auto* txt = new QLineEdit(&dlg);
@@ -535,6 +546,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
 
     setMode(UiMode::Classic);
     appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.31"})), theme_.accent);
+    initTabs();
     retranslate();
     refreshLayers();
     refreshProperties();
@@ -597,14 +609,15 @@ void MainWindow::buildActions() {
     act_["grid"]->setShortcut(QKeySequence(Qt::Key_F7));
     for (auto* a : act_) addAction(a);  // yorliqlar lenta yashirin bo'lsa ham ishlasin
 
-    connect(act_["new"], &QAction::triggered, this, [this] { if (maybeSave()) runLine("NEW !"); });
+    connect(act_["new"], &QAction::triggered, this, [this] { newDrawing(); });   // yangi varaq (AutoCAD kabi)
     connect(act_["open"], &QAction::triggered, this, &MainWindow::openFile);
     connect(act_["save"], &QAction::triggered, this, [this] { saveFile(false); });
     connect(act_["saveas"], &QAction::triggered, this, [this] { saveFile(true); });
     connect(act_["import"], &QAction::triggered, this, &MainWindow::importDxf);
     connect(act_["export"], &QAction::triggered, this, &MainWindow::exportDxf);
-    connect(act_["undo"], &QAction::triggered, this, [this] { runLine("UNDO"); });
-    connect(act_["redo"], &QAction::triggered, this, [this] { runLine("REDO"); });
+    // Ctrl+Z / Ctrl+Y: menyu varag'ida — menyu tarixi (model va menyu chizmaga yozganlari), aks holda chizma
+    connect(act_["undo"], &QAction::triggered, this, [this] { undoRedo(true); });
+    connect(act_["redo"], &QAction::triggered, this, [this] { undoRedo(false); });
     connect(act_["erase"], &QAction::triggered, this, [this] { startCommand("ERASE"); });
     connect(act_["extents"], &QAction::triggered, this, [this] { view_->zoomExtents(); });
     connect(act_["zoomin"], &QAction::triggered, this, [this] { view_->zoomBy(1.5); });
@@ -666,9 +679,8 @@ void MainWindow::buildActions() {
             runIfcNormCheck(std::max(0, p->current()));
             return;
         }
-        if (building_ && !building_->model().prisms.empty()) {
-            building_->show();
-            building_->raise();
+        if (building_ && ownedHere(building_) && !building_->model().prisms.empty()) {
+            showMenu(building_);
             building_->runNormCheck(true);
             return;
         }
@@ -933,7 +945,7 @@ void MainWindow::buildRibbon() {
                     a->setEnabled(fi.exists());
                     connect(a, &QAction::triggered, this, [this, f, isIfc] {
                         if (isIfc) importIfc({f});
-                        else if (maybeSave()) runLine(QStringLiteral("OPEN \"%1\" !").arg(f));
+                        else openPath(f);   // yangi varaqda (ochiq bo'lsa — o'sha varaqqa)
                     });
                 }
                 if (!recent_.isEmpty()) {
@@ -1614,6 +1626,8 @@ void MainWindow::retranslateStatus() {
 }
 
 void MainWindow::setMode(UiMode m) {
+    const bool chrome = menuChrome_;   // menyu/Start varag'ida: avval panellar tiklanadi, rejimdan keyin yana yashiriladi
+    if (chrome) setMenuChrome(false);
     mode_ = m;
     theme_ = themeFor(m);
     ribbon_->setVisible(m == UiMode::Classic);   // ilova sarlavhasi (tez kirish, qidiruv) hamma rejimda qoladi
@@ -1630,6 +1644,7 @@ void MainWindow::setMode(UiMode m) {
         modeBox_->setCurrentIndex(modeBox_->findData(static_cast<int>(m)));
         updatingUi_ = false;
     }
+    if (chrome) setMenuChrome(true);
 }
 
 void MainWindow::applyTheme() {
@@ -1642,6 +1657,21 @@ void MainWindow::applyTheme() {
     if (empty3d_) refreshEmpty3D();
     floating_->adjustSize();
     refreshLayers();
+    retranslateTabs();
+    invalidateLayoutTree(this);
+}
+
+// Mavzu / til almashgach: yashirin sahifalar (listlar, Start, menyu varaqlari) ichki tartiblarining eski (uslubsiz)
+// o'lchamlari qolmasin — QWidget::updateGeometry faqat ota oynaning yuqori tartibini bekor qiladi, ichki qatorlarni emas.
+void MainWindow::invalidateLayoutTree(QWidget* root) {
+    std::function<void(QLayout*)> rec = [&rec](QLayout* l) {
+        l->invalidate();
+        for (int i = 0; i < l->count(); ++i)
+            if (QLayout* sub = l->itemAt(i)->layout()) rec(sub);
+    };
+    for (QWidget* w : root->findChildren<QWidget*>())
+        if (w->layout()) rec(w->layout());
+    if (root->layout()) rec(root->layout());
 }
 
 void MainWindow::setLanguage(const QString& code) {
@@ -1715,6 +1745,8 @@ void MainWindow::retranslate() {
     refreshLayers();
     refreshProperties();
     refreshTitle();
+    retranslateTabs();
+    invalidateLayoutTree(this);
 }
 
 void MainWindow::refreshLayers() {
@@ -1848,13 +1880,14 @@ void MainWindow::refreshTitle() {
         if (!file.isEmpty()) QTimer::singleShot(0, this, [this] { loadIfcLinks(); });
     }
     if (!file.isEmpty() && (recent_.isEmpty() || recent_.front() != QFileInfo(file).absoluteFilePath())) noteRecent(file);
-    const QString name = file.isEmpty() ? t("gui.untitled") : QFileInfo(file).fileName();
+    const QString name = slotOf(activeDoc_) ? drawingName(activeDoc_) : file.isEmpty() ? t("gui.untitled") : QFileInfo(file).fileName();
     setWindowTitle(QStringLiteral("%1%2 — AsiaCAD").arg(name, stack_.isDirty() ? " *" : ""));
     if (appTitle_) {
         appTitle_->setProperty("full", name + (stack_.isDirty() ? QStringLiteral("  •") : QString()));
         appTitle_->setToolTip(file.isEmpty() ? name : QDir::toNativeSeparators(file));
         appTitle_->setText(appTitle_->fontMetrics().elidedText(appTitle_->property("full").toString(), Qt::ElideMiddle, std::max(40, appTitle_->width())));
     }
+    refreshDocTabs();
 }
 
 void MainWindow::appendHistory(const QString& text, const QColor& color) {
@@ -1879,6 +1912,12 @@ bool MainWindow::runLine(const QString& line, bool echo) {
     const std::string canon = toks.isEmpty() ? std::string{} : loc_.resolveCommand(toks.first().toStdString());
     view_->documentChanged();
     if (canon == "OPEN" || canon == "NEW" || canon == "IMPORT") { view_->setSelection({}); view_->zoomExtents(); }
+    if ((canon == "OPEN" || canon == "NEW") && interp_->lastOk())
+        if (DocSlot* s = slotOf(activeDoc_)) {   // varaq nomi: ochilgan fayl (DXF/DWG ham) yoki yangi "ChizmaN"
+            const auto tk = cli::tokenizeLine(line.trimmed().toStdString());
+            s->source = canon == "OPEN" && tk.size() > 1 ? QFileInfo(QString::fromStdString(tk[1])).absoluteFilePath() : QString();
+            if (canon == "NEW" && !s->untitled) s->untitled = ++untitledN_;
+        }
     if (QString::fromStdString(loc_.language()) != langBefore) retranslate();
     refreshLayers();
     refreshProperties();
@@ -1890,8 +1929,10 @@ bool MainWindow::runLine(const QString& line, bool echo) {
 }
 
 void MainWindow::runDialogCommands(const QStringList& lines, const std::function<void()>& after) {
-    for (const auto& l : lines)
-        if (!runLine(l)) return;
+    // menyu nomidan: bitta undo qadami, menyu tarixida ham (Ctrl+Z menyuda shu amalni qaytaradi)
+    QWidget* m = qobject_cast<QWidget*>(sender());
+    if (!m) m = currentMenu();
+    if (!menuRun(m, lines)) return;
     if (after) after();
 }
 
@@ -1910,13 +1951,11 @@ SewerDialog* MainWindow::openSewer() {
         sewer_ = new SewerDialog(loc_, pick, !theme_.lightCanvas, this);
         sewer_->setStyleSheet(theme_.styleSheet);
         connect(sewer_, &SewerDialog::drawRequested, this, [this](const QString& path, bool profile) {
-            runLine(QStringLiteral("SEWER \"%1\"%2").arg(path, profile ? QString() : QStringLiteral(" -")));
+            menuRun(sewer_, {QStringLiteral("SEWER \"%1\"%2").arg(path, profile ? QString() : QStringLiteral(" -"))});
             view_->zoomExtents();
         });
     }
-    sewer_->show();
-    sewer_->raise();
-    sewer_->activateWindow();
+    showMenu(sewer_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return sewer_;
 }
 
@@ -1932,26 +1971,24 @@ BuildingDialog* MainWindow::openBuilding() {
         connect(building_, &BuildingDialog::commandsRequested, this, [this](const QStringList& lines) {
             runDialogCommands(lines, [this] {
                 building_->documentChanged();
-                if (rebar_ && rebar_->isVisible()) rebar_->documentChanged();
+                if (rebar_ && menuOpen(rebar_) && ownedHere(rebar_)) rebar_->documentChanged();
             });
         });
         connect(building_, &BuildingDialog::open3DRequested, this, [this] {
-            building_->hide();
+            if (const int t = tabOfDoc(menuOwner(building_)); t >= 0) docTabs_->setCurrentIndex(t);   // varaq yopilmaydi — chizmaga o'tiladi
             show3D(true);
         });
         connect(building_, &BuildingDialog::tableRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.max.x + 3 : 0, y = b.valid() ? b.max.y : 0;
-            runLine(QStringLiteral("BUILDING \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
-                                                                 Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0)));
+            menuRun(building_, {QStringLiteral("BUILDING \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
+                                                                              Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0))});
             view_->zoomExtents();
         });
     } else {
         building_->reread();
     }
-    building_->show();
-    building_->raise();
-    building_->activateWindow();
+    showMenu(building_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return building_;
 }
 
@@ -1963,22 +2000,20 @@ RebarDialog* MainWindow::openRebar() {
         connect(rebar_, &RebarDialog::commandsRequested, this, [this](const QStringList& lines) {
             runDialogCommands(lines, [this] {
                 rebar_->documentChanged();
-                if (building_ && building_->isVisible()) building_->documentChanged();
+                if (building_ && menuOpen(building_) && ownedHere(building_)) building_->documentChanged();
             });
         });
         connect(rebar_, &RebarDialog::scheduleRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.max.x + 3 : 0, y = b.valid() ? b.max.y : 0;
-            runLine(QStringLiteral("REBAR \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
-                                                              Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0)));
+            menuRun(rebar_, {QStringLiteral("REBAR \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
+                                                                           Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0))});
             view_->zoomExtents();
         });
     }
-    if (building_) rebar_->setBuilding(building_->params(), building_->layerMap(), building_->floorPlans());
+    if (building_ && ownedHere(building_)) rebar_->setBuilding(building_->params(), building_->layerMap(), building_->floorPlans());
     else rebar_->setBuilding(bim::BuildingParams{}, bim::autoLayerMap(doc_));
-    rebar_->show();
-    rebar_->raise();
-    rebar_->activateWindow();
+    showMenu(rebar_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return rebar_;
 }
 
@@ -1989,15 +2024,13 @@ UtilityDialog* MainWindow::openUtility() {
         connect(util_, &UtilityDialog::scratchRequested, this, [this] { openScratch("util"); });
         connect(util_, &UtilityDialog::locateRequested, this, &MainWindow::locate);
         connect(util_, &UtilityDialog::drawRequested, this, [this](const QString& path) {
-            runLine(QStringLiteral("UTIL \"%1\"").arg(path));
+            menuRun(util_, {QStringLiteral("UTIL \"%1\"").arg(path)});
             view_->zoomExtents();
         });
     } else {
         util_->reread();
     }
-    util_->show();
-    util_->raise();
-    util_->activateWindow();
+    showMenu(util_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return util_;
 }
 
@@ -2010,16 +2043,14 @@ RoadDialog* MainWindow::openRoad() {
         connect(road_, &RoadDialog::drawRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.min.x : 0, y = b.valid() ? b.min.y - 30 : -30;
-            runLine(QStringLiteral("ROAD \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
-                                                              Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0)));
+            menuRun(road_, {QStringLiteral("ROAD \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
+                                                                           Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0))});
             view_->zoomExtents();
         });
     } else {
         road_->reread();
     }
-    road_->show();
-    road_->raise();
-    road_->activateWindow();
+    showMenu(road_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return road_;
 }
 
@@ -2030,15 +2061,13 @@ CorridorDialog* MainWindow::openCorridor() {
         connect(corridor_, &CorridorDialog::scratchRequested, this, [this] { openScratch("corridor"); });
         connect(corridor_, &CorridorDialog::locateRequested, this, &MainWindow::locate);
         connect(corridor_, &CorridorDialog::drawRequested, this, [this](const QString& path) {
-            runLine(QStringLiteral("CORRIDOR \"%1\" +").arg(path));
+            menuRun(corridor_, {QStringLiteral("CORRIDOR \"%1\" +").arg(path)});
             view_->zoomExtents();
         });
     } else {
         corridor_->reread();
     }
-    corridor_->show();
-    corridor_->raise();
-    corridor_->activateWindow();
+    showMenu(corridor_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return corridor_;
 }
 
@@ -2051,16 +2080,14 @@ WaterwayDialog* MainWindow::openWaterway() {
         connect(waterway_, &WaterwayDialog::drawRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.min.x : 0, y = b.valid() ? b.min.y - 30 : -30;
-            runLine(QStringLiteral("WATERWAY \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
-                                                                  Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0)));
+            menuRun(waterway_, {QStringLiteral("WATERWAY \"%1\" %2,%3").arg(path, Viewport::fmtPoint({x, 0, 0}).section(',', 0, 0),
+                                                                               Viewport::fmtPoint({y, 0, 0}).section(',', 0, 0))});
             view_->zoomExtents();
         });
     } else {
         waterway_->reread();
     }
-    waterway_->show();
-    waterway_->raise();
-    waterway_->activateWindow();
+    showMenu(waterway_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return waterway_;
 }
 
@@ -2069,15 +2096,13 @@ CityDialog* MainWindow::openCity() {
         city_ = new CityDialog(loc_, doc_, !theme_.lightCanvas, this);
         city_->setStyleSheet(theme_.styleSheet);
         connect(city_, &CityDialog::drawRequested, this, [this](const QString& path) {
-            runLine(QStringLiteral("CITY \"%1\"").arg(path));
+            menuRun(city_, {QStringLiteral("CITY \"%1\"").arg(path)});
             view_->zoomExtents();
         });
     } else {
         city_->recompute();
     }
-    city_->show();
-    city_->raise();
-    city_->activateWindow();
+    showMenu(city_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return city_;
 }
 
@@ -2090,19 +2115,16 @@ TemplatesDialog* MainWindow::openTemplates(int page) {
             if (runLine(line)) view_->zoomExtents();
         });
         connect(tpl_, &TemplatesDialog::pickRequested, this, [this](int n, const QStringList& prompts) {
-            tpl_->hide();
+            menuAway(tpl_);   // chizma varag'iga — nuqtalar olinadi, so'ng menyuga qaytiladi
             pickCb_ = [this](const std::vector<Vec3>& pts) {
                 tpl_->setPicked(pts);
-                tpl_->show();
-                tpl_->raise();
+                menuBack(tpl_);
             };
             view_->startPick(n, prompts);
         });
     }
     tpl_->setPage(page);
-    tpl_->show();
-    tpl_->raise();
-    tpl_->activateWindow();
+    showMenu(tpl_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return tpl_;
 }
 
@@ -2142,13 +2164,16 @@ bool MainWindow::is3D() const { return viewStack_ && viewStack_->currentWidget()
 
 void MainWindow::show3D(bool on) {
     if (!viewStack_) return;
+    if (pages_ && pages_->currentWidget() != drawPage_)   // menyu / Start varag'idan — joriy chizma varag'iga
+        if (const int t = tabOfDoc(activeDoc_); t >= 0) docTabs_->setCurrentIndex(t);
     if (viewTabs_->currentIndex() != (on ? 1 : 0)) {
         const QSignalBlocker b(viewTabs_);
         viewTabs_->setCurrentIndex(on ? 1 : 0);
     }
     if (on) {
         viewStack_->setCurrentWidget(view3d_);
-        rebuild3D(view3d_->objectCount() > 0);
+        rebuild3D(!stale3d_ && view3d_->objectCount() > 0);   // boshqa chizmadan o'tilgan — ko'rinish yangidan
+        stale3d_ = false;
         view3d_->setFocus();
     } else {
         viewStack_->setCurrentWidget(view_);
@@ -2184,6 +2209,7 @@ void MainWindow::asBuiltDialog() {
         return;
     }
     QDialog dlg(this);
+    windowButtons(&dlg);
     dlg.setWindowTitle(t("gui.act.asbuilt"));
     auto* f = new QFormLayout(&dlg);
     auto* obj = new QComboBox(&dlg);
@@ -2229,6 +2255,7 @@ void MainWindow::asBuiltDialog() {
 
 void MainWindow::pipeDrawDialog() {
     QDialog dlg(this);
+    windowButtons(&dlg);
     dlg.setWindowTitle(t("gui.act.pipedraw"));
     auto* f = new QFormLayout(&dlg);
     auto* sys = new QComboBox(&dlg);
@@ -2353,6 +2380,8 @@ void MainWindow::refreshSheets() {
 bool MainWindow::isSheets() const { return viewStack_ && viewStack_->currentWidget() == sheetPage_; }
 
 void MainWindow::showSheets() {
+    if (pages_ && pages_->currentWidget() != drawPage_)
+        if (const int t = tabOfDoc(activeDoc_); t >= 0) docTabs_->setCurrentIndex(t);
     if (viewTabs_->currentIndex() != 2) {
         const QSignalBlocker b(viewTabs_);
         viewTabs_->setCurrentIndex(2);
@@ -2411,6 +2440,7 @@ bool MainWindow::exportSheetsPdf(const QString& path, bool all) {
 
 void MainWindow::sheetNewDialog() {
     QDialog dlg(this);
+    windowButtons(&dlg);
     dlg.setWindowTitle(t("gui.sheet.new"));
     auto* f = new QFormLayout(&dlg);
     auto* name = new QLineEdit(QStringLiteral("L-%1").arg(doc_.sheets().size() + 1), &dlg);
@@ -2434,6 +2464,7 @@ void MainWindow::sheetNewDialog() {
 void MainWindow::sheetViewDialog() {
     if (currentSheet() < 0) return;
     QDialog dlg(this);
+    windowButtons(&dlg);
     dlg.setWindowTitle(t("gui.sheet.view"));
     auto* f = new QFormLayout(&dlg);
     auto* src = new QComboBox(&dlg);
@@ -2460,6 +2491,7 @@ void MainWindow::sheetStampDialog() {
     if (si < 0) return;
     const Sheet& s = doc_.sheets()[static_cast<std::size_t>(si)];
     QDialog dlg(this);
+    windowButtons(&dlg);
     dlg.setWindowTitle(t("gui.sheet.stamp"));
     auto* f = new QFormLayout(&dlg);
     static const char* keys[] = {"CODE", "OBJECT", "BUILDING", "TITLE", "STAGE", "ORG", "DEV", "CHK", "NCTRL", "APPR", "DATE"};
@@ -2568,7 +2600,7 @@ void MainWindow::rebuild3D(bool keepView) {
         }
     }
     // bino modeli
-    if (building_ && !building_->model().prisms.empty()) {
+    if (building_ && ownedHere(building_) && !building_->model().prisms.empty()) {   // menyu modeli — faqat o'z chizmasida
         for (const auto& pr : building_->model().prisms) {
             std::vector<P3> o;
             for (const auto& q : pr.outline) o.push_back({q.x, q.y, 0});
@@ -2605,7 +2637,7 @@ void MainWindow::rebuild3D(bool keepView) {
         }
     }
     // armatura
-    if (rebar_ && !rebar_->model().bars.empty()) {
+    if (rebar_ && ownedHere(rebar_) && !rebar_->model().bars.empty()) {
         std::size_t nseg = 0;
         for (const auto& b : rebar_->model().bars) nseg += b.pts.size();
         const bool tubes = nseg < 150000;
@@ -2710,7 +2742,7 @@ void MainWindow::rebuild3D(bool keepView) {
         }
     }
     // koridor
-    if (corridor_ && corridor_->model().sec.size() >= 2) {
+    if (corridor_ && ownedHere(corridor_) && corridor_->model().sec.size() >= 2) {
         view3d_->beginObject(t("gui.act.corridor"), t("gui.act.corridor"));
         view3d_->addTriangles(civil::sceneFromCorridor(corridor_->model()), 1.0);
         view3d_->endObject();
@@ -2744,7 +2776,7 @@ void MainWindow::makeSampleBuilding() {
     p.floors = g.floors;
     p.floorHeight = g.floorH;
     bd->setParams(p, bim::autoLayerMap(doc_));
-    if (rebar_ && rebar_->isVisible()) openRebar();
+    if (rebar_ && menuOpen(rebar_) && ownedHere(rebar_)) openRebar();
 }
 
 EarthworkDialog* MainWindow::openEarthwork(int tab) {
@@ -2757,19 +2789,16 @@ EarthworkDialog* MainWindow::openEarthwork(int tab) {
             earth_->refreshLayers();
         });
         connect(earth_, &EarthworkDialog::pickRequested, this, [this] {
-            earth_->hide();
+            menuAway(earth_);
             pickCb_ = [this](const std::vector<Vec3>& pts) {
                 if (!pts.empty()) earth_->setAt(pts.front());
-                earth_->show();
-                earth_->raise();
+                menuBack(earth_);
             };
             view_->startPick(1, {"gui.prompt.ewat"});
         });
     } else earth_->refreshLayers();
     if (tab >= 0) earth_->setTab(tab);
-    earth_->show();
-    earth_->raise();
-    earth_->activateWindow();
+    showMenu(earth_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return earth_;
 }
 
@@ -2785,9 +2814,7 @@ SurveyDialog* MainWindow::openSurvey(int kind) {
         connect(survey_, &SurveyDialog::locateRequested, this, &MainWindow::locate);
     } else survey_->refreshLayers();
     if (kind >= 0 && kind <= 4) survey_->setKind(static_cast<civil::DevKind>(kind));
-    survey_->show();
-    survey_->raise();
-    survey_->activateWindow();
+    showMenu(survey_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     return survey_;
 }
 
@@ -2881,12 +2908,12 @@ DriveDialog* MainWindow::openDrive() {
             title = QString::fromStdString(e->layer());
             break;
         }
-    if (pts.empty() && corridor_ && corridor_->model().sec.size() >= 2) {
+    if (pts.empty() && corridor_ && ownedHere(corridor_) && corridor_->model().sec.size() >= 2) {
         for (const auto& sc : corridor_->model().sec) pts.push_back({sc.x, sc.y, sc.design});
         lineZ = true;
         title = t("gui.act.corridor");
     }
-    if (pts.empty() && road_ && road_->model().st.size() >= 2) {
+    if (pts.empty() && road_ && ownedHere(road_) && road_->model().st.size() >= 2) {
         for (const auto& st : road_->model().st) pts.push_back({st.x, st.y, st.design});
         lineZ = true;
         title = t("gui.act.road");
@@ -2899,7 +2926,7 @@ DriveDialog* MainWindow::openDrive() {
     std::vector<DriveSource> src;
     int def = -1;
     if (lineZ) { src.push_back({t("drive.z.line"), {}}); def = 0; }
-    if (corridor_ && corridor_->model().sec.size() >= 2) {
+    if (corridor_ && ownedHere(corridor_) && corridor_->model().sec.size() >= 2) {
         const civil::Corridor* c = &corridor_->model();
         src.push_back({t("drive.z.corridor"), [c](double x, double y) {
                            double z;
@@ -2912,7 +2939,7 @@ DriveDialog* MainWindow::openDrive() {
         src.push_back({t("drive.z.ground"), ground});
         if (def < 0) def = static_cast<int>(src.size()) - 1;
     }
-    if (building_) {
+    if (building_ && ownedHere(building_)) {
         const auto& m = building_->model();
         std::map<int, double> top;  // daraja -> yuqori sirt
         for (const auto& pr : m.prisms)
@@ -3030,8 +3057,8 @@ DriveDialog* MainWindow::openDrive() {
     if (def < 0) def = static_cast<int>(src.size()) - 1;
     // sahna
     civil::DriveScene sc = civil::sceneFromDocument(doc_);
-    if (corridor_) sc.append(civil::sceneFromCorridor(corridor_->model()));
-    if (building_)
+    if (corridor_ && ownedHere(corridor_)) sc.append(civil::sceneFromCorridor(corridor_->model()));
+    if (building_ && ownedHere(building_))
         for (const auto& pr : building_->model().prisms) {
             std::uint32_t col = 0xd6d1c6;
             if (pr.kind == bim::ElemKind::Column) col = 0xb3aca0;
@@ -3056,14 +3083,18 @@ DriveDialog* MainWindow::openDrive() {
     drive_->setScene(std::move(sc));
     drive_->setSources(src, def);
     drive_->setPath(pts, title);
-    drive_->show();
-    drive_->raise();
-    drive_->activateWindow();
+    showMenu(drive_);   // varaq bo'lib (AutoCAD fayl yorlig'i kabi)
     if (pts.empty()) statusBar()->showMessage(t("gui.drv.nopath"), 6000);
     return drive_;
 }
 
 void MainWindow::locate(double x, double y) {
+    // menyu varag'idan: o'z chizmasi varag'iga o'tiladi (menyu varag'i ochiq qoladi)
+    if (QWidget* m = currentMenu())
+        if (const int t = tabOfDoc(menuOwner(m)); t >= 0) docTabs_->setCurrentIndex(t);
+    if (isStart())
+        if (const int t = tabOfDoc(activeDoc_); t >= 0) docTabs_->setCurrentIndex(t);
+    if (is3D() || isSheets()) show3D(false);
     const double ppu = std::max(1.0, std::min(view_->width(), view_->height()) / 60.0);  // ~60 m ko'rinadi
     view_->setView({x, y, 0}, ppu);
     view_->update();
@@ -3248,8 +3279,7 @@ void MainWindow::openFile() {
         importIfc({f});
         return;
     }
-    if (!maybeSave()) return;
-    runLine(QStringLiteral("OPEN \"%1\" !").arg(f));
+    openPath(f);   // yangi varaqda — joriy chizma yopilmaydi
 }
 
 int MainWindow::importIfc(const QStringList& files, bool showPanel, bool georef) {
@@ -3584,16 +3614,15 @@ void MainWindow::dragEnterEvent(QDragEnterEvent* e) {
 }
 
 void MainWindow::dropEvent(QDropEvent* e) {
-    QStringList ifc;
-    QString drawing;
+    QStringList ifc, drawings;
     for (const auto& u : e->mimeData()->urls()) {
         const QString f = u.toLocalFile();
         const QString l = f.toLower();
         if (l.endsWith(".ifc") || l.endsWith(".ifczip")) ifc << f;
-        else if (drawing.isEmpty() && (l.endsWith(".acad") || l.endsWith(".dxf") || l.endsWith(".dwg"))) drawing = f;
+        else if (l.endsWith(".acad") || l.endsWith(".dxf") || l.endsWith(".dwg")) drawings << f;
     }
     e->acceptProposedAction();
-    if (!drawing.isEmpty() && maybeSave()) runLine(QStringLiteral("OPEN \"%1\" !").arg(drawing));
+    for (const QString& d : drawings) openPath(d);   // har biri o'z varag'ida
     if (!ifc.isEmpty()) importIfc(ifc);
 }
 
@@ -3623,6 +3652,16 @@ void MainWindow::exportDxf() {
 }
 
 bool MainWindow::eventFilter(QObject* o, QEvent* e) {
+    if (o == docTabs_ && e->type() == QEvent::MouseButtonRelease && static_cast<QMouseEvent*>(e)->button() == Qt::MiddleButton) {
+        const int i = docTabs_->tabAt(static_cast<QMouseEvent*>(e)->position().toPoint());
+        if (i >= 0) closeTabAt(i);   // o'rta tugma — varaqni yopish
+        return true;
+    }
+    if (o->isWidgetType() && menuWrap_.count(static_cast<QWidget*>(o))) {
+        auto* m = static_cast<QWidget*>(o);
+        if (e->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(e)->key() == Qt::Key_Escape) return true;   // Esc varaqni yopmaydi
+        if (e->type() == QEvent::Hide && m->isHidden()) removeMenuTab(m);   // menyu yopildi (Yopish tugmasi, reject, close)
+    }
     if (o == ribbon_ && e->type() == QEvent::Resize) applyRibbonDensity();
     if (o == appTitle_ && e->type() == QEvent::Resize)
         appTitle_->setText(appTitle_->fontMetrics().elidedText(appTitle_->property("full").toString(), Qt::ElideMiddle, std::max(40, appTitle_->width())));
@@ -3651,12 +3690,20 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {
-    if (maybeSave()) {
-        saveUiState();
-        e->accept();
-    } else {
-        e->ignore();
+    // har saqlanmagan chizma uchun so'raladi (o'sha varaq ko'rsatiladi)
+    std::vector<int> ids;
+    for (const auto& s : docs_) ids.push_back(s.id);
+    for (int id : ids) {
+        if (!drawingDirty(id)) continue;
+        if (const int t = tabOfDoc(id); t >= 0 && docTabs_->currentIndex() != t) docTabs_->setCurrentIndex(t);
+        if (!maybeSave()) {
+            e->ignore();
+            return;
+        }
     }
+    setMenuChrome(false);   // panellar holati to'g'ri saqlansin
+    saveUiState();
+    e->accept();
 }
 
 void MainWindow::restoreUiState(bool restoreMode) {
@@ -3703,7 +3750,7 @@ void MainWindow::noteRecent(const QString& file) {
 
 // ---------------------------------------------------------------- v0.31: kontekstli panellar, bo'sh 3D holati, loyiha sozlamalari
 void MainWindow::updateContextDocks() {
-    if (!layersDock_ || !ribbon_) return;
+    if (!layersDock_ || !ribbon_ || menuChrome_) return;   // menyu / Start varag'ida panellar yashirin
     const bool is2D = viewStack_ && viewStack_->currentWidget() == view_;
     // Qatlamlar — faqat 2D chizmada (3D va varaqlarda o'z boshqaruvi bor); foydalanuvchi tanlovi saqlanadi
     const bool wantLayers = layersWanted_ && mode_ != UiMode::Focus;
@@ -3803,6 +3850,7 @@ void MainWindow::measureDistance() {
 void MainWindow::projectSettingsDialog() {
     // Loyiha sozlamalari: izoh masshtabi, qadam, qutb burchagi, kursor, interfeys rejimi va tili, geo-joylash
     QDialog dlg(this);
+    windowButtons(&dlg);
     dlg.setObjectName("projectSettings");
     dlg.setWindowTitle(t("gui.proj.title"));
     dlg.setStyleSheet(theme_.styleSheet);

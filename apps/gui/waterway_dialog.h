@@ -4,6 +4,7 @@
 //  o'rta — 3D (vertikal masshtab) va bo'ylama profil (yer, tub, qirg'oq, suv sathi / pyezometrik chiziq)
 //  o'ng — Piketlar (tub belgisi qo'lda tuzatiladi), Hajmlar, Tekshiruv; past — Excel (bog'langan), "3D va profilni chizmaga"
 #include "excel_link.h"
+#include "menu_history.h"
 #include "model3d_view.h"
 #include "prop_panel.h"
 #include "template_sidebar.h"
@@ -59,6 +60,7 @@ public:
     void applySection(const civil::WwSection& s);
     void setFlow(double q);
     void showTab(int i);
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida)
     PropPanel* props() const { return props_; }   // Xossalar: 3D da tanlangan piket
 
 signals:
@@ -83,6 +85,8 @@ private:
     civil::WwParams p_;
     civil::WwModel m_;
     std::vector<civil::WwSection> secs_;
+    struct State { civil::WwModel m; civil::WwParams p; };
+    std::unique_ptr<MenuHistory<State>> hist_;
     bool updating_ = false;
 
     TemplateSidebar* side_ = nullptr;

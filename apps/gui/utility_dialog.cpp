@@ -71,6 +71,24 @@ UtilityDialog::UtilityDialog(const i18n::Localizer& loc, const Document& doc, bo
     view_->setDark(dark);
     fillLayers();
     reread();
+    // menyu tarixi: model (chiziqlar, Z, Ø, tur) va parametrlar — har o'zgarishdan keyin
+    hist_ = std::make_unique<MenuHistory<State>>(
+        this, [this] { return State{m_, p_}; }, [](const State& s) { return civil::utilToJson(s.m, s.p); },
+        [this](const State& s) {
+            m_ = s.m;
+            p_ = s.p;
+            updating_ = true;
+            ground_->setValue(p_.ground);
+            radius_->setValue(p_.labelRadius);
+            gap_->setValue(p_.gapTol);
+            clPipe_->setValue(p_.clearPipe);
+            clCable_->setValue(p_.clearCable);
+            updating_ = false;
+            if (selected_ >= static_cast<int>(m_.lines.size())) selected_ = -1;
+            fillTables();
+            render();
+        });
+    hist_->reset();
 }
 
 QString UtilityDialog::t(const char* key, const QStringList& args) const {
@@ -556,6 +574,7 @@ void UtilityDialog::render() {
         view_->addLabel({c.x, c.y, Z(std::max(c.za, c.zb)) + 1.8}, QStringLiteral("⚠ %1 < %2").arg(f2(c.clear), f2(c.required)));
     }
     view_->endScene(true);
+    if (hist_) hist_->note();   // menyu tarixi: o'zgarish bo'lsa — yangi qadam (kechiktirib)
 }
 
 // ---------------------------------------------------------------- Xossalar

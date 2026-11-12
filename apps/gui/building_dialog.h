@@ -8,6 +8,7 @@
 #include "template_sidebar.h"
 #include "drawing_set_widget.h"
 #include "excel_link.h"
+#include "menu_history.h"
 
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
@@ -41,6 +42,7 @@ public:
     void reread();  // chizmadan qayta o'qish (qatlamlar ro'yxati yangilanadi)
     // Chizma o'zgardi (Xossalar panelidan buyruq bajarildi): yangi qatlamlar qo'shiladi, bog'lashlar saqlanadi, model qayta quriladi
     void documentChanged();
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida): parametrlar va Xossalar tuzatishlari
     PropPanel* props() const { return props_; }
     EntityId prismSource(int i) const { return i >= 0 && i < static_cast<int>(prismSrc_.size()) ? prismSrc_[static_cast<std::size_t>(i)] : 0; }
     void setFloors(int n);
@@ -99,6 +101,8 @@ private:
     const i18n::Localizer& loc_;
     const Document& doc_;
     bim::BuildingModel model_;
+    struct State { bim::BuildingParams p; std::map<std::string, bim::ElemKind> layers; };
+    std::unique_ptr<MenuHistory<State>> hist_;
     bool updating_ = false;
 
     TemplateSidebar* side_ = nullptr;

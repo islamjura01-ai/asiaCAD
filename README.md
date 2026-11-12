@@ -341,6 +341,29 @@ ko'rsatish. Model qayta qurilganda tanlov saqlanadi — panel yangi qiymatlar bi
 - **Chiziqni tanlash:** uchburchaksiz obyektlar (quvur o'qi, sterjen) ekranda 7 px gacha yaqinlikda tanlanadi
   (`Model3DView::lineAt`); kanalizatsiya tarmog'i 3D (`Pipe3DView`) — bosilgan yuza bo'yicha.
 
+## Varaqlar — AutoCAD fayl yorliqlari kabi (v0.32) — `apps/gui/main_window_tabs.cpp`, `apps/gui/menu_history.h`
+
+Lenta ostida varaqlar qatori: **Boshlash** (Start) · ochiq chizmalar (`Chizma1*`, `bino.acad` …) · menyular, o'ngda
+`+` (yangi chizma), `▾` (ochiq varaqlar ro'yxati), `_` (yig'ish), `▭` (butun ekran, Ctrl+0), `✕` (dasturni butunlay
+yopish — saqlanmagan chizmalar so'raladi); har varaqning o'z `×` tugmasi.
+
+- **Bir nechta chizma:** har varaq o'z hujjati, undo/redo tarixi, joriy qatlami, ko'rinishi (2D/3D/listlar, markaz,
+  masshtab) va IFC modellari bilan. Yangi (Ctrl+N, `+`) — yangi varaq; Ochish / oxirgi fayllar / sudrab tashlash —
+  yangi varaqda (bo'sh "Chizma1" bo'lsa — shu varaqda), ochiq fayl qayta ochilsa — o'sha varaqqa o'tiladi.
+  Saqlanmagan varaqda `*`; yopishda (✕, o'rta tugma, Ctrl+F4 / Ctrl+W) so'raladi. Ctrl+Tab — keyingi varaq.
+- **Menyular varaq bo'lib:** Monolit bino, Armatura 3D, Kanalizatsiya, Yer osti tarmoqlari, Yo'l, Suv yo'li, Koridor,
+  Shahar mavzesi, Shablonlar, Geodeziya, Yer ishlari, Haydash — alohida oyna emas, varaqda (lenta va chizma panellari
+  yashirinadi, menyu butun maydonni egallaydi). Menyu ochilgan chizmasiga bog'lanadi: varag'iga qaytilganda o'sha chizma
+  faollashadi, "Chizmaga yozish" — o'sha chizmaga; bino/armatura modeli faqat o'z chizmasining 3D sida. "Chizmadan nuqta"
+  — chizma varag'iga o'tiladi va tugagach menyuga qaytiladi. Esc menyu varag'ini yopmaydi.
+- **Kichik oynalar** (0 dan chizish kiritmalari, geo-joylash, massiv, IFC palitrasi, ShNQ qoidalari, matn …) — suzuvchi,
+  sarlavhasida yig'ish / butun ekran / yopish tugmalari.
+- **Ctrl+Z / Ctrl+Y menyularda:** har menyu o'z tarixini yuritadi — model holati (yo'l, suv yo'li, koridor, tarmoqlar,
+  kanalizatsiya, shahar parametrlari va tuzatmalari, armatura shablonlari va KJ tuzatmalari, bino parametrlari) va menyu
+  chizmaga yozgan amallar (Xossalar tuzatishi, "Chizmaga yozish") bitta navbatda. Menyuning bitta amali — chizma tarixida
+  ham bitta qadam (`CommandStack::squash`). Menyu tarixi bo'sh bo'lsa — chizma bekor qilinadi.
+- **Boshlash varag'i:** yangi / ochish, menyular, oxirgi fayllar, namunalar (`examples/*.acad`).
+
 ## Tipik qavatlar: "+11.300...+23.400" — bir nechta qavat (v0.32) — `bim::parseLevelSet`
 
 Chizmadagi belgilar to'plami endi bitta qavat emas, shuncha qavat deb o'qiladi:

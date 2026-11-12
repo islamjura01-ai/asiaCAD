@@ -77,6 +77,27 @@ QMenu::right-arrow { width: 8px; height: 8px; }
 QMenu QLabel#ctxTitle { color: %4; font-weight: 800; font-size: 13px; }
 QMenu QLabel#ctxSub { color: %5; font-size: 11px; }
 QToolTip { background: %2; color: %4; border: 1px solid %6; padding: 4px 6px; }
+QWidget#docBar { background: %2; border-bottom: 1px solid %6; }
+QTabBar#docTabs { background: transparent; }
+QTabBar#docTabs::tab { background: transparent; color: %5; padding: 5px 4px 5px 10px; margin: 4px 1px 0 1px; border: 1px solid transparent;
+  border-bottom: 0; border-top-left-radius: 7px; border-top-right-radius: 7px; font-weight: 600; min-width: 40px; }
+QTabBar#docTabs::tab:hover { color: %4; background: %3; }
+QTabBar#docTabs::tab:selected { color: %4; background: %1; border-color: %6; border-top: 2px solid %7; }
+QTabBar#docTabs QToolButton#tabX { border: 0; border-radius: 4px; padding: 0; margin: 0 2px; background: transparent; }
+QTabBar#docTabs QToolButton#tabX:hover { background: %3; }
+QToolButton[docBtn="true"] { border-radius: 6px; padding: 4px 6px; }
+QWidget#startPage, QScrollArea#startScroll, QWidget#startBody { background: %1; }
+QFrame#startCard { background: %2; border: 1px solid %6; border-radius: 14px; }
+QLabel#startHead { color: %4; font-size: 15px; font-weight: 800; }
+QLabel#startSub, QLabel#startHint, QLabel#startNone { color: %5; }
+QToolButton#startBig { background: %3; border: 1px solid %6; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 700; }
+QToolButton#startBig:hover { border-color: %7; }
+QToolButton#startMenu { border: 1px solid transparent; border-radius: 10px; padding: 6px 4px; font-size: 11px; }
+QToolButton#startMenu:hover { background: %3; border-color: %6; }
+QListWidget#startRecent, QListWidget#startSamples { background: transparent; }
+QListWidget#startRecent::item, QListWidget#startSamples::item { padding: 6px; border-radius: 8px; }
+QListWidget#startRecent::item:hover, QListWidget#startSamples::item:hover { background: %3; }
+QScrollArea#menuPage { background: %1; border: 0; }
 )")
         .arg(win, panel, panel2, text, muted, border, accent, accentText, ribbon, ribbonText, input);
 }
@@ -153,6 +174,11 @@ QTabBar#viewTabs::tab { background: transparent; color: #8FA2CF; padding: 6px 14
 QTabBar#viewTabs::tab:hover { color: #E6ECFA; }
 QTabBar#viewTabs::tab:selected { background: transparent; color: #FFFFFF; border-bottom: 2px solid #E0A526; }
 QFrame#emptyCard { background: rgba(15, 29, 64, 235); border: 1px solid #22386B; border-radius: 14px; }
+QWidget#docBar { background: #08112A; border-bottom: 1px solid #22386B; }
+QTabBar#docTabs::tab { color: #8FA2CF; }
+QTabBar#docTabs::tab:hover { color: #E6ECFA; background: #13224A; }
+QTabBar#docTabs::tab:selected { color: #FFFFFF; background: #0B1530; border-color: #22386B; border-top: 2px solid #E0A526; }
+QWidget#startPage, QScrollArea#startScroll, QWidget#startBody { background: #0B1530; }
 QLabel#emptyTitle { color: #F2F5FD; font-size: 17px; font-weight: 800; }
 QLabel#emptyText { color: #8FA2CF; font-size: 13px; }
 QFrame#emptyCard QPushButton { padding: 8px 14px; text-align: left; }

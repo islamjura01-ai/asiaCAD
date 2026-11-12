@@ -2766,6 +2766,26 @@
     "gui.xp.base": "Asos belgisi",
     "gui.xp.gfa": "Umumiy maydon",
     "gui.xp.citynote": "Tuzatmalar shahar loyihasida saqlanadi — chizmaga ham shunday yoziladi",
-    "kj.chk.hole_outside": "Plita {0}: teshik {1} ({2}) plita ichida emas yoki boshqa teshikka tegadi — qoʻshilmadi"
+    "kj.chk.hole_outside": "Plita {0}: teshik {1} ({2}) plita ichida emas yoki boshqa teshikka tegadi — qoʻshilmadi",
+    "gui.tab.start": "Boshlash",
+    "gui.tab.drawing": "Chizma{0}",
+    "gui.tab.new": "Yangi chizma (Ctrl+N)",
+    "gui.tab.list": "Ochiq varaqlar",
+    "gui.tab.close": "Varaqni yopish",
+    "gui.tab.closeothers": "Boshqalarini yopish",
+    "gui.tab.owner": "{0} — chizma: {1}",
+    "gui.win.min": "Yigʻish",
+    "gui.win.full": "Butun ekranda ochish",
+    "gui.win.normal": "Oddiy oyna",
+    "gui.start.sub": "Chizma, bino va infratuzilma loyihalash",
+    "gui.start.begin": "Boshlash",
+    "gui.start.menus": "Menyular",
+    "gui.start.recent": "Oxirgi fayllar",
+    "gui.start.samples": "Namunalar",
+    "gui.start.none": "Hali fayl ochilmagan",
+    "gui.start.hint": "Har chizma va har menyu oʻz varagʻida ochiladi: varaqlar orasida bosib oʻting (Ctrl+Tab), × yoki Ctrl+F4 — yopish, Ctrl+0 — butun ekran. Ctrl+Z / Ctrl+Y menyularda ham ishlaydi: menyudagi oxirgi oʻzgarish bekor qilinadi yoki qaytariladi.",
+    "gui.undo.menu": "{0}: oxirgi oʻzgarish bekor qilindi (Ctrl+Y — qaytarish)",
+    "gui.redo.menu": "{0}: oʻzgarish qaytarildi",
+    "gui.win.close": "AsiaCAD ni yopish"
   }
 }

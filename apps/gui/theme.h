@@ -2,6 +2,7 @@
 // AsiaCAD GUI — uch interfeys rejimi va ularning mavzulari (dizayn: Samarqand, Ipak yo'li, Tungi Toshkent)
 #include <QColor>
 #include <QString>
+#include <QWidget>
 
 namespace asiacad::gui {
 
@@ -22,5 +23,10 @@ UiMode modeFromKey(const QString& k);  // noma'lum — Classic
 
 // AutoCAD Color Index -> RGB (7 — fon rangiga qarab oq/qora)
 QColor aciColor(int index, bool lightCanvas);
+
+// Yordamchi (suzuvchi) oyna sarlavhasida: yig'ish, butun ekran va yopish tugmalari; "?" yo'q. Ko'rsatishdan oldin chaqiriladi.
+inline void windowButtons(QWidget* w) {
+    w->setWindowFlags((w->windowFlags() | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint) & ~Qt::WindowContextHelpButtonHint);
+}
 
 } // namespace asiacad::gui

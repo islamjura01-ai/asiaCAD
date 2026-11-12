@@ -6,6 +6,7 @@
 //  past — Excelga/Exceldan (bog'langan), "3D ni chizmaga" (UTIL fayl.json)
 #include "drawing_set_widget.h"
 #include "excel_link.h"
+#include "menu_history.h"
 #include "model3d_view.h"
 #include "prop_panel.h"
 #include "template_sidebar.h"
@@ -42,6 +43,7 @@ public:
     void selectLine(int index);
     void setZ(int line, int vertex, double z);      // qo'lda tuzatish (sinov uchun ham)
     void modelChanged();                             // tekshiruv + jadvallar + 3D
+    MenuUndo* menuHistory() const { return hist_.get(); }   // Ctrl+Z / Ctrl+Y (menyu varag'ida)
     PropPanel* props() const { return props_; }      // Xossalar: 3D da tanlangan chiziq / quduq
 
 signals:
@@ -67,6 +69,8 @@ private:
     const Document& doc_;
     civil::UtilParams p_;
     civil::UtilModel m_;
+    struct State { civil::UtilModel m; civil::UtilParams p; };
+    std::unique_ptr<MenuHistory<State>> hist_;
     bool updating_ = false;
     int selected_ = -1;
 

@@ -653,20 +653,24 @@ CityDialog::CityDialog(const i18n::Localizer& loc, const Document& doc, bool dar
     stats_->setTextFormat(Qt::RichText);
     form->addRow(stats_);
 
-    auto* tabs = new QTabWidget(split);
+    auto* right = new QSplitter(Qt::Vertical, split);   // 3D / reja va ostida Xossalar (tanlangan bino)
+    auto* tabs = new QTabWidget(right);
     prev_ = new PlanPreview(tabs);
     prev_->setDark(dark);
     view_ = new Model3DView(tabs);
     view_->setDark(dark);
     tabs->addTab(view_, "3D");
     tabs->addTab(prev_, t("gui.gen.city.plan"));
-    props_ = new PropPanel(split);   // 3D yonida: tanlangan bino
+    props_ = new PropPanel(right);
     props_->empty(t("gui.xp.hint"));
-    props_->setMinimumWidth(240);
+    props_->setMinimumHeight(140);
+    right->setStretchFactor(0, 3);
+    right->setStretchFactor(1, 2);
+    right->setSizes({460, 260});
     tabs_ = tabs;
     connect(view_, &Model3DView::objectPicked, this, &CityDialog::onPicked);
     split->setStretchFactor(2, 1);
-    split->setSizes({260, 330, 730, 280});
+    split->setSizes({260, 330, 730});
 
     auto* bottom = new QHBoxLayout;
     bottom->addStretch(1);

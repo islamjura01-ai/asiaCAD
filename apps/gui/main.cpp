@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
     int asmIndex = -1, station = -1;
     QStringList sheetArgs, kjArgs;
     QString rebarKind;
+    QString pick;   // --pick KALIT: ochilgan menyu 3D sida element tanlanadi (Xossalar paneli skrinshotda)
     bool noConcrete = false;
     int upTo = -1;
     bool ortho = false, polar = false;
@@ -143,6 +144,7 @@ int main(int argc, char** argv) {
         else if (a == "--sheet") sheetArgs << next();  // ROL,yo'l[,dan,gacha] — yer osti (--util) yoki bino chizmalari
         else if (a == "--kj") kjArgs << next();        // ROL,yo'l,dan,gacha — armatura KJ chizmalari  // Yo'l 3D (--sewer-tab 1 — profil)  // Armatura 3D menyusi (bino --building N dan)
         else if (a == "--rebar-kind") rebarKind = next();
+        else if (a == "--pick") pick = next();
         else if (a == "--no-concrete") noConcrete = true;
         else if (a == "--upto") upTo = next().toInt();  // FOUND/STRIP/COLUMN/WALL/SLAB/ROOF
         else if (a == "--building") {   // Monolit bino menyusi: qavatlar soni yoki "auto" — chizma / varaqlar belgilari bo'yicha
@@ -306,6 +308,17 @@ int main(int argc, char** argv) {
                 }
                 if (!sewerTab.isEmpty()) d->showTab(sewerTab.toInt());
             }
+            if (!pick.isEmpty())   // Xossalar: menyu 3D sida element tanlanadi
+                for (QWidget* tl : QApplication::topLevelWidgets()) {
+                    if (!tl->isVisible() || tl == &w) continue;
+                    if (auto* sd = qobject_cast<asiacad::gui::SewerDialog*>(tl)) {
+                        sd->showTab(1);
+                        sd->netView()->selectKey(pick);
+                        continue;
+                    }
+                    for (auto* v : tl->findChildren<asiacad::gui::Model3DView*>())
+                        if (v->selectKey(pick, false)) break;
+                }
             if (!value.isEmpty()) {
                 w.viewport()->setOffsetDistance(value.toDouble());
                 w.viewport()->setFilletRadius(value.toDouble());

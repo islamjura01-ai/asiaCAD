@@ -233,15 +233,17 @@ void SewerDialog::buildUi() {
     // ---- o'ng: 3D, tekshiruv, hajmlar
     tabs_ = new QTabWidget(split);
     pipe3d_ = new Pipe3DView(tabs_);
-    // tarmoq 3D va yonida Xossalar (tanlangan quduq / quvur)
-    auto* netBox = new QSplitter(Qt::Horizontal, tabs_);
+    // tarmoq 3D va ostida Xossalar (tanlangan quduq / quvur) — o'ng ustun tor, shuning uchun ustma-ust
+    auto* netBox = new QSplitter(Qt::Vertical, tabs_);
     net3d_ = new Pipe3DView(netBox);
     props_ = new PropPanel(netBox);
     props_->empty(t("gui.xp.hint"));
+    props_->setMinimumHeight(160);
     netBox->addWidget(net3d_);
     netBox->addWidget(props_);
-    netBox->setStretchFactor(0, 3);
-    netBox->setStretchFactor(1, 2);
+    netBox->setStretchFactor(0, 1);
+    netBox->setStretchFactor(1, 1);
+    netBox->setSizes({400, 400});
     connect(net3d_, &Pipe3DView::picked, this, &SewerDialog::onPicked);
     checks_ = new QListWidget(tabs_);
     checks_->setWordWrap(true);

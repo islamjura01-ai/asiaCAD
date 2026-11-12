@@ -35,8 +35,12 @@ PropPanel::PropPanel(QWidget* parent) : QWidget(parent) {
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(0, 0, 0, 0);
     scroll_ = new QScrollArea(this);
+    scroll_->setObjectName("propScroll");
     scroll_->setWidgetResizable(true);
     scroll_->setFrameShape(QFrame::NoFrame);
+    // fon — menyuniki (qorong'i/yorug' mavzu): o'tkazish oynasi va tana shaffof
+    scroll_->setStyleSheet(QStringLiteral("QScrollArea#propScroll, QScrollArea#propScroll > QWidget, QWidget#propBody { background: transparent; }"));
+    scroll_->viewport()->setAutoFillBackground(false);
     scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     v->addWidget(scroll_);
     empty(QString());

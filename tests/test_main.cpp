@@ -3277,8 +3277,11 @@ TEST(norms_cli) {
     const auto out = (std::filesystem::temp_directory_path() / "asiacad_shnq_rules.json").string();
     const auto e = runScript("ru", {"ШНК ПРАВИЛА \"" + out + "\""});
     CHECK(e.find("Правила сохранены") != std::string::npos);
-    std::ifstream f(out, std::ios::binary);
-    const std::string js((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    std::string js;
+    {   // Windows: ochiq fayl o'chirilmaydi — o'qigach darhol yopiladi
+        std::ifstream f(out, std::ios::binary);
+        js.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    }
     CHECK(bim::normRulesFromJson(js).size() == bim::defaultNormRules().size());
     // o'zgartirilgan qoidalar fayli bilan: fundament talabi o'chirilgan
     auto rules = bim::defaultNormRules();
@@ -3290,7 +3293,8 @@ TEST(norms_cli) {
     }
     const auto s2 = runScript("en", {"SHNQ \"" + dataPath("armatura_sinov.ifc") + "\" \"" + out + "\""});
     CHECK(s2.find("errors: 3, warnings: 0") != std::string::npos);
-    std::filesystem::remove(out);
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
 }
 
 TEST(norms_cover_internal_interface) {

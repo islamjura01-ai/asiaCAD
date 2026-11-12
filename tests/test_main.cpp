@@ -52,6 +52,7 @@
 #include <sstream>
 #include <fstream>
 #include <functional>
+#include <exception>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -3378,8 +3379,18 @@ TEST(norms_building_model) {
 int main() {
     for (auto& [name, fn] : registry()) {
         const int before = g_fail;
-        fn();
-        std::cout << (g_fail == before ? "[ OK ] " : "[FAIL] ") << name << '\n';
+        // nomi oldindan (darhol chiqariladi): jarayon qulasa ham qaysi testda ekani jurnalda ko'rinadi (Windows CI)
+        std::cout << "[ .. ] " << name << std::endl;
+        try {
+            fn();
+        } catch (const std::exception& e) {
+            ++g_fail;
+            std::cout << "  istisno: " << e.what() << '\n';
+        } catch (...) {
+            ++g_fail;
+            std::cout << "  noma'lum istisno\n";
+        }
+        std::cout << (g_fail == before ? "[ OK ] " : "[FAIL] ") << name << std::endl;
     }
     std::cout << '\n' << registry().size() << " test, " << g_checks << " tekshiruv, " << g_fail << " xato\n";
     return g_fail == 0 ? 0 : 1;

@@ -222,6 +222,8 @@ void RoadDialog::buildUi() {
     auto* slopes = new QWidget(left);
     auto* sh = new QHBoxLayout(slopes);
     sh->setContentsMargins(0, 0, 0, 0);
+    slopeF_->setMinimumWidth(72);   // Windows: strelkalar raqamni yopmasin
+    slopeC_->setMinimumWidth(72);
     sh->addWidget(slopeF_);
     sh->addWidget(slopeC_);
     form->addRow(t("gui.rd.slope"), slopes);
@@ -260,6 +262,7 @@ void RoadDialog::buildUi() {
     vx->addWidget(new QLabel(t("gui.ut.vexag"), v3));
     vexag_ = dspin(1, 20, 1, 0);
     vexag_->setValue(3);
+    vexag_->setMinimumWidth(64);
     vx->addWidget(vexag_);
     vx->addStretch(1);
     v3l->addLayout(vx);

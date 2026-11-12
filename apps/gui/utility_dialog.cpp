@@ -165,6 +165,7 @@ void UtilityDialog::buildUi() {
     clPipe_ = dspin(0, 3, 0.05, 2, p_.clearPipe);
     clCable_ = dspin(0, 3, 0.05, 2, p_.clearCable);
     vexag_ = dspin(1, 50, 1, 0, 5);
+    vexag_->setMinimumWidth(64);
     form->addRow(t("gui.ut.ground"), ground_);
     form->addRow(t("gui.ut.radius"), radius_);
     form->addRow(t("gui.ut.gap"), gap_);

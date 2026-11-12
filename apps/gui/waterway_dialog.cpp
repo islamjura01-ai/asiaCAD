@@ -285,6 +285,7 @@ void WaterwayDialog::buildUi() {
     auto* vx = new QHBoxLayout;
     vx->addWidget(new QLabel(t("gui.ut.vexag"), v3));
     vexag_ = dspin(1, 20, 1, 0);
+    vexag_->setMinimumWidth(64);
     vexag_->setValue(3);
     vx->addWidget(vexag_);
     vx->addStretch(1);

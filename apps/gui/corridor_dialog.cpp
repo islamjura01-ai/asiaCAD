@@ -418,6 +418,7 @@ void CorridorDialog::buildUi() {
     vexag_->setRange(1, 20);
     vexag_->setValue(2);
     vexag_->setDecimals(0);
+    vexag_->setMinimumWidth(64);
     vx->addWidget(vexag_);
     vx->addStretch(1);
     v3l->addLayout(vx);

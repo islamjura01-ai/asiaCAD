@@ -2,7 +2,9 @@
 // AsiaCAD GUI — "Armatura 3D" menyusi. Yon tomonda shablonlar paneli (element turlari bo'yicha), o'rtada element turi
 // parametrlari va 3D karkas (turlar va qavatlar bo'yicha filtr, beton shaffof), o'ngda ведомость, jami va tekshiruv.
 // Bino modeli "Monolit bino" parametrlaridan (padbetonka -> tom) olinadi; "Ведомостni chizmaga" — REBAR buyrug'i.
+#include "bim_props.h"
 #include "model3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 #include "drawing_set_widget.h"
 #include "excel_link.h"
@@ -24,6 +26,7 @@ class QListWidget;
 class QSlider;
 class QSpinBox;
 class QTableWidget;
+class QTabWidget;
 
 namespace asiacad::gui {
 
@@ -43,16 +46,20 @@ public:
     void setShowConcrete(bool on);
     void setUpTo(int level);
     const bim::RebarModel& model() const { return rm_; }
+    const bim::BuildingModel& buildingModel() const { return bm_; }   // beton (shablon rejimi — chizmadan, KJ — loyihadan)
     const bim::RebarSettings& settings() const { return rs_; }
     TemplateSidebar* sidebar() const { return side_; }
     ExcelLink* excel() const { return excel_; }
     Model3DView* view() const { return view_; }
     void selectKind(bim::ElemKind k);
     QString templatesPath() const;
+    PropPanel* props() const { return props_; }
+    void documentChanged() { recompute(); }   // chizma o'zgardi (Xossalar buyrug'i) — model qayta quriladi
 
 signals:
     void scheduleRequested(const QString& jsonPath);
     void sampleRequested();   // bino yo'q — namuna bino yaratish (MainWindow)
+    void commandsRequested(const QStringList& lines);   // Xossalar: chizma obyektini tuzatish (MainWindow bajaradi, undo bilan)
 
 private:
     QPushButton* sample_ = nullptr;
@@ -110,6 +117,18 @@ private:
     QListWidget* totals_ = nullptr;
     QListWidget* checks_ = nullptr;
     QLabel* summary_ = nullptr;
+    // Xossalar
+    QTabWidget* tabs_ = nullptr;
+    PropPanel* props_ = nullptr;
+    BimSources src_;
+    std::vector<EntityId> prismSrc_;    // bm_.prisms bilan parallel (shablon rejimi: chizmadagi manba)
+    std::map<QString, int> keyPrism_;   // 3D kaliti -> bm_.prisms
+    std::map<QString, QString> keySlab_;   // KJ: 3D kaliti -> plita turi (kj_.slabs[].tag)
+    void onPicked(const QString& key);
+    void fillTemplate(bim::ElemKind k);       // shu tur armatura shabloni maydonlari (hamma elementlarga)
+    void fillKjSlab(const bim::Prism& pr, const QString& tag);
+    bim::KjSlabEdit& slabEdit(const QString& tag);
+    Vec3 kjLocal(const Vec3& p) const;        // KJ: absolyut (geodezik bog'langan) -> o'qlar bo'yicha lokal
 };
 
 } // namespace asiacad::gui

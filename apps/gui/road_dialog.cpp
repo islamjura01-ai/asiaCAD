@@ -244,6 +244,7 @@ void RoadDialog::buildUi() {
     auto* v3l = new QVBoxLayout(v3);
     v3l->setContentsMargins(0, 0, 0, 0);
     view_ = new Model3DView(v3);
+    connect(view_, &Model3DView::objectPicked, this, &RoadDialog::onPicked);
     v3l->addWidget(view_, 1);
     auto* vx = new QHBoxLayout;
     vx->addWidget(new QLabel(t("gui.ut.vexag"), v3));
@@ -273,6 +274,10 @@ void RoadDialog::buildUi() {
     tabs->addTab(st_, t("gui.rd.stations"));
     tabs->addTab(quant_, t("gui.rd.quant"));
     tabs->addTab(checks_, t("gui.bim.checks"));
+    props_ = new PropPanel(tabs);
+    props_->empty(t("gui.xp.hint"));
+    tabs->addTab(props_, t("gui.xp.tab"));
+    tabs_ = tabs;
     split->setStretchFactor(0, 0);
     split->setStretchFactor(1, 0);
     split->setStretchFactor(2, 3);
@@ -305,6 +310,7 @@ void RoadDialog::buildUi() {
     excel_->addButtons(bottom);
     auto* draw = new QPushButton(t("gui.rd.draw"), this);
     draw->setObjectName("accent");
+    drawB_ = draw;
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     close->setFixedWidth(44);
     bottom->addWidget(draw);
@@ -499,6 +505,77 @@ void RoadDialog::fillTables() {
     updating_ = false;
 }
 
+namespace {
+const QColor kPpErr(232, 70, 80), kPpWarn(230, 160, 30);
+}  // namespace
+
+void RoadDialog::onPicked(const QString& key) {
+    const int i = key.startsWith("st:") ? key.mid(3).toInt() : -1;
+    if (i < 0 || i >= static_cast<int>(m_.st.size())) {
+        props_->empty(t("gui.xp.hint"));
+        return;
+    }
+    const auto& s = m_.st[static_cast<std::size_t>(i)];
+    props_->begin(t("gui.xp.station", {QString::fromStdString(civil::pk(s.s))}), s.control ? t("gui.xp.control") : t("gui.xp.interp"));
+    props_->section(t("gui.xp.profile"));
+    props_->number("design", t("gui.xp.design"), s.design, 3, [this, i](double z) { setDesign(i, z); }, "m");
+    props_->info(t("gui.xp.ground"), QString::number(s.ground, 'f', 3) + " m");
+    props_->info(t("gui.xp.work"), QString::asprintf("%+.3f m", s.design - s.ground));
+    if (i + 1 < static_cast<int>(m_.st.size()))
+        props_->info(t("gui.xp.grade"), QString::number(s.grade * 1000, 'f', 1) + QString::fromUtf8(" ‰"),
+                     std::abs(s.grade) > p_.cat.maxGrade + 1e-9 ? kPpErr : QColor());
+    props_->info(t("gui.xp.cutfill"), f2(s.cutArea) + " / " + f2(s.fillArea) + QString::fromUtf8(" m²"));
+    for (const auto& is : m_.issues)
+        if (std::abs(is.s - s.s) < 0.01) props_->info(QString::fromUtf8(is.error ? "⚠" : "!"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? kPpErr : kPpWarn);
+    props_->section(t("gui.xp.rsection"));   // butun yo'l uchun
+    props_->bind("lanes", t("gui.rd.lanes"), lanes_);
+    props_->bind("lanew", t("gui.rd.lanew"), laneW_);
+    props_->bind("shoulder", t("gui.rd.shoulder"), shoulder_);
+    props_->bind("crossfall", t("gui.rd.crossfall"), crossfall_);
+    props_->bind("slopef", t("gui.xp.slopef"), slopeF_);
+    props_->bind("slopec", t("gui.xp.slopec"), slopeC_);
+    props_->section(t("gui.xp.pavement"));
+    for (std::size_t j = 0; j < p_.pavement.size(); ++j) {
+        const auto& l = p_.pavement[j];
+        props_->number(QStringLiteral("pav%1").arg(j), l.name.rfind("road.", 0) == 0 ? t(l.name.c_str()) : QString::fromStdString(l.name), l.thickness, 2,
+                       [this, j](double v) {
+                           if (j >= p_.pavement.size() || v < 0 || v > 2) return;
+                           p_.pavement[j].thickness = v;
+                           fillPavement();
+                           modelChanged();
+                       }, "m");
+    }
+    // qo'shimcha detallar
+    props_->section(t("gui.xp.details"));
+    props_->action("addpav", t("gui.xp.addpav"), {{t("gui.xp.thick"), 0.10, 2}}, [this](const QList<double>& in) {
+        const double v = in.value(0, 0.10);
+        if (v <= 0 || v > 2) return;
+        civil::PavementLayer l;
+        l.name = t("gui.xp.layern", {QString::number(p_.pavement.size() + 1)}).toStdString();
+        l.thickness = v;
+        p_.pavement.push_back(l);
+        fillPavement();
+        modelChanged();
+    });
+    if (!p_.pavement.empty())
+        props_->action("delpav", t("gui.xp.delpav"), [this] {
+            if (p_.pavement.empty()) return;
+            p_.pavement.pop_back();
+            fillPavement();
+            modelChanged();
+        }, true);
+    props_->action("locate", t("gui.xp.locate"), [this, i] {
+        if (i < static_cast<int>(m_.st.size())) emit locateRequested(m_.st[static_cast<std::size_t>(i)].x, m_.st[static_cast<std::size_t>(i)].y);
+    });
+    props_->action("todwg", t("gui.xp.todwg"), [this] { if (drawB_) drawB_->click(); });
+    if (i > 0) props_->action("prev", QString::fromUtf8("◀ ") + t("gui.xp.prev"), [this, i] { view_->selectKey(QStringLiteral("st:%1").arg(i - 1), true); });
+    if (i + 2 < static_cast<int>(m_.st.size()))
+        props_->action("next", t("gui.xp.next") + QString::fromUtf8(" ▶"), [this, i] { view_->selectKey(QStringLiteral("st:%1").arg(i + 1), true); });
+    props_->note(t("gui.xp.rdnote"));
+    props_->end();
+    if (tabs_ && tabs_->currentWidget() != props_) tabs_->setCurrentWidget(props_);
+}
+
 void RoadDialog::render() {
     view_->beginScene(t("gui.rd.title"), summary_->text() + QStringLiteral("  ·  ×%1").arg(vexag_->value(), 0, 'f', 0));
     if (m_.st.size() >= 2) {
@@ -511,6 +588,8 @@ void RoadDialog::render() {
             const auto& a = m_.st[i];
             const auto& b = m_.st[i + 1];
             if (a.section.size() != n || b.section.size() != n) continue;
+            const QString pkA = QString::fromStdString(civil::pk(a.s));
+            view_->beginObject(pkA, t("gui.xp.cat.st"), {t("gui.xp.design") + ": " + f2(a.design)}, QStringLiteral("st:%1").arg(i));
             for (std::size_t j = 0; j + 1 < n; ++j) {
                 const bool carriage = j == n / 2 - 1 || j == n / 2;
                 const bool shoulder = j == 1 || j + 2 == n;
@@ -534,6 +613,7 @@ void RoadDialog::render() {
                                 W(b, tb.first, tb.second)},
                                kGround, 90, false);
             }
+            view_->endObject();
         }
         // chiziqlar: o'q (oq, uzuq) va qatnov chetlari
         std::vector<P3> axis, le, re;

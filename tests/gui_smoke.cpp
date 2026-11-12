@@ -437,6 +437,29 @@ int main(int argc, char** argv) {
     CHECK(sd->segmentsTable()->rowCount() == 3);
     CHECK(sd->result().errors() == 0);
     CHECK(sd->pipeView()->faceCount() > 100);
+    {   // Xossalar (tarmoq 3D): quduq va quvur — tuzatish, quduq qo'shish (o'rtaga), quvurni bo'lish, asl holat
+        auto* nv = sd->netView();
+        CHECK(nv->keys().contains("mh:1") && nv->keys().contains("seg:0"));
+        CHECK(nv->selectKey("mh:1"));
+        CHECK(sd->props()->has("rim") && sd->props()->has("insert") && sd->props()->has("erase"));
+        CHECK(sd->props()->edit("rim", "100.5"));
+        CHECK(std::abs(sd->network().manholes[1].rim - 100.5) < 1e-9);
+        CHECK(nv->selectedKey() == "mh:1");
+        CHECK(sd->props()->trigger("insert"));
+        CHECK(sd->network().manholes.size() == 5 && sd->network().segments.size() == 4);
+        CHECK(std::abs(sd->network().manholes[2].x - 62.5) < 1e-9);
+        CHECK(nv->selectKey("seg:0"));
+        CHECK(sd->props()->has("slope") && sd->props()->has("spec") && sd->props()->has("split"));
+        CHECK(sd->props()->edit("slope", "12"));
+        CHECK(std::abs(sd->network().segments[0].slope - 0.012) < 1e-9);
+        CHECK(sd->props()->trigger("split"));
+        CHECK(sd->network().manholes.size() == 6 && sd->network().segments.size() == 5);
+        CHECK(nv->keyAt(QPoint(-100, -100)).isEmpty());
+        sd->setNetwork(net);
+        CHECK(sd->network().manholes.size() == 4);
+        nv->clearSelection();
+        CHECK(sd->props()->title().isEmpty());
+    }
     const auto docBefore = doc.size();
     CHECK(clickBtn("gui.sew.draw"));
     CHECK(doc.size() > docBefore + 50);
@@ -448,6 +471,22 @@ int main(int argc, char** argv) {
     sd->setNetwork(net);
     CHECK(sd->result().errors() >= 1);
     sd->close();
+
+    {   // asosiy oyna 3D: bosilgan nuqtaga eng yaqin chizma obyekti (Xossalar paneli shu obyektni ko'rsatadi)
+        w.runLine("NEW !");
+        w.runLine("LINE 0,0 10,0");
+        w.runLine("LINE 0,5 10,5");
+        w.runLine("CIRCLE 20,20 3");
+        auto ids = doc.idsOnLayer("0");
+        std::sort(ids.begin(), ids.end());
+        CHECK(ids.size() == 3);
+        if (ids.size() == 3) {
+            CHECK(w.nearestEntity("0", 5, 4.2, 0) == ids[1]);
+            CHECK(w.nearestEntity("0", 5, 0.4, 0) == ids[0]);
+            CHECK(w.nearestEntity("0", 20.5, 19.0, 0) == ids[2]);
+        }
+        CHECK(w.nearestEntity("YOQ_QATLAM", 0, 0, 0) == 0);
+    }
 
     // 20. Monolit bino menyusi: qatlamlar avtomatik, 3D, PTO jadvali chizmaga va undo
     w.runLine("NEW !");
@@ -475,6 +514,41 @@ int main(int argc, char** argv) {
     CHECK(bd->sidebar()->activate(3));  // kottej 2 qavat
     CHECK(bd->params().floors == 2 && bd->params().stripFoundation);
     bd->setFloors(4);
+    {   // Xossalar: 3D da ustun tanlansa — o'lchami, nusxa, teshik, o'chirish chizma obyektiga (undo bilan)
+        auto keyOf = [&](const QString& prefix, const QString& suffix) {
+            for (int i = 0; i < bd->view()->objectCount(); ++i)
+                if (const QString k = bd->view()->objectKey(i); k.startsWith(prefix) && k.endsWith(suffix)) return k;
+            return QString();
+        };
+        const QString col = keyOf("e:", ":1:COLUMN");
+        CHECK(!col.isEmpty());
+        CHECK(bd->view()->selectKey(col));
+        CHECK(bd->props()->has("rectw") && bd->props()->has("copy") && bd->props()->has("erase") && bd->props()->has("kind"));
+        const auto n0 = doc.size();
+        const double v0 = bd->model().totalVolume;
+        CHECK(bd->props()->edit("rectw", "0.6"));                     // SETPROP RECTW=0.6
+        CHECK(bd->view()->selectedKey() == col);                       // qayta qurilgandan keyin ham tanlangan
+        CHECK(bd->props()->value("rectw") == "0.600");
+        CHECK(bd->model().totalVolume > v0);
+        CHECK(bd->props()->trigger("copy", {0, 3}));                   // COPY dx,dy
+        CHECK(doc.size() == n0 + 1);
+        const QString slab = keyOf("e:", ":1:SLAB");
+        CHECK(!slab.isEmpty() && bd->view()->selectKey(slab));
+        CHECK(bd->props()->has("hole"));
+        CHECK(bd->props()->trigger("hole", {1.0, 0.5, 2.0, 0.0}));     // teshik: TESHIK qatlami, plitada teshik
+        CHECK(doc.layer("TESHIK").has_value());
+        bool holed = false;
+        for (const auto& pr : bd->model().prisms) holed |= pr.kind == asiacad::bim::ElemKind::Slab && !pr.holes.empty();
+        CHECK(holed);
+        CHECK(bd->view()->selectKey(col));
+        CHECK(bd->props()->trigger("erase"));
+        CHECK(bd->props()->title().isEmpty());                         // o'chirildi — tanlov yo'q
+        for (int i = 0; i < 6; ++i) w.runLine("UNDO");                 // erase, chprop, rectang, layer, copy, setprop
+        bd->documentChanged();
+        CHECK(doc.size() == n0);
+        CHECK(!doc.layer("TESHIK").has_value());
+        CHECK(std::abs(bd->model().totalVolume - v0) < 1e-6);
+    }
 
     // 21. Armatura 3D: bino modelidan fundamentdan tomgacha, yon shablonlar, ведомость chizmaga va undo
     RebarDialog* rd = nullptr;
@@ -497,6 +571,39 @@ int main(int argc, char** argv) {
         CHECK(rd->sidebar()->activate(colIdx));
         CHECK(rd->settings().byKind.at(asiacad::bim::ElemKind::Column).nMain == 12);
         CHECK(rd->model().totalMass > m0);
+        {   // Xossalar: ustun — chizmadagi manba (o'lcham, undo bilan) va shu tur armatura shabloni; sterjen — ma'lumot
+            QString col;
+            for (int i = 0; i < rd->view()->objectCount() && col.isEmpty(); ++i)
+                if (const QString k = rd->view()->objectKey(i); k.startsWith("e:") && k.endsWith(":1:COLUMN")) col = k;
+            CHECK(!col.isEmpty() && rd->view()->selectKey(col));
+            CHECK(rd->props()->has("rectw") && rd->props()->has("n") && rd->props()->has("dstir") && rd->props()->has("sstir"));
+            const double mA = rd->model().totalMass;
+            CHECK(rd->props()->edit("n", "16"));
+            CHECK(rd->settings().byKind.at(asiacad::bim::ElemKind::Column).nMain == 16);
+            CHECK(rd->model().totalMass > mA);
+            CHECK(rd->view()->selectedKey() == col);
+            CHECK(rd->props()->value("n") == "16");
+            const auto nd = doc.size();
+            const double vA = [&] { double v = 0; for (const auto& pr : rd->buildingModel().prisms) v += pr.volume(); return v; }();
+            CHECK(rd->props()->edit("rectw", "0.7"));                      // SETPROP — chizma obyekti
+            CHECK(rd->props()->value("rectw") == "0.700");
+            CHECK([&] { double v = 0; for (const auto& pr : rd->buildingModel().prisms) v += pr.volume(); return v; }() > vA);
+            w.runLine("UNDO");
+            rd->documentChanged();
+            CHECK(doc.size() == nd);
+            CHECK(std::abs([&] { double v = 0; for (const auto& pr : rd->buildingModel().prisms) v += pr.volume(); return v; }() - vA) < 1e-6);
+            QString slab;
+            for (int i = 0; i < rd->view()->objectCount() && slab.isEmpty(); ++i)
+                if (const QString k = rd->view()->objectKey(i); k.startsWith("e:") && k.endsWith(":1:SLAB")) slab = k;
+            CHECK(!slab.isEmpty() && rd->view()->selectKey(slab));
+            CHECK(rd->props()->has("hole") && rd->props()->has("d1") && rd->props()->has("s4"));
+            CHECK(rd->props()->edit("s1", "150"));
+            CHECK(std::abs(rd->settings().byKind.at(asiacad::bim::ElemKind::Slab).s1 - 0.15) < 1e-9);
+            CHECK(rd->view()->selectKey("r:0"));
+            CHECK(!rd->props()->title().isEmpty() && rd->props()->has("d1"));
+            rd->view()->clearSelection();
+            CHECK(rd->props()->title().isEmpty());
+        }
         const auto nr = doc.size();
         for (auto* b : rd->findChildren<QPushButton*>())
             if (b->text() == QString::fromStdString(loc.tr("gui.rb.todwg"))) b->click();
@@ -541,6 +648,45 @@ int main(int argc, char** argv) {
             CHECK(ud->model().errors() < e0);
             CHECK(ud->model().lines[static_cast<std::size_t>(cable)].v[0].src == asiacad::civil::UtilVertex::Manual);
         }
+        {   // Xossalar: chiziq — tur, Ø, chuqurlik, uchlar Z; qo'shimcha: quduq, bo'lish, parallel nusxa, o'chirish
+            auto* pp = ud->props();
+            CHECK(ud->view()->selectKey("line:0"));
+            CHECK(pp->has("kind") && pp->has("dn") && pp->has("cover") && pp->has("z1") && pp->has("node") && pp->has("parallel") && pp->has("erase"));
+            const auto nl = ud->model().lines.size(), nn = ud->model().nodes.size();
+            CHECK(pp->edit("dn", "315"));
+            CHECK(ud->model().lines[0].dn == 315 && ud->model().lines[0].dnManual);
+            CHECK(ud->view()->selectedKey() == "line:0");
+            CHECK(pp->edit("cover", "2.0"));
+            {
+                const auto& l0 = ud->model().lines[0];
+                CHECK(std::abs(l0.v[0].ground - l0.v[0].z - 0.1575 - 2.0) < 1e-9 && l0.v.back().src == asiacad::civil::UtilVertex::Manual);
+            }
+            CHECK(pp->trigger("node", {1, 1.5}));
+            CHECK(ud->model().nodes.size() == nn + 1);
+            CHECK(ud->view()->selectedKey() == QStringLiteral("node:%1").arg(nn));
+            CHECK(pp->has("bottom") && pp->edit("d", "2.0"));
+            CHECK(std::abs(ud->model().nodes.back().r - 1.0) < 1e-9);
+            CHECK(pp->trigger("erase"));
+            CHECK(ud->model().nodes.size() == nn);
+            CHECK(ud->view()->selectKey("line:0") && pp->trigger("parallel", {2.0}));
+            CHECK(ud->model().lines.size() == nl + 1);
+            CHECK(ud->view()->selectedKey() == QStringLiteral("line:%1").arg(nl));
+            {
+                const auto &a = ud->model().lines[0], &b = ud->model().lines.back();
+                CHECK(std::abs(std::hypot(b.v[0].x - a.v[0].x, b.v[0].y - a.v[0].y) - 2.0) < 1e-6);
+            }
+            CHECK(pp->trigger("erase"));
+            CHECK(ud->model().lines.size() == nl);
+            int ml = -1;
+            for (std::size_t i = 0; i < ud->model().lines.size(); ++i)
+                if (ud->model().lines[i].v.size() > 2) ml = static_cast<int>(i);
+            if (ml >= 0) {
+                const auto nv = ud->model().lines[static_cast<std::size_t>(ml)].v.size();
+                CHECK(ud->view()->selectKey(QStringLiteral("line:%1").arg(ml)) && pp->trigger("split", {2}));
+                CHECK(ud->model().lines.size() == nl + 1);
+                CHECK(ud->model().lines[static_cast<std::size_t>(ml)].v.size() + ud->model().lines[static_cast<std::size_t>(ml) + 1].v.size() == nv + 1);
+            }
+        }
         const auto n0 = doc.size();
         for (auto* b : ud->findChildren<QPushButton*>())
             if (b->text() == QString::fromStdString(loc.tr("gui.ut.draw"))) b->click();
@@ -563,6 +709,23 @@ int main(int argc, char** argv) {
         rd->applyCategory("IV");  // IV toifa: 60 ‰ — nishablik xatosi yo'qoladi
         CHECK(rd->params().cat.laneWidth == 3.0);
         CHECK(rd->model().errors() < e0);
+        {   // Xossalar: piket — loyiha belgisi, kesim (butun yo'l), to'shama qatlami qo'shish/olib tashlash
+            CHECK(rd->view()->selectKey("st:3"));
+            auto* pp = rd->props();
+            CHECK(pp->has("design") && pp->has("lanew") && pp->has("addpav") && pp->has("next"));
+            const double d3 = rd->model().st[3].design;
+            CHECK(pp->edit("design", QString::number(d3 + 0.5, 'f', 3)));
+            CHECK(std::abs(rd->model().st[3].design - (d3 + 0.5)) < 1e-6 && rd->model().st[3].control);
+            CHECK(rd->view()->selectedKey() == "st:3");
+            CHECK(pp->edit("lanew", "3.5"));
+            CHECK(std::abs(rd->params().cat.laneWidth - 3.5) < 1e-9);
+            const auto np = rd->params().pavement.size();
+            CHECK(pp->trigger("addpav", {0.12}));
+            CHECK(rd->params().pavement.size() == np + 1 && std::abs(rd->params().pavement.back().thickness - 0.12) < 1e-9);
+            CHECK(pp->trigger("delpav"));
+            CHECK(rd->params().pavement.size() == np);
+            CHECK(pp->trigger("next") && rd->view()->selectedKey() == "st:4");
+        }
         const auto n0 = doc.size();
         for (auto* b : rd->findChildren<QPushButton*>())
             if (b->text() == QString::fromStdString(loc.tr("gui.rd.draw"))) b->click();
@@ -593,6 +756,24 @@ int main(int argc, char** argv) {
         cd->setParam(1, 0, "w", 3.75);
         CHECK(std::abs(cd->assembly().right[0].get("w") - 3.75) < 1e-12);
         cd->showStation(5);
+        {   // Xossalar: piket — loyiha belgisi, yig'ma qismlari parametrlari, qism qo'shish/olib tashlash
+            CHECK(cd->view()->selectKey("sec:5"));
+            auto* pp = cd->props();
+            CHECK(pp->has("design") && pp->has("addsub") && pp->has("pr_0_w") && pp->has("delr_0"));
+            CHECK(pp->edit("pr_0_w", "3.5"));
+            CHECK(std::abs(cd->assembly().right[0].get("w") - 3.5) < 1e-12);
+            CHECK(cd->view()->selectedKey() == "sec:5");
+            const auto nr = cd->assembly().right.size();
+            const auto kinds = asiacad::civil::subKinds();
+            const int ci = static_cast<int>(std::find(kinds.begin(), kinds.end(), asiacad::civil::SubKind::Curb) - kinds.begin());
+            CHECK(pp->edit("addsub", QString::number(ci + 1)));
+            CHECK(cd->assembly().right.size() == nr + 1 && cd->assembly().right[nr - 1].kind == asiacad::civil::SubKind::Curb);
+            CHECK(pp->trigger(QStringLiteral("delr_%1").arg(nr - 1)));
+            CHECK(cd->assembly().right.size() == nr);
+            const QString d5 = QString::number(cd->model().sec[5].design + 0.3, 'f', 3);   // panel 3 xona bilan
+            CHECK(pp->edit("design", d5));
+            CHECK(std::abs(cd->model().sec[5].design - d5.toDouble()) < 1e-9);
+        }
         const auto d0 = doc.size();
         for (auto* b : cd->findChildren<QPushButton*>())
             if (b->text() == QString::fromStdString(loc.tr("gui.cor.draw"))) b->click();
@@ -621,6 +802,17 @@ int main(int argc, char** argv) {
         CHECK(wd->model().errors() < e0);
         wd->applySection(asiacad::civil::builtinWwSections()[9]);
         CHECK(wd->model().pieces > 100);
+        {   // Xossalar: piket — tub belgisi, kesim (butun o'zan), shablon
+            CHECK(wd->view()->selectKey("st:2"));
+            auto* pp = wd->props();
+            CHECK(pp->has("bottom") && pp->has("type") && pp->has("q") && pp->has("tpl"));
+            const double b2 = wd->model().st[2].bottom;
+            CHECK(pp->edit("bottom", QString::number(b2 - 0.05, 'f', 3)));
+            CHECK(std::abs(wd->model().st[2].bottom - (b2 - 0.05)) < 1e-6 && wd->model().st[2].control);
+            CHECK(wd->view()->selectedKey() == "st:2");
+            CHECK(pp->edit("q", "0.8"));
+            CHECK(std::abs(wd->params().q - 0.8) < 1e-9);
+        }
         const auto n0 = doc.size();
         for (auto* b : wd->findChildren<QPushButton*>())
             if (b->text() == QString::fromStdString(loc.tr("gui.rd.draw"))) b->click();
@@ -692,6 +884,47 @@ int main(int argc, char** argv) {
         for (const auto& r : rdp->project().bm.pto)
             if (r.kind == asiacad::bim::ElemKind::FoundationSlab) fv2 += r.volume;
         CHECK(std::abs(fv2 - 14 * 8 * 0.6) < 1e-6);
+        {   // Xossalar: KJ plita — qalinlik, to'r, teshik, qo'shimcha armatura zonasi, belgi (model ichida; KJ fayl o'zgarmaydi)
+            QString sk;
+            for (int i = 0; i < rdp->view()->objectCount() && sk.isEmpty(); ++i)
+                if (const QString k = rdp->view()->objectKey(i); k.startsWith("kj:")) sk = k;
+            CHECK(!sk.isEmpty() && rdp->view()->selectKey(sk));
+            CHECK(rdp->props()->has("t") && rdp->props()->has("levels") && rdp->props()->has("meshd") && rdp->props()->has("hole") &&
+                  rdp->props()->has("zone") && rdp->props()->has("level"));
+            auto slabVol = [&] {
+                double v = 0;
+                for (const auto& r : rdp->project().bm.pto)
+                    if (r.kind == asiacad::bim::ElemKind::Slab || r.kind == asiacad::bim::ElemKind::Roof) v += r.volume;
+                return v;
+            };
+            const auto nd = doc.size();
+            const auto nb0 = rdp->model().bars.size();
+            const double sv0 = slabVol();
+            const double t0 = rdp->project().slabs.empty() ? 0 : rdp->project().slabs.front().t;
+            CHECK(t0 > 0);
+            CHECK(rdp->props()->edit("t", QString::number(t0 + 0.1)));
+            CHECK(slabVol() > sv0 + 1);
+            CHECK(rdp->view()->selectedKey() == sk);                      // qayta qurilgandan keyin ham tanlangan
+            const double sv1 = slabVol();
+            const double nLv = rdp->project().slabs.empty() ? 1.0 : static_cast<double>(rdp->project().slabs.front().levels.size());
+            CHECK(rdp->props()->trigger("hole", {1.0, 1.0}));               // markazda 1×1 (har belgida)
+            CHECK(std::abs(sv1 - slabVol() - (t0 + 0.1) * nLv) < 1e-6);
+            CHECK(rdp->props()->has("delhole0"));
+            CHECK(rdp->props()->trigger("zone", {2.0, 2.0}));               // 2×2 zona plita markazida, Ø12 s200 yuqorida
+            CHECK(rdp->model().bars.size() > nb0);
+            CHECK(rdp->props()->has("delzone0") && rdp->props()->has("reset"));
+            CHECK(rdp->props()->trigger("delhole0"));
+            CHECK(std::abs(slabVol() - sv1) < 1e-6);
+            CHECK(rdp->props()->trigger("reset"));
+            CHECK(rdp->model().bars.size() == nb0 && std::abs(slabVol() - sv0) < 1e-6);
+            CHECK(rdp->kjParams().slabEdits.empty());
+            CHECK(doc.size() == nd);                                        // chizma o'zgarmadi
+            QString col;
+            for (int i = 0; i < rdp->view()->objectCount() && col.isEmpty(); ++i)
+                if (const QString k = rdp->view()->objectKey(i); k.startsWith("c:COLUMN:")) col = k;
+            CHECK(!col.isEmpty() && rdp->view()->selectKey(col));
+            CHECK(!rdp->props()->title().isEmpty() && !rdp->props()->has("rectw"));   // KJ ustun — ma'lumot
+        }
         rdp->setShowConcrete(false);
         rdp->setUpTo(0);
         CHECK(rdp->view()->faceCount() >= 0);
@@ -777,6 +1010,24 @@ int main(int argc, char** argv) {
         cd->sidebar()->activate(2);
         CHECK(cd->result().buildings.size() > 10);
         CHECK(cd->view()->faceCount() > 100);
+        {   // Xossalar: bino — qavatlar, nusxa, olib tashlash (JSON da saqlanadi — chizmaga ham shunday)
+            const auto nb = cd->result().buildings.size();
+            CHECK(cd->view()->selectKey("b:0"));
+            CHECK(cd->props()->has("floors") && cd->props()->has("copy") && cd->props()->has("erase"));
+            CHECK(cd->props()->edit("floors", "20"));
+            CHECK(cd->result().buildings[0].floors == 20 && cd->result().buildings[0].index == 0);
+            CHECK(cd->view()->selectedKey() == "b:0");
+            CHECK(cd->props()->trigger("copy", {200, 0}));
+            CHECK(cd->result().buildings.size() == nb + 1 && cd->view()->selectedKey() == "x:0");
+            CHECK(cd->result().buildings.back().floors == 20);
+            CHECK(cd->view()->selectKey("b:1") && cd->props()->trigger("erase"));
+            CHECK(cd->result().buildings.size() == nb);
+            const auto sp = asiacad::civil::cityFromJson(asiacad::civil::cityToJson(cd->spec()));
+            CHECK(sp.edits.size() == 2 && sp.extra.size() == 1 && sp.extra[0].floors == 20);
+            CHECK(asiacad::civil::generateCity(sp).buildings.size() == nb);
+            CHECK(cd->view()->selectKey("b:0") && cd->props()->trigger("reset"));
+            CHECK(cd->result().buildings.size() == nb && cd->spec().edits.empty() && cd->spec().extra.empty());
+        }
         cd->sidebar()->activate(5);   // 300 kvartal
         CHECK(cd->result().buildings.size() >= 600);
         QElapsedTimer tm;

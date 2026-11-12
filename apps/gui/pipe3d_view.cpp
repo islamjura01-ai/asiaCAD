@@ -134,12 +134,17 @@ void Pipe3DView::showNetwork(const civil::SewerNetwork& n, const civil::SewerRes
     auto Z = [&](double el) { return (el - z0) * ex; };
     subtitle_ = QStringLiteral("Z × %1").arg(ex, 0, 'f', 1);
     const QColor concrete(170, 166, 156), lid(60, 62, 66);
+    auto tag = [this](std::size_t from, const QString& k) {
+        for (std::size_t q = from; q < faces_.size(); ++q) faces_[q].key = k;
+    };
     for (std::size_t i = 0; i < n.manholes.size(); ++i) {
         const auto& m = n.manholes[i];
         const double rr = std::max(r.manholes[i].diameter / 2 + 0.08, horiz / 70.0);
         const double bot = std::min(r.manholes[i].invIn, r.manholes[i].invOut) - 0.15;
+        const std::size_t f0 = faces_.size();
         cylinder({m.x, m.y, Z(bot)}, {m.x, m.y, Z(m.rim) - 0.05 * ex}, rr, 20, concrete, true, false);
         cylinder({m.x, m.y, Z(m.rim) - 0.05 * ex}, {m.x, m.y, Z(m.rim)}, rr * 0.75, 20, lid, false, true);
+        tag(f0, QStringLiteral("mh:%1").arg(i));
         labels_.push_back({{m.x, m.y, Z(m.rim) + 0.6 * ex}, QString::fromStdString(m.name)});
     }
     for (std::size_t i = 0; i + 1 < n.manholes.size() && i < r.segments.size(); ++i) {
@@ -150,7 +155,9 @@ void Pipe3DView::showNetwork(const civil::SewerNetwork& n, const civil::SewerRes
         const double ro = s.spec->od / 2000.0;
         const double rs = std::max(ro, horiz / 140.0);  // juda ingichka bo'lib qolmasin
         const QColor c = rgb(civil::materialRgb(s.spec->material));
+        const std::size_t f0 = faces_.size();
         cylinder({a.x, a.y, Z(s.invUp + ro)}, {b.x, b.y, Z(s.invDown + ro)}, rs, 16, c, false, false);
+        tag(f0, QStringLiteral("seg:%1").arg(i));
         labels_.push_back({{(a.x + b.x) / 2, (a.y + b.y) / 2, Z((s.invUp + s.invDown) / 2) - 0.8 * ex},
                            QStringLiteral("%1 Ø%2").arg(QString::fromLatin1(civil::materialKey(s.spec->material))).arg(s.spec->dn)});
     }
@@ -172,6 +179,74 @@ void Pipe3DView::showNetwork(const civil::SewerNetwork& n, const civil::SewerRes
     center_ = {(minX + maxX) / 2, (minY + maxY) / 2, Z((minZ + maxZ) / 2)};
     fit();
     update();
+    // tanlov saqlanadi (Xossalar yangilanadi); obyekt yo'qolgan bo'lsa — bo'shatiladi
+    if (!sel_.isEmpty()) {
+        if (!keys().contains(sel_)) sel_.clear();
+        emit picked(sel_);
+    }
+}
+
+QStringList Pipe3DView::keys() const {
+    QStringList k;
+    for (const auto& f : faces_)
+        if (!f.key.isEmpty() && (k.isEmpty() || k.back() != f.key) && !k.contains(f.key)) k << f.key;
+    return k;
+}
+
+QString Pipe3DView::keyAt(const QPoint& px) const {
+    // oldindagisi: bo'yashdagi kabi — jism (guruh) markazi chuqurligi eng kichigi
+    std::vector<double> gsum(static_cast<std::size_t>(std::max(groups_, 0)), 0.0), gcnt(gsum.size(), 0.0);
+    std::vector<double> depth(faces_.size(), 0.0);
+    for (std::size_t i = 0; i < faces_.size(); ++i) {
+        double d = 0;
+        for (const auto& q : faces_[i].pts) {
+            double dd;
+            project(q, &dd);
+            d += dd;
+        }
+        depth[i] = faces_[i].pts.empty() ? 0 : d / static_cast<double>(faces_[i].pts.size());
+        if (const int g = faces_[i].group; g >= 0 && g < groups_) {
+            gsum[static_cast<std::size_t>(g)] += depth[i];
+            gcnt[static_cast<std::size_t>(g)] += 1;
+        }
+    }
+    double best = 1e300;
+    QString key;
+    for (std::size_t i = 0; i < faces_.size(); ++i) {
+        const auto& f = faces_[i];
+        if (f.key.isEmpty() || f.lineWidth > 0 || f.pts.size() < 3) continue;
+        QPolygonF poly;
+        for (const auto& q : f.pts) poly << project(q);
+        if (!poly.containsPoint(QPointF(px), Qt::OddEvenFill)) continue;
+        const int g = f.group;
+        const double k = g >= 0 && g < groups_ && gcnt[static_cast<std::size_t>(g)] > 0 ? gsum[static_cast<std::size_t>(g)] / gcnt[static_cast<std::size_t>(g)] : depth[i];
+        if (k < best) {
+            best = k;
+            key = f.key;
+        }
+    }
+    return key;
+}
+
+bool Pipe3DView::selectKey(const QString& key) {
+    if (key.isEmpty() || !keys().contains(key)) return false;
+    sel_ = key;
+    update();
+    emit picked(sel_);
+    return true;
+}
+
+void Pipe3DView::clearSelection() {
+    sel_.clear();
+    update();
+    emit picked(QString());
+}
+
+void Pipe3DView::mouseReleaseEvent(QMouseEvent* e) {
+    if (e->button() != Qt::LeftButton || (e->pos() - press_).manhattanLength() > 4) return;   // aylantirish — tanlash emas
+    sel_ = keyAt(e->pos());
+    update();
+    emit picked(sel_);
 }
 
 // ---------------------------------------------------------------- umumiy sahna
@@ -368,8 +443,10 @@ void Pipe3DView::paintEvent(QPaintEvent*) {
         }
         QColor c = f.color;
         c.setRgbF(std::min(1.0, c.redF() * it.shade), std::min(1.0, c.greenF() * it.shade), std::min(1.0, c.blueF() * it.shade));
+        const bool hi = !sel_.isEmpty() && f.key == sel_;   // tanlangan — sariqqa
+        if (hi) c.setRgbF(std::min(1.0, c.redF() * 0.45 + 0.55), std::min(1.0, c.greenF() * 0.45 + 0.47), c.blueF() * 0.45 + 0.08);
         c.setAlpha(f.alpha);
-        p.setPen(f.outline ? QPen(c.darker(150), 0.6) : QPen(c, 0.6));
+        p.setPen(hi ? QPen(QColor(255, 214, 70), 1.0) : f.outline ? QPen(c.darker(150), 0.6) : QPen(c, 0.6));
         p.setBrush(c);
         if (f.holes.empty()) p.drawPolygon(poly);
         else p.drawPath(path);
@@ -413,7 +490,10 @@ void Pipe3DView::paintEvent(QPaintEvent*) {
     }
 }
 
-void Pipe3DView::mousePressEvent(QMouseEvent* e) { last_ = e->pos(); }
+void Pipe3DView::mousePressEvent(QMouseEvent* e) {
+    last_ = e->pos();
+    press_ = e->pos();
+}
 void Pipe3DView::mouseMoveEvent(QMouseEvent* e) {
     const QPoint d = e->pos() - last_;
     last_ = e->pos();

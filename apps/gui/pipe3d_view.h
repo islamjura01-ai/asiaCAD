@@ -37,6 +37,15 @@ public:
     void resetView();
     QSize sizeHint() const override { return {420, 320}; }
     int faceCount() const { return static_cast<int>(faces_.size()); }
+    // Tanlash (Xossalar): tarmoqda quduq "mh:<i>" va quvur "seg:<i>"; bosilsa picked(kalit), bo'sh joy — picked("")
+    QString selectedKey() const { return sel_; }
+    bool selectKey(const QString& key);
+    void clearSelection();
+    QString keyAt(const QPoint& px) const;
+    QStringList keys() const;
+
+signals:
+    void picked(const QString& key);
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -44,6 +53,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* e) override;
     void wheelEvent(QWheelEvent* e) override;
     void mouseDoubleClickEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent* e) override;
 
 private:
     struct Face {
@@ -55,6 +65,7 @@ private:
         int group = -1;                      // bitta jism (prizma) — chuqurlik bo'yicha birga saralanadi
         double lineWidth = 0;                // > 0 — yuza emas, chiziq (ochiq/yopiq)
         bool closed = false;
+        QString key;                         // tanlanadigan obyekt (quduq / quvur)
     };
     int groups_ = 0;
     struct Label {
@@ -72,7 +83,8 @@ private:
     double az_ = -35, el_ = 25, zoom_ = 1, fitScale_ = 1;
     QPointF pan_, fitMid_;
     P3 center_;
-    QPoint last_;
+    QPoint last_, press_;
+    QString sel_;
     bool dark_ = true;
 };
 

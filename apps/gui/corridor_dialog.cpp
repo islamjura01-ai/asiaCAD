@@ -395,6 +395,7 @@ void CorridorDialog::buildUi() {
     auto* v3l = new QVBoxLayout(v3);
     v3l->setContentsMargins(0, 0, 0, 0);
     view_ = new Model3DView(v3);
+    connect(view_, &Model3DView::objectPicked, this, &CorridorDialog::onPicked);
     v3l->addWidget(view_, 1);
     auto* vx = new QHBoxLayout;
     vx->addWidget(new QLabel(t("gui.ut.vexag"), v3));
@@ -452,6 +453,10 @@ void CorridorDialog::buildUi() {
     tabs->addTab(st_, t("gui.rd.stations"));
     tabs->addTab(checks_, t("gui.bim.checks"));
     tabs->addTab(layers_, t("gui.rd.layers"));
+    props_ = new PropPanel(tabs);
+    props_->empty(t("gui.xp.hint"));
+    tabs->addTab(props_, t("gui.xp.tab"));
+    rtabs_ = tabs;
     split->setStretchFactor(2, 3);
     split->setStretchFactor(3, 2);
     split->setSizes({290, 340, 640, 450});
@@ -480,6 +485,7 @@ void CorridorDialog::buildUi() {
     excel_->setStatusLabel(xlStatus);
     excel_->addButtons(bottom);
     auto* draw = new QPushButton(t("gui.cor.draw"), this);
+    drawB_ = draw;
     draw->setObjectName("accent");
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     close->setFixedWidth(44);
@@ -881,6 +887,63 @@ void CorridorDialog::fillTables() {
     showStation(secSlider_->value());
 }
 
+namespace {
+const QColor kPpErr(232, 70, 80), kPpWarn(230, 160, 30);
+}  // namespace
+
+void CorridorDialog::onPicked(const QString& key) {
+    const int i = key.startsWith("sec:") ? key.mid(4).toInt() : -1;
+    if (i < 0 || i >= static_cast<int>(c_.sec.size())) {
+        props_->empty(t("gui.xp.hint"));
+        return;
+    }
+    showStation(i);   // "Kesimlar" ham shu piketga
+    const auto& s = c_.sec[static_cast<std::size_t>(i)];
+    const auto& a = p_.assemblies.front();
+    props_->begin(t("gui.xp.station", {QString::fromStdString(civil::pk(s.s))}), QString::fromStdString(a.name));
+    props_->section(t("gui.xp.profile"));
+    props_->number("design", t("gui.xp.design"), s.design, 3, [this, i](double z) { setDesign(i, z); }, "m");
+    props_->info(t("gui.xp.ground"), f2(s.ground) + " m");
+    props_->info(t("gui.xp.work"), QString::asprintf("%+.3f m", s.design - s.ground));
+    props_->info(t("gui.xp.cutfill"), f2(s.cut) + " / " + f2(s.fill) + QString::fromUtf8(" m²"));
+    if (s.water > 0) props_->info(t("ww.lbl.water"), f2(s.water) + " m");
+    if (!s.daylightL || !s.daylightR) props_->info("!", t("gui.xp.nodaylight"), kPpWarn);
+    for (const auto& is : c_.issues)
+        if (std::abs(is.s - s.s) < 0.01) props_->info(QString::fromUtf8(is.error ? "⚠" : "!"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? kPpErr : kPpWarn);
+    // yig'ma qismlari: parametrlar shu yerdan (butun koridor uchun), olib tashlash
+    for (int side : {1, -1}) {
+        if (side < 0 && a.symmetric) break;
+        const auto& v = a.side(side);
+        for (std::size_t j = 0; j < v.size(); ++j) {
+            const auto& sub = v[j];
+            props_->section(QString::fromUtf8(side > 0 ? (a.symmetric ? "⇆ " : "→ ") : "← ") + subName(sub.kind));
+            for (const auto& q : sub.p)
+                props_->number(QStringLiteral("p%1_%2_%3").arg(side > 0 ? "r" : "l").arg(j).arg(QString::fromStdString(q.key)), t(("cor.p." + q.key).c_str()),
+                               q.value, 3, [this, side, j, k = q.key](double val) { setParam(side, static_cast<int>(j), k, val); });
+            props_->action(QStringLiteral("del%1_%2").arg(side > 0 ? "r" : "l").arg(j), QString::fromUtf8("✕ ") + t("gui.xp.delsub"),
+                           [this, side, j] { removeSub(side, static_cast<int>(j)); }, true);
+        }
+    }
+    // qo'shimcha detallar: yig'maga qism qo'shish (simmetrik — ikkala tomonga)
+    props_->section(t("gui.xp.details"));
+    const auto kinds = civil::subKinds();
+    QStringList names{t("gui.xp.pick")};
+    for (auto k : kinds) names << subName(k);
+    props_->choice("addsub", t("gui.xp.addsub"), names, 0, [this, kinds](int k) {
+        if (k >= 1 && k <= static_cast<int>(kinds.size())) addSub(kinds[static_cast<std::size_t>(k - 1)], 0);
+    });
+    props_->action("locate", t("gui.xp.locate"), [this, i] {
+        if (i < static_cast<int>(c_.sec.size())) emit locateRequested(c_.sec[static_cast<std::size_t>(i)].x, c_.sec[static_cast<std::size_t>(i)].y);
+    });
+    props_->action("todwg", t("gui.xp.todwg"), [this] { if (drawB_) drawB_->click(); });
+    if (i > 0) props_->action("prev", QString::fromUtf8("◀ ") + t("gui.xp.prev"), [this, i] { view_->selectKey(QStringLiteral("sec:%1").arg(i - 1), true); });
+    if (i + 2 < static_cast<int>(c_.sec.size()))
+        props_->action("next", t("gui.xp.next") + QString::fromUtf8(" ▶"), [this, i] { view_->selectKey(QStringLiteral("sec:%1").arg(i + 1), true); });
+    props_->note(t("gui.xp.cornote"));
+    props_->end();
+    if (rtabs_ && rtabs_->currentWidget() != props_) rtabs_->setCurrentWidget(props_);
+}
+
 void CorridorDialog::render() {
     view_->beginScene(t("gui.cor.title"), summary_->text() + QStringLiteral("  ·  ×%1").arg(vexag_->value(), 0, 'f', 0));
     if (c_.sec.size() >= 2) {
@@ -906,6 +969,8 @@ void CorridorDialog::render() {
         for (std::size_t i = 0; i + 1 < c_.sec.size(); ++i) {
             const auto& A = c_.sec[i];
             const auto& B = c_.sec[i + 1];
+            view_->beginObject(QString::fromStdString(civil::pk(A.s)), t("gui.xp.cat.st"), {t("gui.xp.design") + ": " + f2(A.design)},
+                               QStringLiteral("sec:%1").arg(i));
             std::map<std::tuple<int, std::string, int>, const civil::SecPoint*> mb;
             {
                 std::map<std::pair<int, std::string>, int> cnt;
@@ -944,6 +1009,7 @@ void CorridorDialog::render() {
                     const double gb = B.groundLine.empty() ? eb.z : (sd < 0 ? B.groundLine.front().second : B.groundLine.back().second);
                     view_->addFace({W(A, ea.o, ea.z), W(A, ea.o + sd * 10, ga), W(B, eb.o + sd * 10, gb), W(B, eb.o, eb.z)}, QColor(160, 115, 70), 80, false);
                 }
+            view_->endObject();
         }
         for (const auto& is : c_.issues) {
             if (!is.error) continue;

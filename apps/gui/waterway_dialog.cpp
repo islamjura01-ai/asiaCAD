@@ -270,6 +270,7 @@ void WaterwayDialog::buildUi() {
     auto* v3l = new QVBoxLayout(v3);
     v3l->setContentsMargins(0, 0, 0, 0);
     view_ = new Model3DView(v3);
+    connect(view_, &Model3DView::objectPicked, this, &WaterwayDialog::onPicked);
     v3l->addWidget(view_, 1);
     auto* vx = new QHBoxLayout;
     vx->addWidget(new QLabel(t("gui.ut.vexag"), v3));
@@ -300,6 +301,10 @@ void WaterwayDialog::buildUi() {
     tabs->addTab(st_, t("gui.rd.stations"));
     tabs->addTab(quant_, t("gui.rd.quant"));
     tabs->addTab(checks_, t("gui.bim.checks"));
+    props_ = new PropPanel(tabs);
+    props_->empty(t("gui.xp.hint"));
+    tabs->addTab(props_, t("gui.xp.tab"));
+    tabs_ = tabs;
     split->setStretchFactor(2, 3);
     split->setStretchFactor(3, 2);
     split->setSizes({240, 310, 600, 520});
@@ -329,6 +334,7 @@ void WaterwayDialog::buildUi() {
     excel_->addButtons(bottom);
     auto* draw = new QPushButton(t("gui.rd.draw"), this);
     draw->setObjectName("accent");
+    drawB_ = draw;
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     close->setFixedWidth(44);
     bottom->addWidget(draw);
@@ -538,6 +544,70 @@ void WaterwayDialog::fillTables() {
     updating_ = false;
 }
 
+namespace {
+const QColor kPpErr(232, 70, 80), kPpWarn(230, 160, 30);
+}  // namespace
+
+void WaterwayDialog::onPicked(const QString& key) {
+    const int i = key.startsWith("st:") ? key.mid(3).toInt() : -1;
+    if (i < 0 || i >= static_cast<int>(m_.st.size())) {
+        props_->empty(t("gui.xp.hint"));
+        return;
+    }
+    const auto& s = m_.st[static_cast<std::size_t>(i)];
+    const bool open = civil::wwOpen(p_.sec.type);
+    props_->begin(t("gui.xp.station", {QString::fromStdString(civil::pk(s.s))}),
+                  QString::fromStdString(p_.sec.name) + (s.control ? QStringLiteral(" · ") + t("gui.xp.control") : QString()));
+    props_->section(t("gui.xp.profile"));
+    props_->number("bottom", t("ww.lbl.bottom"), s.bottom, 3, [this, i](double z) { setBottom(i, z); }, "m");
+    props_->info(t("gui.xp.ground"), f3(s.ground) + " m");
+    props_->info(t("gui.xp.depth"), f2(s.ground - s.bottom) + " m");
+    if (i + 1 < static_cast<int>(m_.st.size()))
+        props_->info(t("gui.xp.slope"), QString::number(s.slope * 1000, 'f', 2) + QString::fromUtf8(" ‰"), s.slope <= 0 ? kPpErr : QColor());
+    props_->section(t("gui.xp.hydro"));
+    if (s.depthN > 0) props_->info(t("gui.xp.depthn"), f2(s.depthN) + " m");
+    props_->info(t("gui.xp.vel"), f2(s.v) + " m/s", s.v > 0 && (s.v < p_.sec.vmin || s.v > p_.sec.vmax) ? kPpWarn : QColor());
+    if (open && s.fr > 0) props_->info("Fr", f2(s.fr));
+    if (s.water != 0) props_->info(t("ww.lbl.water"), f3(s.water) + " m");
+    props_->info(t("gui.xp.cutfill"), f2(s.cut) + " / " + f2(s.fill) + QString::fromUtf8(" m²"));
+    for (const auto& is : m_.issues)
+        if (std::abs(is.s - s.s) < 0.01) props_->info(QString::fromUtf8(is.error ? "⚠" : "!"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? kPpErr : kPpWarn);
+    props_->section(t("gui.xp.wsection"));   // butun o'zan uchun
+    QStringList types;
+    for (int k = 0; k < type_->count(); ++k) types << type_->itemText(k);
+    props_->choice("type", t("gui.ww.type"), types, type_->currentIndex(), [this](int k) { type_->setCurrentIndex(k); });
+    if (open) {
+        props_->bind("b", t("gui.ww.b"), b_);
+        props_->bind("h", t("gui.ww.h"), h_);
+        props_->bind("m", t("gui.ww.m"), m_s);
+        props_->bind("fb", t("gui.ww.fb"), fb_);
+    } else {
+        props_->bind("d", t("gui.ww.d"), d_);
+    }
+    props_->bind("t", t("gui.ww.t"), t_);
+    props_->bind("n", t("gui.ww.n"), n_);
+    props_->bind("q", t("gui.ww.q"), q_);
+    // qo'shimcha detallar: shablondan kesim, nazorat nuqtasi
+    props_->section(t("gui.xp.details"));
+    if (!secs_.empty()) {
+        QStringList names{t("gui.xp.pick")};
+        for (const auto& x : secs_) names << QString::fromStdString(x.name);
+        props_->choice("tpl", t("gui.xp.wtpl"), names, 0, [this](int k) {
+            if (k >= 1 && k <= static_cast<int>(secs_.size())) applySection(secs_[static_cast<std::size_t>(k - 1)]);
+        });
+    }
+    props_->action("locate", t("gui.xp.locate"), [this, i] {
+        if (i < static_cast<int>(m_.st.size())) emit locateRequested(m_.st[static_cast<std::size_t>(i)].x, m_.st[static_cast<std::size_t>(i)].y);
+    });
+    props_->action("todwg", t("gui.xp.todwg"), [this] { if (drawB_) drawB_->click(); });
+    if (i > 0) props_->action("prev", QString::fromUtf8("◀ ") + t("gui.xp.prev"), [this, i] { view_->selectKey(QStringLiteral("st:%1").arg(i - 1), true); });
+    if (i + 2 < static_cast<int>(m_.st.size()))
+        props_->action("next", t("gui.xp.next") + QString::fromUtf8(" ▶"), [this, i] { view_->selectKey(QStringLiteral("st:%1").arg(i + 1), true); });
+    props_->note(t("gui.xp.rdnote"));
+    props_->end();
+    if (tabs_ && tabs_->currentWidget() != props_) tabs_->setCurrentWidget(props_);
+}
+
 void WaterwayDialog::render() {
     view_->beginScene(t("gui.ww.title"), summary_->text() + QStringLiteral("  ·  ×%1").arg(vexag_->value(), 0, 'f', 0));
     if (m_.st.size() >= 2) {
@@ -562,11 +632,14 @@ void WaterwayDialog::render() {
             for (std::size_t i = 0; i + 1 < m_.st.size(); ++i) {
                 const auto& a = m_.st[i];
                 const auto& b = m_.st[i + 1];
+                view_->beginObject(QString::fromStdString(civil::pk(a.s)), t("gui.xp.cat.st"), {t("ww.lbl.bottom") + ": " + f3(a.bottom)},
+                                   QStringLiteral("st:%1").arg(i));
                 for (int side : {-1, 1})
                     view_->addFace({W(a, side * sec.d / 2, a.bottom + sec.d / 2), W(a, 0, a.bottom + sec.d), W(b, 0, b.bottom + sec.d),
                                     W(b, side * sec.d / 2, b.bottom + sec.d / 2)},
                                    typeColor(sec.type), 230, false);
                 view_->addFace({W(a, -6, a.ground), W(a, 6, a.ground), W(b, 6, b.ground), W(b, -6, b.ground)}, kGround, 60, false);
+                view_->endObject();
             }
             view_->addPolyline(crown, typeColor(sec.type).lighter(130), 2.4);
             view_->addPolyline(inv, typeColor(sec.type).darker(130), 2.4);
@@ -588,6 +661,8 @@ void WaterwayDialog::render() {
             for (std::size_t i = 0; i + 1 < m_.st.size(); ++i) {
                 const auto& a = m_.st[i];
                 const auto& b = m_.st[i + 1];
+                view_->beginObject(QString::fromStdString(civil::pk(a.s)), t("gui.xp.cat.st"), {t("ww.lbl.bottom") + ": " + f3(a.bottom)},
+                                   QStringLiteral("st:%1").arg(i));
                 for (std::size_t j = 0; j + 1 < shape.size(); ++j)
                     view_->addFace({W(a, shape[j].first, a.bottom + shape[j].second), W(a, shape[j + 1].first, a.bottom + shape[j + 1].second),
                                     W(b, shape[j + 1].first, b.bottom + shape[j + 1].second), W(b, shape[j].first, b.bottom + shape[j].second)},
@@ -600,6 +675,7 @@ void WaterwayDialog::render() {
                     view_->addFace({W(a, side * (halfTop + sec.t), a.bottom + sec.h), W(a, side * (halfTop + 10), a.ground),
                                     W(b, side * (halfTop + 10), b.ground), W(b, side * (halfTop + sec.t), b.bottom + sec.h)},
                                    kGround, 90, false);
+                view_->endObject();
             }
         }
         for (const auto& is : m_.issues) {

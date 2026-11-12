@@ -5,6 +5,7 @@
 //  o'ng — Piketlar (tub belgisi qo'lda tuzatiladi), Hajmlar, Tekshiruv; past — Excel (bog'langan), "3D va profilni chizmaga"
 #include "excel_link.h"
 #include "model3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/waterway.h>
@@ -16,6 +17,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
+class QPushButton;
 class QTableWidget;
 class QTabWidget;
 
@@ -57,6 +59,7 @@ public:
     void applySection(const civil::WwSection& s);
     void setFlow(double q);
     void showTab(int i);
+    PropPanel* props() const { return props_; }   // Xossalar: 3D da tanlangan piket
 
 signals:
     void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
@@ -73,6 +76,7 @@ private:
     void modelChanged();
     void fillTables();
     void render();
+    void onPicked(const QString& key);
 
     const i18n::Localizer& loc_;
     const Document& doc_;
@@ -96,6 +100,9 @@ private:
     QListWidget* checks_ = nullptr;
     QLabel* summary_ = nullptr;
     ExcelLink* excel_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
+    PropPanel* props_ = nullptr;
+    QPushButton* drawB_ = nullptr;
 };
 
 } // namespace asiacad::gui

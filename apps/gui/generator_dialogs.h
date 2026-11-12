@@ -6,6 +6,7 @@
 //  * NetInputDialog   — yer osti tarmog'i: quduqlar va quvurlar jadvali; jonli plan
 //  * CityDialog       — shahar mavzesi: shablonlar, parametrlar, plan va 3D massiv, ko'rsatkichlar
 #include "model3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/generators.h>
@@ -18,7 +19,9 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QPushButton;
 class QSpinBox;
+class QTabWidget;
 class QTableWidget;
 
 namespace asiacad::gui {
@@ -124,13 +127,20 @@ public:
     Model3DView* view() const { return view_; }
     PlanPreview* preview() const { return prev_; }
     void recompute();
+    PropPanel* props() const { return props_; }   // Xossalar: 3D da tanlangan bino (qavatlar, nusxa, olib tashlash)
 
 signals:
     void drawRequested(const QString& jsonPath);
 
 private:
+    void onPicked(const QString& key);
     const Document& doc_;
     civil::CityResult r_;
+    std::vector<civil::CitySpec::Edit> edits_;
+    std::vector<civil::CitySpec::Extra> extra_;
+    PropPanel* props_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
+    QPushButton* drawB_ = nullptr;
     bool updating_ = false;
     TemplateSidebar* side_ = nullptr;
     QSpinBox *nx_ = nullptr, *ny_ = nullptr, *fmin_ = nullptr, *fmax_ = nullptr, *seed_ = nullptr;

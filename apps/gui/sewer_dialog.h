@@ -3,6 +3,7 @@
 // quvur bo'laklari jadvali, jonli gidravlik hisob va norma tekshiruvi, hajmlar (PTO) va 3D ko'rinish.
 // "Chizmaga chizish" tarmoqni .kan.json ga yozib, SEWER buyrug'ini Interpreter orqali bajaradi (undo bitta qadam).
 #include "pipe3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 #include "excel_link.h"
 
@@ -47,6 +48,8 @@ public:
     void showTab(int index);
     QTableWidget* segmentsTable() const { return segs_; }
     Pipe3DView* pipeView() const { return pipe3d_; }
+    Pipe3DView* netView() const { return net3d_; }
+    PropPanel* props() const { return props_; }   // Xossalar: tarmoq 3D da tanlangan quduq / quvur
 
 signals:
     void drawRequested(const QString& jsonPath, bool profile);
@@ -69,6 +72,8 @@ private:
     void draw();
     void syncSegmentsRows();
     void recompute();
+    void onPicked(const QString& key);
+    void editNet(const std::function<void(civil::SewerNetwork&)>& fn);   // tarmoqni o'zgartirish -> jadvallar -> hisob
     const civil::PipeSpec* currentSpec() const;
     QComboBox* specCombo(int row) const;
 
@@ -97,6 +102,7 @@ private:
     QTabWidget* tabs_ = nullptr;
     Pipe3DView* pipe3d_ = nullptr;
     Pipe3DView* net3d_ = nullptr;
+    PropPanel* props_ = nullptr;
     QListWidget* checks_ = nullptr;
     QPlainTextEdit* qty_ = nullptr;
     QLabel* status_ = nullptr;

@@ -292,6 +292,7 @@ void Model3DView::retranslateUi() {
 
 // ---------------------------------------------------------------- sahna
 void Model3DView::beginScene(const QString& title, const QString& subtitle) {
+    keepKey_ = selectedKey();
     tri_.clear();
     line_.clear();
     edge_.clear();
@@ -306,11 +307,12 @@ void Model3DView::beginScene(const QString& title, const QString& subtitle) {
     dirty_ = true;
 }
 
-void Model3DView::beginObject(const QString& name, const QString& category, const QStringList& props) {
+void Model3DView::beginObject(const QString& name, const QString& category, const QStringList& props, const QString& key) {
     Obj o;
     o.name = name;
     o.category = category;
     o.props = props;
+    o.key = key;
     o.t0 = o.t1 = tri_.size();
     o.l0 = o.l1 = line_.size();
     o.e0 = o.e1 = edge_.size();
@@ -620,6 +622,11 @@ void Model3DView::endScene(bool keepView) {
     (void)first;
     if (!keepView || !fitted_) resetView();
     if (!objs_.empty()) fitted_ = true;
+    if (!keepKey_.isEmpty()) {   // tuzatishdan keyin: o'sha element yana tanlangan (panel yangi qiymatlar bilan)
+        const QString k = keepKey_;
+        keepKey_.clear();
+        if (!selectKey(k)) emit objectPicked(QString());
+    }
     update();
 }
 
@@ -756,6 +763,7 @@ void Model3DView::hideSelected() {
     sel_ = -1;
     dirty_ = true;
     update();
+    emit objectPicked(QString());
 }
 void Model3DView::showAll() {
     for (auto& o : objs_) o.hidden = false;
@@ -1181,14 +1189,79 @@ bool Model3DView::rayHit(const QPoint& px, QVector3D& hit, int* objOut) const {
     return true;
 }
 
+int Model3DView::lineAt(const QPoint& px, float& rayT) const {
+    const QMatrix4x4 M = projMatrix() * viewMatrix();
+    const double W = std::max(1, width()), H = std::max(1, height());
+    QVector3D o, d;
+    rayFrom(px, o, d);
+    const double zr = double(smax_.z() - smin_.z());
+    const float clipZ = clip_ >= 0.999 ? 1e30f : float(double(smin_.z()) + zr * clip_ + 1e-4);
+    double best = 7.0;
+    int bestObj = -1;
+    for (int k = 0; k < static_cast<int>(objs_.size()); ++k) {
+        const auto& ob = objs_[static_cast<std::size_t>(k)];
+        if (ob.hidden || hiddenCats_.count(ob.category) || ob.l0 == ob.l1 || (ob.key.isEmpty() && !pickAllLines_)) continue;
+        for (std::size_t i = ob.l0; i + 2 * kLineStride <= ob.l1; i += 2 * kLineStride) {
+            const QVector3D A(line_[i], line_[i + 1], line_[i + 2]), B(line_[i + kLineStride], line_[i + kLineStride + 1], line_[i + kLineStride + 2]);
+            if (A.z() > clipZ && B.z() > clipZ) continue;
+            const QVector4D ca = M * QVector4D(A, 1.f), cb = M * QVector4D(B, 1.f);
+            if (ca.w() <= 1e-6f || cb.w() <= 1e-6f) continue;
+            const double ax = (ca.x() / ca.w() * 0.5 + 0.5) * W, ay = (0.5 - ca.y() / ca.w() * 0.5) * H;
+            const double bx = (cb.x() / cb.w() * 0.5 + 0.5) * W, by = (0.5 - cb.y() / cb.w() * 0.5) * H;
+            const double vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy;
+            const double u = l2 < 1e-9 ? 0 : std::clamp(((px.x() - ax) * vx + (px.y() - ay) * vy) / l2, 0.0, 1.0);
+            const double dist = std::hypot(px.x() - (ax + vx * u), px.y() - (ay + vy * u));
+            if (dist < best) {
+                best = dist;
+                bestObj = k;
+                rayT = QVector3D::dotProduct(A + (B - A) * float(u) - o, d);
+            }
+        }
+    }
+    return bestObj;
+}
+
 bool Model3DView::selectAt(const QPoint& px) {
     QVector3D h;
     int k = -1;
-    const bool ok = rayHit(px, h, &k);
+    bool ok = rayHit(px, h, &k);
+    // chiziqli obyekt (quvur o'qi, sterjen): uchburchak tegmagan, kalitsiz yuzaga (yer, fon) tekkan yoki chiziq oldinroq bo'lsa
+    float tl = 0;
+    if (const int kl = lineAt(px, tl); kl >= 0) {
+        QVector3D o, d;
+        rayFrom(px, o, d);
+        const float tt = ok ? QVector3D::dotProduct(h - o, d) : 1e30f;
+        if (!ok || objs_[static_cast<std::size_t>(k)].key.isEmpty() || tl <= tt + 0.02f * std::abs(tt)) {
+            k = kl;
+            ok = true;
+            h = o + d * tl;
+        }
+    }
     sel_ = ok ? k : -1;
     update();
-    if (ok) emit objectSelected(objs_[static_cast<std::size_t>(k)].name, objs_[static_cast<std::size_t>(k)].props);
+    if (ok) {
+        emit objectSelected(objs_[static_cast<std::size_t>(k)].name, objs_[static_cast<std::size_t>(k)].props);
+        emit pointPicked(double(h.x()) + ox_, double(h.y()) + oy_, double(h.z()) + oz_, objs_[static_cast<std::size_t>(k)].category);
+    }
+    emit objectPicked(selectedKey());
     return ok;
+}
+
+QString Model3DView::selectedKey() const {
+    return sel_ >= 0 && sel_ < static_cast<int>(objs_.size()) ? objs_[static_cast<std::size_t>(sel_)].key : QString();
+}
+
+bool Model3DView::selectKey(const QString& key, bool zoom) {
+    if (key.isEmpty()) return false;
+    for (std::size_t i = 0; i < objs_.size(); ++i)
+        if (objs_[i].key == key) return selectObject(static_cast<int>(i), zoom);
+    return false;
+}
+
+void Model3DView::clearSelection() {
+    sel_ = -1;
+    update();
+    emit objectPicked(QString());
 }
 
 bool Model3DView::selectObject(int k, bool zoom) {
@@ -1205,6 +1278,7 @@ bool Model3DView::selectObject(int k, bool zoom) {
     }
     update();
     emit objectSelected(o.name, o.props);
+    emit objectPicked(o.key);
     return true;
 }
 
@@ -1331,7 +1405,7 @@ void Model3DView::wheelEvent(QWheelEvent* e) {
 void Model3DView::keyPressEvent(QKeyEvent* e) {
     switch (e->key()) {
     case Qt::Key_F: fit(); return;
-    case Qt::Key_Escape: sel_ = -1; update(); return;
+    case Qt::Key_Escape: clearSelection(); return;
     case Qt::Key_H: hideSelected(); return;
     case Qt::Key_I: isolateSelected(); return;
     // klaviatura: strelkalar — aylantirish, +/- — yaqinlashtirish, W/A/S/D — yurish (bino ichida), Q/E — pastga/yuqoriga

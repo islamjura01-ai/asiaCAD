@@ -414,6 +414,24 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
             if (p.startsWith(QStringLiteral("GUID: "))) ifcPanel_->highlightGuid(p.mid(6));
     });
     view3d_->setObjectName("view3d");
+    view3d_->setPickAllLines(true);
+    // 3D da bosilgan joy -> chizmadagi manba obyekt tanlanadi -> Xossalar paneli (tuzatish shu yerdan, undo bilan)
+    connect(view3d_, &Model3DView::objectPicked, this, [this](const QString& key) {
+        if (!key.startsWith("bim:") || !building_) return;
+        if (const EntityId id = building_->prismSource(key.mid(4).toInt())) {
+            view_->setSelection({id});
+            refreshProperties();
+        }
+    });
+    connect(view3d_, &Model3DView::pointPicked, this, [this](double x, double y, double z, const QString& cat) {
+        if (!view3d_->selectedKey().isEmpty()) return;   // bino elementi — yuqorida
+        const std::string layer = cat.toStdString();
+        if (!doc_.layer(layer)) return;   // qatlam obyekti emas (yer yuzasi, armatura ...)
+        if (const EntityId id = nearestEntity(layer, x, y, z)) {
+            view_->setSelection({id});
+            refreshProperties();
+        }
+    });
     Model3DView::setGlobalTr([this](const char* k) {
         const std::string key = std::string("gui.") + k;
         const std::string v = loc_.tr(key);
@@ -1871,6 +1889,12 @@ bool MainWindow::runLine(const QString& line, bool echo) {
     return cont;
 }
 
+void MainWindow::runDialogCommands(const QStringList& lines, const std::function<void()>& after) {
+    for (const auto& l : lines)
+        if (!runLine(l)) return;
+    if (after) after();
+}
+
 SewerDialog* MainWindow::openSewer() {
     if (!sewer_) {
         auto pick = [this]() {
@@ -1905,6 +1929,12 @@ BuildingDialog* MainWindow::openBuilding() {
         connect(building_, &BuildingDialog::locateRequested, this, &MainWindow::locate);
         connect(building_, &BuildingDialog::rebarRequested, this, [this] { openRebar(); });
         connect(building_, &BuildingDialog::sampleRequested, this, [this] { makeSampleBuilding(); });
+        connect(building_, &BuildingDialog::commandsRequested, this, [this](const QStringList& lines) {
+            runDialogCommands(lines, [this] {
+                building_->documentChanged();
+                if (rebar_ && rebar_->isVisible()) rebar_->documentChanged();
+            });
+        });
         connect(building_, &BuildingDialog::open3DRequested, this, [this] {
             building_->hide();
             show3D(true);
@@ -1930,6 +1960,12 @@ RebarDialog* MainWindow::openRebar() {
         rebar_ = new RebarDialog(loc_, doc_, !theme_.lightCanvas, this);
         rebar_->setStyleSheet(theme_.styleSheet);
         connect(rebar_, &RebarDialog::sampleRequested, this, [this] { makeSampleBuilding(); });
+        connect(rebar_, &RebarDialog::commandsRequested, this, [this](const QStringList& lines) {
+            runDialogCommands(lines, [this] {
+                rebar_->documentChanged();
+                if (building_ && building_->isVisible()) building_->documentChanged();
+            });
+        });
         connect(rebar_, &RebarDialog::scheduleRequested, this, [this](const QString& path) {
             const BBox b = doc_.extents(true);
             const double x = b.valid() ? b.max.x + 3 : 0, y = b.valid() ? b.max.y : 0;
@@ -2071,6 +2107,37 @@ TemplatesDialog* MainWindow::openTemplates(int page) {
 }
 
 // ---------------------------------------------------------------- 3D model (asosiy oyna)
+EntityId MainWindow::nearestEntity(const std::string& layer, double x, double y, double z) const {
+    // 3D da bosilgan nuqtaga eng yaqin obyekt (shu qatlamda): ichida bo'lsa — kichigi, aks holda chizig'igacha masofa
+    EntityId best = 0;
+    double bd = 1e300;
+    for (EntityId id : doc_.idsOnLayer(layer)) {
+        const IEntity* e = doc_.find(id);
+        if (!e || e->type() == EntityType::Text || e->type() == EntityType::Dimension) continue;
+        const BBox b = e->bbox();
+        if (!b.valid()) continue;
+        double d = 1e300;
+        const auto pts = civil::pathOf(*e);
+        for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
+            const Vec3 a = pts[i], c = pts[i + 1];
+            const double vx = c.x - a.x, vy = c.y - a.y, l2 = vx * vx + vy * vy;
+            const double u = l2 < 1e-12 ? 0 : std::clamp(((x - a.x) * vx + (y - a.y) * vy) / l2, 0.0, 1.0);
+            d = std::min(d, std::hypot(x - (a.x + vx * u), y - (a.y + vy * u)));
+        }
+        if (pts.size() == 1) d = std::hypot(x - pts[0].x, y - pts[0].y);
+        if (x >= b.min.x && x <= b.max.x && y >= b.min.y && y <= b.max.y) {   // yuza/jism ichida
+            const bool flat = std::abs(b.max.z - b.min.z) < 1e-9;
+            const double dz = flat ? 0 : std::max(0.0, std::max(b.min.z - z, z - b.max.z));
+            d = std::min(d, dz + 1e-6 * (b.max.x - b.min.x) * (b.max.y - b.min.y) / (1 + (b.max.x - b.min.x) * (b.max.y - b.min.y)));
+        }
+        if (d < bd) {
+            bd = d;
+            best = id;
+        }
+    }
+    return best;
+}
+
 bool MainWindow::is3D() const { return viewStack_ && viewStack_->currentWidget() == view3d_; }
 
 void MainWindow::show3D(bool on) {
@@ -2522,7 +2589,9 @@ void MainWindow::rebuild3D(bool keepView) {
             view3d_->beginObject(kind + " · " + (pr.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(pr.level)})), kind,
                                  {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)}),
                                   t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
-                                  t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})});
+                                  t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})},
+                                 building_->prismSource(static_cast<int>(&pr - building_->model().prisms.data())) ? QStringLiteral("bim:%1").arg(&pr - building_->model().prisms.data())
+                                                                                                                  : QString());
             view3d_->addPrism(o, hs, pr.z0, pr.z1, QColor(int(c >> 16), int((c >> 8) & 255), int(c & 255)));
             view3d_->endObject();
         }

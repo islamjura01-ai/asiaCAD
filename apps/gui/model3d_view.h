@@ -48,7 +48,9 @@ public:
 
     // ---- sahna (Pipe3DView bilan mos)
     void beginScene(const QString& title, const QString& subtitle);
-    void beginObject(const QString& name, const QString& category, const QStringList& props = {});
+    // key — menyudagi element kaliti ("p:12", "line:3"): tanlansa objectPicked(key) — "Xossalar" paneli uni to'ldiradi;
+    // sahna qayta qurilganda (tuzatishdan keyin) shu kalitli obyekt yana tanlanadi
+    void beginObject(const QString& name, const QString& category, const QStringList& props = {}, const QString& key = {});
     void endObject();
     void addPrism(const std::vector<P3>& outline, const std::vector<std::vector<P3>>& holes, double z0, double z1, const QColor& c, int alpha = 255);
     void addFace(const std::vector<P3>& pts, const QColor& c, int alpha = 255, bool outline = false);
@@ -72,6 +74,7 @@ public:
     void setOrtho(bool on);
     bool ortho() const { return ortho_; }
     void setClip(double frac);          // 0..1 — balandlik bo'yicha kesim (1 — kesimsiz)
+    void setPickAllLines(bool on) { pickAllLines_ = on; }   // kalitsiz chiziqlar ham tanlanadi (asosiy oyna: reja chiziqlari)
     void setCategoryVisible(const QString& cat, bool on);
     QStringList categories() const;
     bool categoryVisible(const QString& cat) const { return !hiddenCats_.count(cat); }
@@ -89,11 +92,17 @@ public:
     bool selectObject(int k, bool zoom = true);
     int findObject(const QString& propLine) const;   // xossalar orasida aynan shu satr bor obyekt (masalan "GUID: ...")
     QString selectionInfo() const;
+    QString selectedKey() const;                       // tanlangan obyekt kaliti (bo'sh — tanlanmagan yoki kalitsiz)
+    QString objectKey(int i) const { return i >= 0 && i < static_cast<int>(objs_.size()) ? objs_[static_cast<std::size_t>(i)].key : QString(); }
+    bool selectKey(const QString& key, bool zoom = false);   // kalit bo'yicha tanlash (objectPicked chiqadi)
+    void clearSelection();
     QVector3D cameraDir() const;
     QImage snapshot();
 
 signals:
     void objectSelected(const QString& name, const QStringList& props);
+    void objectPicked(const QString& key);   // tanlov o'zgardi: kalit (bo'sh — hech narsa tanlanmagan)
+    void pointPicked(double x, double y, double z, const QString& category);   // bosilgan nuqta (dunyo) va obyekt toifasi
 
 protected:
     void initializeGL() override;
@@ -111,7 +120,7 @@ private:
     static constexpr int kTriStride = 11;   // pos3 nor3 col4 id1
     static constexpr int kLineStride = 8;   // pos3 col4 id1
     struct Obj {
-        QString name, category;
+        QString name, category, key;
         QStringList props;
         std::size_t t0 = 0, t1 = 0, l0 = 0, l1 = 0, e0 = 0, e1 = 0;   // vertex oraliqlari (tri, line, edge)
         QVector3D bmin{1e30f, 1e30f, 1e30f}, bmax{-1e30f, -1e30f, -1e30f};
@@ -133,6 +142,7 @@ private:
     QVector3D eye() const;
     QVector3D dir() const;
     bool rayHit(const QPoint& px, QVector3D& hit, int* obj = nullptr) const;
+    int lineAt(const QPoint& px, float& rayT) const;   // kalitli chiziqli obyekt (quvur o'qi, sterjen) kursorga 7 px gacha
     void rayFrom(const QPoint& px, QVector3D& o, QVector3D& d) const;
     void orbit(double dYaw, double dPitch);
     void pan(const QPoint& delta);
@@ -172,7 +182,9 @@ private:
     bool userMoved_ = false;
     Style style_ = ShadedEdges;
     double clip_ = 1.0;
+    bool pickAllLines_ = false;
     int sel_ = -1;
+    QString keepKey_;   // beginScene oldidagi tanlov kaliti — endScene da qayta tanlanadi
     // sichqoncha
     QPoint press_, last_;
     Qt::MouseButton btn_ = Qt::NoButton;

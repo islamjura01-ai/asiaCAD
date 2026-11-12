@@ -91,11 +91,18 @@ struct CitySpec {
     double x0 = 0, y0 = 0;
     double ground = 0;                 // yer belgisi (chizmada yer nuqtalari bo'lmasa)
     unsigned seed = 7;
+    // Xossalar: alohida bino tuzatmalari (generatsiya tartib raqami bo'yicha) va qo'shilgan binolar (nusxa) — JSON da saqlanadi
+    struct Edit { int index = -1; int floors = 0; bool removed = false; };   // floors 0 — o'zgarmaydi
+    struct Extra { double x0 = 0, y0 = 0, w = 10, d = 10; int floors = 1; };
+    std::vector<Edit> edits;
+    std::vector<Extra> extra;
 };
 struct CityBuilding {
     std::vector<std::array<double, 2>> footprint;
     int floors = 1;
     double base = 0, height = 0;       // asos (absolyut) va balandlik
+    int index = -1;                    // generatsiya tartib raqami (CitySpec::Edit), qo'shilganda -1
+    int extra = -1;                    // CitySpec::extra indeksi (qo'shilgan bino)
 };
 struct CityResult {
     Entities entities;

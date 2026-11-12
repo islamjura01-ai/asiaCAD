@@ -265,6 +265,11 @@ void BuildingDialog::buildUi() {
     checks_->setWordWrap(true);
     tabs->addTab(pto_, t("gui.bim.pto"));
     tabs->addTab(checks_, t("gui.bim.checks"));
+    props_ = new PropPanel(tabs);
+    props_->empty(t("gui.xp.hint"));
+    tabs->addTab(props_, t("gui.xp.tab"));
+    tabs_ = tabs;
+    connect(view_, &Model3DView::objectPicked, this, &BuildingDialog::onPicked);
     split->setSizes({250, 370, 660, 440});
 
     // ---- past
@@ -343,9 +348,13 @@ void BuildingDialog::buildUi() {
     connect(showUpTo_, &QSlider::valueChanged, this, [this] { render(); });
 }
 
-void BuildingDialog::fillLayers() {
+void BuildingDialog::fillLayers(bool keep) {
+    std::map<std::string, ElemKind> was;   // keep: foydalanuvchi bog'lashlari saqlanadi (yangi qatlamlar — avto)
+    if (keep) was = layerMap();
     updating_ = true;
-    const auto lm = bim::autoLayerMap(doc_);
+    auto lm = bim::autoLayerMap(doc_);
+    for (auto& [name, k] : lm)
+        if (const auto it = was.find(name); it != was.end()) k = it->second;
     layers_->setRowCount(0);
     for (const auto& [name, k] : lm) {
         if (name == "PTO") continue;
@@ -366,6 +375,11 @@ void BuildingDialog::fillLayers() {
 void BuildingDialog::reread() {
     fillLayers();
     autoFloors_ = true;
+    recompute();
+}
+
+void BuildingDialog::documentChanged() {
+    fillLayers(true);
     recompute();
 }
 
@@ -492,6 +506,10 @@ void BuildingDialog::recompute() {
     }
     set_->setPlacement(placed);
     model_ = bim::buildModel(typical, p, fp_);
+    // Xossalar: har prizmaning chizmadagi manbasi (yopiq poliliniya) — o'lcham, joy, tur, nusxa, teshik shu obyektga
+    src_.build(doc_, layerMap());
+    prismSrc_.clear();
+    for (const auto& pr : model_.prisms) prismSrc_.push_back(src_.find(pr));
     // PTO
     pto_->setRowCount(0);
     auto row = [&](const QStringList& cells, bool bold) {
@@ -587,7 +605,13 @@ void BuildingDialog::render() {
         rebarDirty_ = false;
     }
     const QColor errC(229, 60, 60), warnC(245, 165, 36);
+    keyPrism_.clear();
+    std::map<std::pair<int, int>, int> ord;   // (tur, qavat) -> tartib (manbasiz prizmalar kaliti)
     for (const auto& pr : model_.prisms) {
+        const int pi = static_cast<int>(&pr - model_.prisms.data());
+        const EntityId sid = pi < static_cast<int>(prismSrc_.size()) ? prismSrc_[static_cast<std::size_t>(pi)] : 0;
+        const QString key = bimPrismKey(pr, sid, ord[{static_cast<int>(pr.kind), pr.level}]++);
+        keyPrism_[key] = pi;
         if (pr.level > upTo) continue;
         if (const int g = groupOf(pr.kind); (g >= 0 && !groupVisible(g)) || !groupVisible(GConcrete)) continue;
         std::vector<P3> o;
@@ -603,7 +627,8 @@ void BuildingDialog::render() {
         const QString lvl = pr.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(pr.level)});
         view_->beginObject(kind + " · " + lvl, kind,
                            {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)}), t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
-                            t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})});
+                            t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})},
+                           key);
         // armatura yoqilgan bo'lsa beton shaffof — sterjenlar ko'rinadi
         QColor pc = kindColor(pr.kind);
         int pa = rebarOn ? 40 : (slab && pr.level == upTo && upTo < floors_->value() ? 140 : 255);
@@ -626,7 +651,8 @@ void BuildingDialog::render() {
         std::vector<P3> q;
         for (const auto& v : g.quad) q.push_back({v.x, v.y, v.z});
         const QString nm = t(g.door ? "gui.v3d.door" : "gui.v3d.window");
-        view_->beginObject(nm + " · " + t("gui.bim.level", {QString::number(g.level)}), nm, {});
+        view_->beginObject(nm + " · " + t("gui.bim.level", {QString::number(g.level)}), nm, {},
+                           QStringLiteral("g:%1").arg(&g - model_.glass.data()));
         view_->addFace(q, g.door ? QColor(70, 110, 150) : QColor(120, 170, 215), g.door ? 170 : 120, true);
         view_->endObject();
     }
@@ -642,7 +668,8 @@ void BuildingDialog::render() {
             pts.reserve(b.pts.size());
             for (const auto& q : b.pts) pts.push_back({q.x, q.y, q.z});
             const QString dia = QString::fromUtf8("\xC3\x98") + QString::number(std::lround(b.d * 1000)) + " " + QString::fromStdString(b.cls);
-            view_->beginObject(dia, t("gui.v3d.cat.rebar", {dia}), {t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})});
+            view_->beginObject(dia, t("gui.v3d.cat.rebar", {dia}), {t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})},
+                               QStringLiteral("b:%1").arg(bi));
             QColor c = rebarColor(b.d);
             if (normOn_) {
                 const auto it = normBar_.find(bi);
@@ -663,6 +690,70 @@ void BuildingDialog::render() {
         }
     }
     view_->endScene(true);
+}
+
+void BuildingDialog::onPicked(const QString& key) {
+    if (key.isEmpty()) {
+        props_->empty(t("gui.xp.hint"));
+        return;
+    }
+    auto run = [this](const QStringList& cmds) { emit commandsRequested(cmds); };
+    auto param = [this](QDoubleSpinBox* sb, const char* label, int dec) {   // menyu parametri (shu turdagi hammasi uchun)
+        props_->number(QString::fromLatin1(label).section('.', -1), t(label), sb->value(), dec, [sb](double v) { sb->setValue(v); }, "m");
+    };
+    if (key.startsWith("e:") || key.startsWith("p:")) {
+        const auto it = keyPrism_.find(key);
+        if (it == keyPrism_.end() || it->second >= static_cast<int>(model_.prisms.size())) {
+            props_->empty(t("gui.xp.hint"));
+            return;
+        }
+        const auto& pr = model_.prisms[static_cast<std::size_t>(it->second)];
+        const EntityId sid = it->second < static_cast<int>(prismSrc_.size()) ? prismSrc_[static_cast<std::size_t>(it->second)] : 0;
+        fillBimElement(*props_, loc_, doc_, layerMap(), pr, sid, run);
+        // menyu parametrlari: avtomatik qurilgan elementlar (fundament, padbetonka, plita qalinligi) shu yerdan tuzatiladi
+        props_->section(t("gui.xp.params"));
+        switch (pr.kind) {
+            case ElemKind::Slab: param(slab_, "gui.bim.slab", 2); param(height_, "gui.bim.height", 2); break;
+            case ElemKind::Roof: param(roof_, "gui.bim.roof", 2); param(height_, "gui.bim.height", 2); break;
+            case ElemKind::Column: case ElemKind::Wall: case ElemKind::Shaft: case ElemKind::Stair: case ElemKind::Infill:
+                param(height_, "gui.bim.height", 2);
+                if (pr.kind == ElemKind::Wall) param(wallT_, "gui.bim.wallt", 2);
+                break;
+            case ElemKind::FoundationSlab: case ElemKind::StripFooting:
+                param(ftop_, "gui.bim.ftop", 3); param(ft_, "gui.bim.ft", 2);
+                if (pr.kind == ElemKind::StripFooting) param(stripW_, "gui.bim.stripw", 2); else param(fover_, "gui.bim.fover", 2);
+                break;
+            case ElemKind::Lean: param(lean_, "gui.bim.lean", 2); break;
+            default: break;
+        }
+        props_->end();
+    } else if (key.startsWith("g:")) {
+        const int gi = key.mid(2).toInt();
+        if (gi < 0 || gi >= static_cast<int>(model_.glass.size())) return;
+        const auto& g = model_.glass[static_cast<std::size_t>(gi)];
+        props_->begin(t(g.door ? "gui.v3d.door" : "gui.v3d.window") + " · " + t("gui.bim.level", {QString::number(g.level)}));
+        props_->section(t("gui.xp.geom"));
+        if (g.quad.size() == 4) {
+            props_->info(t("gui.xp.extent"), f2(g.quad[0].distanceTo(g.quad[1])) + QString::fromUtf8(" × ") + f2(g.quad[1].distanceTo(g.quad[2])) + " m");
+            props_->info(t("gui.xp.levels"), QString::number(g.quad[0].z, 'f', 3) + QString::fromUtf8(" … ") + QString::number(g.quad[2].z, 'f', 3));
+        }
+        props_->note(t("gui.xp.facade"));
+        props_->end();
+    } else if (key.startsWith("b:")) {
+        const int bi = key.mid(2).toInt();
+        if (bi < 0 || bi >= static_cast<int>(rebar_.bars.size())) return;
+        const auto& b = rebar_.bars[static_cast<std::size_t>(bi)];
+        props_->begin(QString::fromUtf8("\xC3\x98") + QString::number(std::lround(b.d * 1000)) + " " + QString::fromStdString(b.cls));
+        props_->section(t("gui.xp.bar"));
+        props_->info(t("gui.xp.elem"), t((std::string("bim.kind.") + bim::kindKey(b.kind)).c_str()) + " · " +
+                                         (b.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(b.level)})));
+        props_->info(t("gui.xp.role"), t((std::string("rebar.role.") + bim::roleKey(b.role)).c_str()));
+        props_->info(t("gui.xp.length"), QString::number(b.length, 'f', 2) + " m");
+        props_->info(t("gui.xp.mass"), QString::number(b.length * bim::barMassPerM(b.d), 'f', 2) + " kg");
+        props_->note(t("gui.xp.rebar_menu"));
+        props_->end();
+    }
+    if (tabs_ && tabs_->currentWidget() != props_) tabs_->setCurrentWidget(props_);
 }
 
 void BuildingDialog::setNormRules(const std::vector<bim::NormRule>* rules) {

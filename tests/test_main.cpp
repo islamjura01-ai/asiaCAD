@@ -2731,6 +2731,54 @@ TEST(kj_multi_slab_types) {
         local |= i.key == "kj.chk.local_xy" && i.args[0].find("\xD0\x96") != std::string::npos && i.args[1].find("2/1") != std::string::npos;
     }
     CHECK(!err && found && outside && local);
+
+    // Xossalar tuzatmalari (KJ fayl o'zgarmaydi): Пм-2 — qalinligi 0.25, yana bir belgi (+9.000), to'r ⌀12 qadam 0.15,
+    // 1×1 teshik, ⌀16 qo'shimcha yuqori zona 2×2
+    bim::KjSlabEdit ed;
+    ed.tag = pm2;
+    ed.t = 0.25;
+    ed.levels = {3.0, 6.0, 9.0};
+    ed.meshD = 0.012;
+    ed.meshS = 0.15;
+    ed.holes.push_back({8.0, 3.0, 1.0, 1.0});
+    ed.zones.push_back({5.0, 3.0, 2.0, 2.0, 0.016, 0.2, true});
+    kp.slabEdits = {ed};
+    const auto r2 = bim::buildKjProject(doc, {}, kp);
+    CHECK(r2.slabs.size() == 2);
+    if (r2.slabs.size() == 2) {
+        CHECK(r2.slabs[1].floors == std::vector<int>({2, 3, 4}));
+        NEAR(r2.slabs[1].t, 0.25);
+        NEAR(r2.slabs[1].area, 77 - 4 - 1);
+        CHECK(r2.slabs[1].mark == "\xC3\x98" "12 A500C s150");
+    }
+    double v4 = 0;
+    for (const auto& row : r2.bm.pto)
+        if (row.kind == bim::ElemKind::Slab && row.level == 4) v4 += row.volume;
+    NEAR(v4, (77 - 4 - 1) * 0.25);
+    int z16 = 0, m4 = 0;
+    for (const auto& b : r2.bars) {
+        z16 += std::lround(b.d * 1000) == 16 && b.kind == bim::ElemKind::Slab;
+        m4 += b.level == 4 && std::lround(b.d * 1000) == 12;
+    }
+    CHECK(z16 == 3 * 22);   // 11 + 11 sterjen har belgida
+    CHECK(m4 > 0);
+    // konturdan tashqaridagi / mavjud teshik ichidagi teshik qabul qilinmaydi (juft-toq kesishda maydon qo'shilmasin);
+    // chetdan chiqqan zona sterjenlari plita konturi bilan kesiladi
+    kp.slabEdits[0].holes = {{20.0, 3.0, 1.0, 1.0}, {3.0, 3.0, 1.0, 1.0}};
+    kp.slabEdits[0].zones = {{10.0, 3.0, 2.0, 2.0, 0.016, 0.2, true}};
+    const auto r3 = bim::buildKjProject(doc, {}, kp);
+    if (r3.slabs.size() == 2) NEAR(r3.slabs[1].area, 77 - 4);
+    int ho = 0, zb = 0;
+    double xmax = -1e9;
+    for (const auto& i : r3.issues) ho += i.key == "kj.chk.hole_outside" && i.error;
+    for (const auto& b : r3.bars)
+        if (std::lround(b.d * 1000) == 16 && b.kind == bim::ElemKind::Slab) {
+            ++zb;
+            for (const auto& q : b.pts) xmax = std::max(xmax, q.x);
+        }
+    CHECK(ho == 2);
+    CHECK(zb == 3 * (11 + 8));   // X: 11 (kesilgan), Y: x ≤ 10.5 dagi 8 tasi
+    CHECK(xmax <= 10.5 + 1e-9);
 }
 
 TEST(rebar_import_auto_floors) {

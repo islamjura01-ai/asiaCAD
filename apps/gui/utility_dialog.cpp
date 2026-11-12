@@ -182,6 +182,7 @@ void UtilityDialog::buildUi() {
     mv->addLayout(fl);
     view_ = new Model3DView(mid);
     mv->addWidget(view_, 1);
+    connect(view_, &Model3DView::objectPicked, this, &UtilityDialog::onPicked);
 
     // ---- 4: jadvallar
     auto* tabs = new QTabWidget(split);
@@ -211,6 +212,10 @@ void UtilityDialog::buildUi() {
     tabs->addTab(points_, t("gui.ut.points"));
     tabs->addTab(cross_, t("gui.ut.cross"));
     tabs->addTab(checks_, t("gui.bim.checks"));
+    props_ = new PropPanel(tabs);
+    props_->empty(t("gui.xp.hint"));
+    tabs->addTab(props_, t("gui.xp.tab"));
+    tabs_ = tabs;
     split->setStretchFactor(0, 0);
     split->setStretchFactor(1, 0);
     split->setStretchFactor(2, 3);
@@ -242,6 +247,7 @@ void UtilityDialog::buildUi() {
     excel_->addButtons(bottom);
     auto* draw = new QPushButton(t("gui.ut.draw"), this);
     draw->setObjectName("accent");
+    drawB_ = draw;
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     close->setFixedWidth(44);
     bottom->addWidget(draw);
@@ -527,14 +533,22 @@ void UtilityDialog::render() {
         for (std::size_t j = 0; j < ln.v.size(); ++j)
             view_->addPolyline({surf[j], axis[j]}, faint, 0.8);
         const bool sel = static_cast<int>(i) == selected_;
+        const QString kn = t((std::string("util.kind.") + civil::utilKey(ln.kind)).c_str());
+        view_->beginObject(kn + QStringLiteral(" #%1").arg(ln.id), kn, {QString::fromStdString(ln.layer), QStringLiteral("Ø%1").arg(ln.dn)},
+                           QStringLiteral("line:%1").arg(i));
         view_->addPolyline(axis, sel ? QColor(255, 255, 255) : c, std::clamp(ln.dn / 40.0, 2.0, 9.0) + (sel ? 2 : 0));
+        view_->endObject();
     }
-    for (const auto& n : m_.nodes) {
+    for (std::size_t ni = 0; ni < m_.nodes.size(); ++ni) {
+        const auto& n = m_.nodes[ni];
         if (!visible(n.kind)) continue;
         std::vector<P3> ring;
         for (int s = 0; s < 12; ++s) ring.push_back({n.x + n.r * std::cos(s * 3.14159265 / 6), n.y + n.r * std::sin(s * 3.14159265 / 6), 0});
         QColor c = utilColor(n.kind);
+        const QString kn = t((std::string("util.kind.") + civil::utilKey(n.kind)).c_str());
+        view_->beginObject(n.name.empty() ? kn : QString::fromStdString(n.name), kn, {QString::fromStdString(n.layer)}, QStringLiteral("node:%1").arg(ni));
         view_->addPrism(ring, {}, Z(n.bottom), Z(n.ground), c.lighter(130), 110);
+        view_->endObject();
     }
     for (const auto& c : m_.crossings) {
         if (c.clear + 1e-9 >= c.required) continue;
@@ -542,6 +556,263 @@ void UtilityDialog::render() {
         view_->addLabel({c.x, c.y, Z(std::max(c.za, c.zb)) + 1.8}, QStringLiteral("⚠ %1 < %2").arg(f2(c.clear), f2(c.required)));
     }
     view_->endScene(true);
+}
+
+// ---------------------------------------------------------------- Xossalar
+namespace {
+const QColor kErr(232, 70, 80), kWarn(230, 160, 30);
+const char* kSrcKey[] = {"util.src.z", "util.src.label", "util.src.depth", "util.src.interp", "util.src.default", "util.src.manual"};
+}  // namespace
+
+void UtilityDialog::onPicked(const QString& key) {
+    const int i = key.section(':', 1).toInt();
+    if (key.startsWith("line:") && i >= 0 && i < static_cast<int>(m_.lines.size())) {
+        if (selected_ != i) {   // jadvalda ham tanlanadi; 3D qayta chiziladi (oq rang) — u yana shu yerga qaytadi
+            updating_ = true;
+            if (i < lines_->rowCount()) lines_->selectRow(i);
+            updating_ = false;
+            selected_ = i;
+            fillPoints();
+            render();
+            return;
+        }
+        fillLineProps(i);
+    } else if (key.startsWith("node:") && i >= 0 && i < static_cast<int>(m_.nodes.size())) {
+        fillNodeProps(i);
+    } else {
+        props_->empty(t("gui.xp.hint"));
+        return;
+    }
+    if (tabs_ && tabs_->currentWidget() != props_) tabs_->setCurrentWidget(props_);
+}
+
+void UtilityDialog::fillLineProps(int i) {
+    const auto& ln = m_.lines[static_cast<std::size_t>(i)];
+    const auto kinds = civil::utilKinds();
+    auto kname = [this](UtilKind k) { return t((std::string("util.kind.") + civil::utilKey(k)).c_str()); };
+    props_->begin(t("gui.xp.uline", {kname(ln.kind), QString::number(ln.id)}), QString::fromStdString(ln.layer));
+    props_->section(t("gui.xp.network"));
+    QStringList kn;
+    int cur = 0;
+    for (std::size_t k = 0; k < kinds.size(); ++k) {
+        kn << kname(kinds[k]);
+        if (kinds[k] == ln.kind) cur = static_cast<int>(k);
+    }
+    props_->choice("kind", t("gui.xp.kind"), kn, cur, [this, i, kinds](int k) {
+        if (i >= static_cast<int>(m_.lines.size()) || k < 0 || k >= static_cast<int>(kinds.size())) return;
+        m_.lines[static_cast<std::size_t>(i)].kind = kinds[static_cast<std::size_t>(k)];
+        modelChanged();
+    });
+    props_->number("dn", QString::fromUtf8("Ø"), ln.dn, 0, [this, i](double v) {
+        if (i >= static_cast<int>(m_.lines.size()) || v <= 0 || v > 4000) return;
+        auto& l = m_.lines[static_cast<std::size_t>(i)];
+        l.dn = v;
+        l.dnManual = true;
+        modelChanged();
+    }, "mm");
+    double cover = 1e9;
+    for (const auto& v : ln.v) cover = std::min(cover, v.ground - v.z - ln.dn / 2000.0);
+    if (ln.v.empty()) cover = 0;
+    props_->number("cover", t("gui.xp.ucover"), cover, 2, [this, i](double c) {   // hamma uchlarda bir xil chuqurlik (quvur ustigacha)
+        if (i >= static_cast<int>(m_.lines.size()) || c < 0 || c > 50) return;
+        auto& l = m_.lines[static_cast<std::size_t>(i)];
+        for (auto& v : l.v) {
+            v.z = v.ground - c - l.dn / 2000.0;
+            v.src = civil::UtilVertex::Manual;
+        }
+        modelChanged();
+    }, "m");
+    if (!ln.v.empty()) {
+        props_->section(t("gui.xp.uz"));
+        const std::size_t n = std::min<std::size_t>(ln.v.size(), 30);
+        for (std::size_t j = 0; j < n; ++j) {
+            const auto& v = ln.v[j];
+            props_->number(QStringLiteral("z%1").arg(j + 1), QStringLiteral("%1 · %2").arg(j + 1).arg(t(kSrcKey[static_cast<int>(v.src)])), v.z, 3,
+                           [this, i, j](double z) { setZ(i, static_cast<int>(j), z); }, "m");
+        }
+        if (ln.v.size() > n) props_->note(t("gui.xp.more", {QString::number(ln.v.size() - n)}));
+    }
+    props_->section(t("gui.xp.calc"));
+    double l2 = 0;
+    for (std::size_t j = 0; j + 1 < ln.v.size(); ++j) l2 += std::hypot(ln.v[j + 1].x - ln.v[j].x, ln.v[j + 1].y - ln.v[j].y);
+    props_->info(t("gui.xp.length"), f2(l2) + " / " + f2(ln.length()) + " m");
+    if (!ln.v.empty()) {
+        props_->info(t("gui.xp.uground"), f3(ln.v.front().ground) + QString::fromUtf8(" → ") + f3(ln.v.back().ground));
+        props_->info(t("gui.xp.uaxis"), f3(ln.v.front().z) + QString::fromUtf8(" → ") + f3(ln.v.back().z));
+        const auto rq = p_.minCover.find(ln.kind);
+        const double req = rq == p_.minCover.end() ? 0 : rq->second;
+        props_->info(t("gui.xp.ucovermin"), f2(cover) + (req > 0 ? QString::fromUtf8(" (≥ %1)").arg(f2(req)) : QString()),
+                     req > 0 && cover + 1e-9 < req ? kErr : QColor());
+        if (l2 > 1e-6) props_->info(t("gui.xp.slope"), QString::number((ln.v.front().z - ln.v.back().z) / l2 * 1000, 'f', 2) + QString::fromUtf8(" ‰"));
+    }
+    if (!ln.material.empty()) props_->info(t("gui.xp.material"), QString::fromStdString(ln.material));
+    for (const auto& c : m_.crossings) {
+        if (c.a != i && c.b != i) continue;
+        const auto& o = m_.lines[static_cast<std::size_t>(c.a == i ? c.b : c.a)];
+        props_->info(t("gui.xp.ucross", {QString::number(o.id), kname(o.kind)}), f2(c.clear) + " / " + f2(c.required) + " m",
+                     c.clear + 1e-9 < c.required ? kErr : QColor());
+    }
+    for (const auto& is : m_.issues)
+        if (is.line == i) props_->info(QString::fromUtf8(is.error ? "⚠" : "!"), QString::fromStdString(loc_.tr(is.key, is.args)), is.error ? kErr : kWarn);
+    // qo'shimcha detallar
+    props_->section(t("gui.xp.details"));
+    props_->action("node", t("gui.xp.addnode"), {{t("gui.xp.vertex"), 1, 0}, {"D", 1.0, 2}}, [this, i](const QList<double>& in) {
+        if (i >= static_cast<int>(m_.lines.size())) return;
+        const auto& l = m_.lines[static_cast<std::size_t>(i)];
+        if (l.v.empty()) return;
+        const int j = std::clamp(static_cast<int>(std::lround(in.value(0))) - 1, 0, static_cast<int>(l.v.size()) - 1);
+        const auto& v = l.v[static_cast<std::size_t>(j)];
+        civil::UtilNode n;
+        n.kind = l.kind;
+        n.layer = l.layer;
+        n.x = v.x;
+        n.y = v.y;
+        n.r = std::clamp(in.value(1, 1.0), 0.3, 6.0) / 2;
+        n.ground = v.ground;
+        n.bottom = v.z - l.dn / 2000.0;
+        n.estimated = true;
+        n.name = "Q" + std::to_string(m_.nodes.size() + 1);
+        m_.nodes.push_back(n);
+        modelChanged();
+        view_->selectKey(QStringLiteral("node:%1").arg(m_.nodes.size() - 1));
+    });
+    if (ln.v.size() > 2)
+        props_->action("split", t("gui.xp.split"), {{t("gui.xp.vertex"), static_cast<double>(ln.v.size() / 2 + 1), 0}}, [this, i](const QList<double>& in) {
+            if (i >= static_cast<int>(m_.lines.size())) return;
+            auto& l = m_.lines[static_cast<std::size_t>(i)];
+            const int j = static_cast<int>(std::lround(in.value(0))) - 1;
+            if (j <= 0 || j >= static_cast<int>(l.v.size()) - 1) return;
+            civil::UtilLine b = l;
+            b.v.erase(b.v.begin(), b.v.begin() + j);
+            l.v.resize(static_cast<std::size_t>(j) + 1);
+            int mx = 0;
+            for (const auto& x : m_.lines) mx = std::max(mx, x.id);
+            b.id = mx + 1;
+            b.from = -1;
+            l.to = -1;
+            b.lengthLabel = l.lengthLabel = 0;
+            m_.lines.insert(m_.lines.begin() + i + 1, b);
+            modelChanged();
+        });
+    props_->action("parallel", t("gui.xp.parallel"), {{t("gui.xp.offset"), 1.5, 2}}, [this, i](const QList<double>& in) {
+        if (i >= static_cast<int>(m_.lines.size())) return;
+        const double off = in.value(0, 1.5);
+        civil::UtilLine b = m_.lines[static_cast<std::size_t>(i)];
+        if (b.v.size() < 2 || std::abs(off) < 0.01) return;
+        auto nrm = [&](std::size_t a, std::size_t c, double& nx, double& ny) {
+            const double dx = b.v[c].x - b.v[a].x, dy = b.v[c].y - b.v[a].y, L = std::hypot(dx, dy);
+            if (L < 1e-9) return false;
+            nx = -dy / L;
+            ny = dx / L;
+            return true;
+        };
+        auto nv = b.v;
+        for (std::size_t j = 0; j < b.v.size(); ++j) {   // burchakda — bissektrisa bo'ylab (masofa saqlanadi)
+            double ax = 0, ay = 0, cx = 0, cy = 0;
+            const bool A = j > 0 && nrm(j - 1, j, ax, ay), Cc = j + 1 < b.v.size() && nrm(j, j + 1, cx, cy);
+            double nx = (A ? ax : 0) + (Cc ? cx : 0), ny = (A ? ay : 0) + (Cc ? cy : 0);
+            const double L = std::hypot(nx, ny);
+            if (L < 1e-9) continue;
+            nx /= L;
+            ny /= L;
+            const double cs = A ? nx * ax + ny * ay : 1;
+            const double k = cs > 0.25 ? 1 / cs : 4;
+            nv[j].x += nx * off * k;
+            nv[j].y += ny * off * k;
+            nv[j].src = civil::UtilVertex::Manual;
+        }
+        b.v = nv;
+        int mx = 0;
+        for (const auto& x : m_.lines) mx = std::max(mx, x.id);
+        b.id = mx + 1;
+        b.from = b.to = -1;
+        b.dnManual = true;
+        m_.lines.push_back(b);
+        modelChanged();
+        view_->selectKey(QStringLiteral("line:%1").arg(m_.lines.size() - 1));
+    });
+    props_->action("locate", t("gui.xp.locate"), [this, i] {
+        if (i >= static_cast<int>(m_.lines.size()) || m_.lines[static_cast<std::size_t>(i)].v.empty()) return;
+        const auto& l = m_.lines[static_cast<std::size_t>(i)];
+        const auto& v = l.v[l.v.size() / 2];
+        emit locateRequested(v.x, v.y);
+    });
+    props_->action("todwg", t("gui.xp.todwg"), [this] { if (drawB_) drawB_->click(); });
+    props_->action("erase", t("gui.xp.erase"), [this, i] {
+        if (i >= static_cast<int>(m_.lines.size())) return;
+        view_->clearSelection();   // indekslar suriladi
+        m_.lines.erase(m_.lines.begin() + i);
+        selected_ = -1;
+        modelChanged();
+    }, true);
+    if (i > 0) props_->action("prev", QString::fromUtf8("◀ ") + t("gui.xp.prev"), [this, i] { view_->selectKey(QStringLiteral("line:%1").arg(i - 1), true); });
+    if (i + 1 < static_cast<int>(m_.lines.size()))
+        props_->action("next", t("gui.xp.next") + QString::fromUtf8(" ▶"), [this, i] { view_->selectKey(QStringLiteral("line:%1").arg(i + 1), true); });
+    props_->note(t("gui.xp.unote"));
+    props_->end();
+}
+
+void UtilityDialog::fillNodeProps(int k) {
+    const auto& n = m_.nodes[static_cast<std::size_t>(k)];
+    const QString kn = t((std::string("util.kind.") + civil::utilKey(n.kind)).c_str());
+    props_->begin(t("gui.xp.unode", {n.name.empty() ? QString::number(k + 1) : QString::fromStdString(n.name)}),
+                  kn + (n.layer.empty() ? QString() : " · " + QString::fromStdString(n.layer)));
+    props_->section(t("gui.xp.network"));
+    props_->text("name", t("gui.xp.name"), QString::fromStdString(n.name), [this, k](const QString& s) {
+        if (k >= static_cast<int>(m_.nodes.size())) return;
+        m_.nodes[static_cast<std::size_t>(k)].name = s.trimmed().toStdString();
+        modelChanged();
+    });
+    props_->number("ground", t("gui.xp.rim"), n.ground, 3, [this, k](double v) {
+        if (k >= static_cast<int>(m_.nodes.size())) return;
+        m_.nodes[static_cast<std::size_t>(k)].ground = v;
+        modelChanged();
+    }, "m");
+    props_->number("bottom", t("gui.xp.ubottom"), n.bottom, 3, [this, k](double v) {
+        if (k >= static_cast<int>(m_.nodes.size())) return;
+        m_.nodes[static_cast<std::size_t>(k)].bottom = v;
+        m_.nodes[static_cast<std::size_t>(k)].estimated = false;
+        modelChanged();
+    }, "m");
+    props_->number("d", t("gui.xp.diam"), 2 * n.r, 2, [this, k](double v) {
+        if (k >= static_cast<int>(m_.nodes.size()) || v < 0.2 || v > 12) return;
+        m_.nodes[static_cast<std::size_t>(k)].r = v / 2;
+        modelChanged();
+    }, "m");
+    props_->section(t("gui.xp.calc"));
+    props_->info(t("gui.xp.depth"), f2(n.ground - n.bottom) + " m", n.ground - n.bottom < 0 ? kErr : QColor());
+    if (!n.inverts.empty()) {
+        QString s;
+        for (double z : n.inverts) s += (s.isEmpty() ? QString() : QStringLiteral("; ")) + f3(z);
+        props_->info(t("gui.xp.inverts"), s);
+    }
+    if (n.estimated) props_->info("!", t("gui.xp.estimated"), kWarn);
+    for (const auto& l : m_.lines)
+        if (l.from == k || l.to == k)
+            props_->info(t("gui.xp.uline", {t((std::string("util.kind.") + civil::utilKey(l.kind)).c_str()), QString::number(l.id)}),
+                         l.from == k ? t("gui.xp.start") : t("gui.xp.end"));
+    props_->section(t("gui.xp.details"));
+    props_->action("locate", t("gui.xp.locate"), [this, k] {
+        if (k < static_cast<int>(m_.nodes.size())) emit locateRequested(m_.nodes[static_cast<std::size_t>(k)].x, m_.nodes[static_cast<std::size_t>(k)].y);
+    });
+    props_->action("todwg", t("gui.xp.todwg"), [this] { if (drawB_) drawB_->click(); });
+    props_->action("erase", t("gui.xp.erase"), [this, k] {
+        if (k >= static_cast<int>(m_.nodes.size())) return;
+        view_->clearSelection();
+        m_.nodes.erase(m_.nodes.begin() + k);
+        for (auto& l : m_.lines) {   // chiziq uchlaridagi quduq indekslari
+            for (int* e : {&l.from, &l.to}) {
+                if (*e == k) *e = -1;
+                else if (*e > k) --*e;
+            }
+        }
+        modelChanged();
+    }, true);
+    if (k > 0) props_->action("prev", QString::fromUtf8("◀ ") + t("gui.xp.prev"), [this, k] { view_->selectKey(QStringLiteral("node:%1").arg(k - 1), true); });
+    if (k + 1 < static_cast<int>(m_.nodes.size()))
+        props_->action("next", t("gui.xp.next") + QString::fromUtf8(" ▶"), [this, k] { view_->selectKey(QStringLiteral("node:%1").arg(k + 1), true); });
+    props_->note(t("gui.xp.unote"));
+    props_->end();
 }
 
 } // namespace asiacad::gui

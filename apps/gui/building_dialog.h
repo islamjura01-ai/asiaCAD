@@ -2,7 +2,9 @@
 // AsiaCAD GUI — "Monolit bino" menyusi: chizma qatlamlarini element turlariga bog'lash, qavat/fundament/padbetonka
 // parametrlari, beton sinflari, jonli 3D model (qavatlar bo'yicha ko'rsatish), PTO jadvali va tekshiruv.
 // "PTO jadvalini chizmaga" — parametrlar JSON'ga yoziladi va BUILDING buyrug'i Interpreter orqali bajariladi.
+#include "bim_props.h"
 #include "model3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 #include "drawing_set_widget.h"
 #include "excel_link.h"
@@ -24,6 +26,7 @@ class QSlider;
 class QToolButton;
 class QSpinBox;
 class QTableWidget;
+class QTabWidget;
 
 namespace asiacad::gui {
 
@@ -36,6 +39,10 @@ public:
     std::map<std::string, bim::ElemKind> layerMap() const;
     const bim::BuildingModel& model() const { return model_; }
     void reread();  // chizmadan qayta o'qish (qatlamlar ro'yxati yangilanadi)
+    // Chizma o'zgardi (Xossalar panelidan buyruq bajarildi): yangi qatlamlar qo'shiladi, bog'lashlar saqlanadi, model qayta quriladi
+    void documentChanged();
+    PropPanel* props() const { return props_; }
+    EntityId prismSource(int i) const { return i >= 0 && i < static_cast<int>(prismSrc_.size()) ? prismSrc_[static_cast<std::size_t>(i)] : 0; }
     void setFloors(int n);
     Model3DView* view() const { return view_; }
     TemplateSidebar* sidebar() const { return side_; }
@@ -53,6 +60,7 @@ signals:
     void rebarRequested();
     void sampleRequested();                     // namuna bino (o'qlar to'ri) — MainWindow GRID bajaradi
     void open3DRequested();                     // asosiy oynadagi 3D ko'rinish
+    void commandsRequested(const QStringList& lines);   // Xossalar: chizma obyektini tuzatish (MainWindow bajaradi, undo bilan)
 
 private:
     // 3D qatlamlari (ko'rinish): element turlari (beton va armaturaga birdek) + beton, armatura qatlamlari
@@ -83,9 +91,10 @@ private:
     bool autoFloors_ = true;   // keyingi recompute: chizma / varaqlar bo'yicha qavatlar soni oshirilsin
     QString t(const char* key, const QStringList& args = {}) const;
     void buildUi();
-    void fillLayers();
+    void fillLayers(bool keep = false);
     void recompute();
     void render();
+    void onPicked(const QString& key);   // 3D da tanlov — Xossalar paneli
 
     const i18n::Localizer& loc_;
     const Document& doc_;
@@ -109,6 +118,11 @@ private:
     QTableWidget* pto_ = nullptr;
     QListWidget* checks_ = nullptr;
     QLabel* summary_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
+    PropPanel* props_ = nullptr;
+    BimSources src_;                       // chizmadagi manba obyektlar (yopiq poliliniyalar)
+    std::vector<EntityId> prismSrc_;       // model_.prisms bilan parallel
+    std::map<QString, int> keyPrism_;      // 3D kaliti -> prizma
 };
 
 } // namespace asiacad::gui

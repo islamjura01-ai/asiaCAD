@@ -8,6 +8,7 @@
 //  o'ng — Hajmlar (o'rtacha maydon va aniq: prizmoidal + egrilik), Piketlar (loyiha belgisi tahrirlanadi), Tekshiruv, Qatlamlar
 #include "excel_link.h"
 #include "model3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/corridor.h>
@@ -20,6 +21,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
+class QPushButton;
 class QSlider;
 class QTableWidget;
 class QTabWidget;
@@ -69,6 +71,7 @@ public:
     QTabWidget* palette() const { return palette_; }
     ExcelLink* excel() const { return excel_; }
     Model3DView* view() const { return view_; }
+    PropPanel* props() const { return props_; }   // Xossalar: 3D da tanlangan piket (kesim va yig'ma qismlari)
 
 signals:
     void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
@@ -87,6 +90,7 @@ private:
     void modelChanged();       // yig'ma o'zgardi -> koridor qayta
     void fillTables();
     void render();
+    void onPicked(const QString& key);
     std::map<std::string, civil::WwLayer> layerMap() const;
 
     const i18n::Localizer& loc_;
@@ -109,6 +113,9 @@ private:
     SectionView* preview_view_ = nullptr;
     QTabWidget* midTabs_ = nullptr;
     Model3DView* view_ = nullptr;
+    QTabWidget* rtabs_ = nullptr;
+    PropPanel* props_ = nullptr;
+    QPushButton* drawB_ = nullptr;
     SectionView* secView_ = nullptr;
     QSlider* secSlider_ = nullptr;
     QLabel* secLbl_ = nullptr;

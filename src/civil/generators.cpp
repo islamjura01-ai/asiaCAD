@@ -507,6 +507,25 @@ CityResult generateCity(const CitySpec& c, const std::function<double(double, do
     const double iw = c.blockW - 2 * c.setback, id = c.blockD - 2 * c.setback;
     const int nAlong = c.bldW <= iw ? static_cast<int>(std::floor((iw + c.gap) / (c.bldW + c.gap))) : 0;
     const int nRows = c.bldD <= id ? static_cast<int>(std::floor((id + c.gap) / (c.bldD + c.gap))) : 0;
+    int gen = 0;   // generatsiya tartib raqami (tuzatmalar shu bo'yicha)
+    auto place = [&](CityBuilding B, double x0, double y0, double x1, double y1) {
+        B.footprint = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
+        B.height = B.floors * c.floorH;
+        // asos — burchaklardagi eng past yer belgisi (bino yerga botmaydi, sokol shu bo'yicha)
+        B.base = std::min({zAt(x0, y0), zAt(x1, y0), zAt(x1, y1), zAt(x0, y1)});
+        rect(out, x0, y0, x1, y1, "SHAHAR_BINO");
+        text(out, (x0 + x1) / 2, (y0 + y1) / 2, std::min(2.5, (y1 - y0) / 4), std::format("{}", B.floors), "SHAHAR_YOZUV", 0,
+             TextHAlign::Center, TextVAlign::Middle);
+        // 3D massiv: asos va tom konturlari + vertikal qirralar (absolyut)
+        const double z0 = B.base, z1 = B.base + B.height;
+        rect(out, x0, y0, x1, y1, "SHAHAR_3D", z0);
+        rect(out, x0, y0, x1, y1, "SHAHAR_3D", z1);
+        for (const auto& p : B.footprint) add(out, std::make_unique<LineEntity>(Vec3{p[0], p[1], z0}, Vec3{p[0], p[1], z1}), "SHAHAR_3D");
+        const double a = (x1 - x0) * (y1 - y0);
+        r.footprint += a;
+        r.gfa += a * B.floors;
+        r.buildings.push_back(std::move(B));
+    };
     for (int bi = 0; bi < c.nx; ++bi)
         for (int bj = 0; bj < c.ny; ++bj) {
             const double bx = c.x0 + c.street + bi * pitchX, by = c.y0 + c.street + bj * pitchY;
@@ -520,35 +539,40 @@ CityResult generateCity(const CitySpec& c, const std::function<double(double, do
                 for (int b = 0; b < nRows; ++b) {
                     const double x0 = sx + a * (c.bldW + c.gap), y0 = sy + b * (c.bldD + c.gap), x1 = x0 + c.bldW, y1 = y0 + c.bldD;
                     CityBuilding B;
-                    B.footprint = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
-                    B.floors = fmin + static_cast<int>(std::floor(rnd() * (fmax - fmin + 1)));
+                    B.floors = fmin + static_cast<int>(std::floor(rnd() * (fmax - fmin + 1)));   // tasodifiy ketma-ketlik o'zgarmasin
                     B.floors = std::min(B.floors, fmax);
-                    B.height = B.floors * c.floorH;
-                    // asos — burchaklardagi eng past yer belgisi (bino yerga botmaydi, sokol shu bo'yicha)
-                    B.base = std::min({zAt(x0, y0), zAt(x1, y0), zAt(x1, y1), zAt(x0, y1)});
-                    rect(out, x0, y0, x1, y1, "SHAHAR_BINO");
-                    text(out, (x0 + x1) / 2, (y0 + y1) / 2, std::min(2.5, c.bldD / 4), std::format("{}", B.floors), "SHAHAR_YOZUV", 0,
-                         TextHAlign::Center, TextVAlign::Middle);
-                    // 3D massiv: asos va tom konturlari + vertikal qirralar (absolyut)
-                    const double z0 = B.base, z1 = B.base + B.height;
-                    rect(out, x0, y0, x1, y1, "SHAHAR_3D", z0);
-                    rect(out, x0, y0, x1, y1, "SHAHAR_3D", z1);
-                    for (const auto& p : B.footprint)
-                        add(out, std::make_unique<LineEntity>(Vec3{p[0], p[1], z0}, Vec3{p[0], p[1], z1}), "SHAHAR_3D");
-                    r.footprint += c.bldW * c.bldD;
-                    r.gfa += c.bldW * c.bldD * B.floors;
-                    r.buildings.push_back(std::move(B));
+                    B.index = gen++;
+                    bool removed = false;
+                    for (const auto& e : c.edits)
+                        if (e.index == B.index) {
+                            if (e.floors > 0) B.floors = std::min(e.floors, 300);
+                            removed = removed || e.removed;
+                        }
+                    if (!removed) place(std::move(B), x0, y0, x1, y1);
                 }
         }
+    for (std::size_t k = 0; k < c.extra.size(); ++k) {   // qo'shilgan binolar (nusxa)
+        const auto& x = c.extra[k];
+        if (x.w <= 0.5 || x.d <= 0.5) continue;
+        CityBuilding B;
+        B.floors = std::clamp(x.floors, 1, 300);
+        B.extra = static_cast<int>(k);
+        place(std::move(B), x.x0, x.y0, x.x0 + x.w, x.y0 + x.d);
+    }
     return r;
 }
 
 std::string cityToJson(const CitySpec& c) {
+    std::string ed, ex;
+    for (const auto& e : c.edits) ed += std::format("{}{{\"i\":{},\"f\":{},\"r\":{}}}", ed.empty() ? "" : ",", e.index, e.floors, e.removed ? 1 : 0);
+    for (const auto& x : c.extra)
+        ex += std::format("{}{{\"x\":{},\"y\":{},\"w\":{},\"d\":{},\"f\":{}}}", ex.empty() ? "" : ",", x.x0, x.y0, x.w, x.d, x.floors);
     return std::format(
         "{{\"format\":\"asiacad-city\",\"version\":1,\"nx\":{},\"ny\":{},\"blockW\":{},\"blockD\":{},\"street\":{},\"carriage\":{},\"setback\":{},"
-        "\"bldW\":{},\"bldD\":{},\"gap\":{},\"floorsMin\":{},\"floorsMax\":{},\"floorH\":{},\"x0\":{},\"y0\":{},\"ground\":{},\"seed\":{}}}",
+        "\"bldW\":{},\"bldD\":{},\"gap\":{},\"floorsMin\":{},\"floorsMax\":{},\"floorH\":{},\"x0\":{},\"y0\":{},\"ground\":{},\"seed\":{},"
+        "\"edits\":[{}],\"extra\":[{}]}}",
         c.nx, c.ny, c.blockW, c.blockD, c.street, c.carriage, c.setback, c.bldW, c.bldD, c.gap, c.floorsMin, c.floorsMax, c.floorH, c.x0, c.y0,
-        c.ground, c.seed);
+        c.ground, c.seed, ed, ex);
 }
 CitySpec cityFromJson(const std::string& t) {
     const auto r = parseOr(t);
@@ -561,6 +585,12 @@ CitySpec cityFromJson(const std::string& t) {
     c.floorH = num(r, "floorH", c.floorH);
     c.x0 = num(r, "x0", c.x0); c.y0 = num(r, "y0", c.y0); c.ground = num(r, "ground", c.ground);
     c.seed = static_cast<unsigned>(num(r, "seed", c.seed));
+    if (const auto* a = r.find("edits"); a && a->isArray())
+        for (const auto& v : a->arr())
+            if (v.isObject()) c.edits.push_back({static_cast<int>(num(v, "i", -1)), static_cast<int>(num(v, "f", 0)), num(v, "r", 0) != 0});
+    if (const auto* a = r.find("extra"); a && a->isArray())
+        for (const auto& v : a->arr())
+            if (v.isObject()) c.extra.push_back({num(v, "x", 0), num(v, "y", 0), num(v, "w", 10), num(v, "d", 10), static_cast<int>(num(v, "f", 1))});
     return c;
 }
 

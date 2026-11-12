@@ -54,6 +54,24 @@ struct KjView {
     bool use = true;
 };
 
+// Foydalanuvchi tuzatmasi ("Armatura 3D" → Xossalar): plita turi bo'yicha. KJ fayl o'zgarmaydi — tuzatma modelga qo'llanadi.
+struct KjSlabEdit {
+    std::string tag;                      // plita turi ("Пм-3"; bo'sh — nomsiz yagona plita)
+    double t = 0;                         // qalinligi, m (0 — chizmadan)
+    std::vector<double> levels;           // plita usti belgilari (bo'sh — chizmadan); qo'shilgan belgi — shu plitaning nusxasi
+    double meshD = 0, meshS = 0;          // asosiy to'r Ø va qadami, m (0 — chizmadan)
+    struct Hole {                         // teshik: markazi (o'qlar bo'yicha lokal) va o'lchami, m
+        double x = 0, y = 0, w = 1, h = 1;
+    };
+    std::vector<Hole> holes;
+    struct Zone {                         // qo'shimcha armatura: to'rtburchak zona, X va Y yo'nalishda Ø/qadam
+        double x = 0, y = 0, w = 2, h = 2, d = 0.012, s = 0.2;
+        bool top = true;
+    };
+    std::vector<Zone> zones;
+    bool empty() const { return t <= 0 && levels.empty() && meshD <= 0 && meshS <= 0 && holes.empty() && zones.empty(); }
+};
+
 struct KjParams {
     // Balandliklar: chizma ichida nisbiy (±0.000), 3D va chizmaga chiqarishda — absolyut (Boltiq): z + datum.
     // datumAuto — "За относительную отметку ±0,000 по ГП 484,20 ..." yozuvidan; topilmasa datum (0 — xato beriladi).
@@ -77,6 +95,7 @@ struct KjParams {
     bool columnCages = true;       // ustun karkaslari: vypusklar joyida asosiy sterjenlar + xomutlar
     double stirD = 0.010, stirS = 0.2, stirSEnd = 0.1;  // xomut ("Ø10 A-I шаг 100/200")
     std::string concrete = "";     // bo'sh — chizmadan ("Бетон кл.В30"), aks holda B25
+    std::vector<KjSlabEdit> slabEdits;   // Xossalar panelidagi tuzatmalar (plita turi bo'yicha)
 };
 
 struct KjSlab {                   // plita turi ("Пм-3") — o'z belgilari va qavatlari bilan

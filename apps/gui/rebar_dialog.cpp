@@ -14,6 +14,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QStyle>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSlider>
@@ -361,6 +362,11 @@ void RebarDialog::buildUi() {
     tabs->addTab(sched_, t("gui.rb.sched"));
     tabs->addTab(totals_, t("gui.rb.totals"));
     tabs->addTab(checks_, t("gui.bim.checks"));
+    props_ = new PropPanel(tabs);
+    props_->empty(t("gui.xp.hint"));
+    tabs->addTab(props_, t("gui.xp.tab"));
+    tabs_ = tabs;
+    connect(view_, &Model3DView::objectPicked, this, &RebarDialog::onPicked);
     split->setSizes({250, 330, 500, 560});
 
     // ---- past
@@ -614,6 +620,12 @@ void RebarDialog::recompute() {
         if (kjBox_) kjBox_->setVisible(false);
         rm_ = bim::buildRebar(bm_, bp_, rs_);
     }
+    // Xossalar: shablon rejimida elementlarning chizmadagi manbasi (KJ — tashqi fayl, tuzatmalar modelda)
+    prismSrc_.assign(bm_.prisms.size(), 0);
+    if (!projectMode_) {
+        src_.build(doc_, layers_);
+        for (std::size_t i = 0; i < bm_.prisms.size(); ++i) prismSrc_[i] = src_.find(bm_.prisms[i]);
+    }
     auto levelName = [&](int lv) { return lv == 0 ? t("bim.level.found") : t("bim.level.n", {QString::number(lv)}); };
     sched_->setRowCount(0);
     auto row = [&](const QStringList& cells, bool bold) {
@@ -730,6 +742,32 @@ void RebarDialog::render() {
         return lv <= upTo && (i < 0 || show[i]);
     };
     view_->beginScene(t("gui.rb.title"), summary_->text());
+    // kalitlar (Xossalar): shablon — chizmadagi manba bo'yicha; KJ — plita turi va qavat
+    keyPrism_.clear();
+    keySlab_.clear();
+    std::vector<QString> keys(bm_.prisms.size());
+    {
+        std::map<std::pair<int, int>, int> ord;
+        for (std::size_t i = 0; i < bm_.prisms.size(); ++i) {
+            const auto& pr = bm_.prisms[i];
+            QString key;
+            if (projectMode_ && (pr.kind == ElemKind::Slab || pr.kind == ElemKind::Roof)) {
+                const bim::KjSlab* best = nullptr;   // shu qavatdagi plita turlaridan maydoni eng yaqini
+                for (const auto& sl : kj_.slabs)
+                    if (std::find(sl.floors.begin(), sl.floors.end(), pr.level) != sl.floors.end() &&
+                        (!best || std::abs(sl.area - pr.area()) < std::abs(best->area - pr.area())))
+                        best = &sl;
+                if (best) {   // bir qavatda bir turdan bir nechta bo'lak bo'lishi mumkin — tartib raqami bilan
+                    key = QStringLiteral("kj:%1:%2:%3").arg(QString::fromStdString(best->tag)).arg(pr.level).arg(ord[{-1, pr.level}]++);
+                    keySlab_[key] = QString::fromStdString(best->tag);
+                }
+            }
+            if (key.isEmpty()) key = projectMode_ ? QStringLiteral("c:%1:%2:%3").arg(QString::fromLatin1(bim::kindKey(pr.kind))).arg(pr.level).arg(ord[{static_cast<int>(pr.kind), pr.level}]++)
+                                                  : bimPrismKey(pr, prismSrc_[i], ord[{static_cast<int>(pr.kind), pr.level}]++);
+            keys[i] = key;
+            keyPrism_[key] = static_cast<int>(i);
+        }
+    }
     if (concrete_->isChecked())
         for (const auto& pr : bm_.prisms) {
             if (pr.kind == ElemKind::Lean || !visible(pr.kind, pr.level)) continue;
@@ -742,7 +780,8 @@ void RebarDialog::render() {
                 hs.push_back(hh);
             }
             const QString kind = QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(pr.kind)));
-            view_->beginObject(kind, t("gui.v3d.cat.concrete"), {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)})});
+            view_->beginObject(kind, t("gui.v3d.cat.concrete"), {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)})},
+                               keys[static_cast<std::size_t>(&pr - bm_.prisms.data())]);
             view_->addPrism(o, hs, pr.z0, pr.z1, kindAccent(pr.kind), 38);
             view_->endObject();
         }
@@ -761,7 +800,8 @@ void RebarDialog::render() {
         view_->beginObject(dia + " · " + role, t("gui.v3d.cat.rebar", {dia}),
                            {QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(b.kind))) + ", " +
                                 (b.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(b.level)})),
-                            t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})});
+                            t("gui.v3d.p.length", {QString::number(b.length, 'f', 2)})},
+                           QStringLiteral("r:%1").arg(&b - rm_.bars.data()));
         if (tubes) view_->addTube(pts, std::max(0.003, b.d / 2), diaColor(b.d), b.role == BarRole::Stirrup, b.role == BarRole::Stirrup ? 4 : 6);
         else view_->addPolyline(pts, diaColor(b.d), 1.0, b.role == BarRole::Stirrup);
         view_->endObject();
@@ -776,6 +816,219 @@ void RebarDialog::render() {
         }
     }
     view_->endScene(true);
+}
+
+// ---------------------------------------------------------------- Xossalar
+Vec3 RebarDialog::kjLocal(const Vec3& p) const {
+    const double a = kp_.rotDeg * 3.14159265358979323846 / 180, ca = std::cos(a), sa = std::sin(a);
+    const double dx = p.x - kp_.originX, dy = p.y - kp_.originY;
+    return {dx * ca + dy * sa, -dx * sa + dy * ca, p.z};
+}
+
+bim::KjSlabEdit& RebarDialog::slabEdit(const QString& tag) {
+    for (auto& e : kp_.slabEdits)
+        if (QString::fromStdString(e.tag) == tag) return e;
+    kp_.slabEdits.push_back({});
+    kp_.slabEdits.back().tag = tag.toStdString();
+    return kp_.slabEdits.back();
+}
+
+void RebarDialog::fillTemplate(ElemKind k) {
+    if (editIndex(k) < 0) return;
+    props_->section(t("gui.xp.tpl", {t((std::string("bim.kind.") + bim::kindKey(k)).c_str())}));
+    const auto& tp = rs_.byKind[k];
+    auto set = [this, k](double bim::RebarTemplate::*f, double scale) {
+        return [this, k, f, scale](double v) {
+            if (v <= 0) return;
+            rs_.byKind[k].*f = v / scale;
+            rs_.byKind[k].kind = k;
+            if (kEdit[std::max(0, kind_->currentIndex())] == k) loadEditor();
+            recompute();
+        };
+    };
+    auto mm = [](double m) { return m * 1000; };
+    if (k == ElemKind::Column) {
+        props_->number("d1", t("gui.rb.main"), mm(tp.d1), 0, set(&bim::RebarTemplate::d1, 1000), "mm");
+        props_->number("n", t("gui.rb.n"), tp.nMain, 0, [this, k](double v) {
+            if (v < 4) return;
+            rs_.byKind[k].nMain = static_cast<int>(std::lround(v));
+            if (kEdit[std::max(0, kind_->currentIndex())] == k) loadEditor();
+            recompute();
+        });
+        props_->number("dstir", t("gui.rb.stir"), mm(tp.dStir), 0, set(&bim::RebarTemplate::dStir, 1000), "mm");
+        props_->number("sstir", t("gui.rb.sstir"), mm(tp.sStir), 0, set(&bim::RebarTemplate::sStir, 1000), "mm");
+    } else {
+        // 1..4: pastki X/Y, yuqori X/Y (to'r) yoki vertikal/gorizontal (devor) — rebar.role.* nomlari bilan
+        const char* roles[4] = {"rebar.role.BX", "rebar.role.BY", "rebar.role.TX", "rebar.role.TY"};
+        if (k == ElemKind::Wall) {
+            roles[0] = "rebar.role.VERT";
+            roles[1] = "rebar.role.HOR";
+        }
+        double bim::RebarTemplate::*dd[4] = {&bim::RebarTemplate::d1, &bim::RebarTemplate::d2, &bim::RebarTemplate::d3, &bim::RebarTemplate::d4};
+        double bim::RebarTemplate::*ss[4] = {&bim::RebarTemplate::s1, &bim::RebarTemplate::s2, &bim::RebarTemplate::s3, &bim::RebarTemplate::s4};
+        const int n = k == ElemKind::Wall ? 2 : (tp.topMesh ? 4 : 2);
+        for (int i = 0; i < n; ++i) {
+            props_->number(QStringLiteral("d%1").arg(i + 1), t("gui.xp.dia", {t(roles[i])}), mm(tp.*dd[i]), 0, set(dd[i], 1000), "mm");
+            props_->number(QStringLiteral("s%1").arg(i + 1), t("gui.xp.spacing", {t(roles[i])}), mm(tp.*ss[i]), 0, set(ss[i], 1000), "mm");
+        }
+    }
+    props_->note(t("gui.xp.tpl_note"));
+}
+
+void RebarDialog::fillKjSlab(const bim::Prism& pr, const QString& tag) {
+    const bim::KjSlab* sl = nullptr;
+    for (const auto& x : kj_.slabs)
+        if (QString::fromStdString(x.tag) == tag) sl = &x;
+    if (!sl) return;
+    QString lv, fl;
+    for (std::size_t i = 0; i < sl->levels.size(); ++i) {
+        lv += (i ? QStringLiteral("; ") : QString()) + QString::asprintf("%+.3f", sl->levels[i]);
+        fl += (i ? QStringLiteral(", ") : QString()) + QString::number(sl->floors[i]);
+    }
+    const QString name = tag.isEmpty() ? t("bim.kind.SLAB") : tag;
+    props_->begin(t("gui.xp.kjslab", {name}), t("gui.xp.kjfloors", {fl}));
+    props_->section(t("gui.xp.geom"));
+    props_->text("levels", t("gui.xp.kjlevels"), lv, [this, tag](const QString& s) {
+        std::vector<double> v;
+        for (QString p : s.split(QRegularExpression(QStringLiteral("[;\\s]+")), Qt::SkipEmptyParts)) {
+            bool ok = false;
+            const double x = p.replace(',', '.').replace(QChar(0x2212), '-').toDouble(&ok);
+            if (ok && std::abs(x) < 500) v.push_back(x);
+        }
+        if (v.empty()) return;
+        slabEdit(tag).levels = v;
+        recompute();
+    });
+    props_->number("t", t("gui.xp.kjt"), sl->t, 3, [this, tag](double v) {
+        if (v < 0.04 || v > 3) return;
+        slabEdit(tag).t = v;
+        recompute();
+    }, "m");
+    props_->info(t("gui.xp.area"), QString::number(sl->area, 'f', 1) + QString::fromUtf8(" m²"));
+    props_->info(t("gui.xp.volume"), QString::number(pr.volume(), 'f', 2) + QString::fromUtf8(" m³ · ") + t("gui.xp.perfloor"));
+    // asosiy to'r: "Ø12 A500C s200" -> Ø va qadam (chizmadan; tuzatilsa — shu plita turi uchun)
+    double d = 12, sp = 200;
+    if (const auto m = QRegularExpression(QString::fromUtf8("Ø(\\d+).* s(\\d+)")).match(QString::fromStdString(sl->mark)); m.hasMatch()) {
+        d = m.captured(1).toDouble();
+        sp = m.captured(2).toDouble();
+    }
+    props_->section(t("gui.xp.mesh"));
+    props_->info(t("gui.xp.mark"), QString::fromStdString(sl->mark));
+    props_->number("meshd", QString::fromUtf8("Ø"), d, 0, [this, tag](double v) {
+        if (v < 4 || v > 50) return;
+        slabEdit(tag).meshD = v / 1000;
+        recompute();
+    }, "mm");
+    props_->number("meshs", t("gui.xp.step"), sp, 0, [this, tag](double v) {
+        if (v < 50 || v > 1000) return;
+        slabEdit(tag).meshS = v / 1000;
+        recompute();
+    }, "mm");
+    // qo'shimcha detallar: teshik, armatura zonasi, yana bir belgi (shu plitaning nusxasi)
+    BBox b;
+    for (const auto& q : pr.outline) b.expand(kjLocal(q));
+    const Vec3 c = b.valid() ? (b.min + b.max) * 0.5 : Vec3{};
+    auto r2 = [](double v) { return std::round(v * 100) / 100; };
+    props_->section(t("gui.xp.details"));
+    props_->action("hole", t("gui.xp.hole"), {{"b", 1.0}, {"h", 1.0}, {"x", r2(c.x)}, {"y", r2(c.y)}}, [this, tag](const QList<double>& v) {
+        if (v.value(0) < 0.05 || v.value(1) < 0.05) return;
+        slabEdit(tag).holes.push_back({v.value(2), v.value(3), v.value(0), v.value(1)});
+        recompute();
+    });
+    props_->action("zone", t("gui.xp.zone"),
+                   {{"b", 2.0}, {"h", 2.0}, {"x", r2(c.x)}, {"y", r2(c.y)}, {QString::fromUtf8("Ø"), 12, 0}, {"s", 200, 0}, {t("gui.xp.top1"), 1, 0}},
+                   [this, tag](const QList<double>& v) {
+                       if (v.value(0) < 0.1 || v.value(1) < 0.1 || v.value(4) < 4 || v.value(5) < 50) return;
+                       slabEdit(tag).zones.push_back({v.value(2), v.value(3), v.value(0), v.value(1), v.value(4) / 1000, v.value(5) / 1000, v.value(6) >= 0.5});
+                       recompute();
+                   });
+    props_->action("level", t("gui.xp.addlevel"), {{t("gui.xp.z"), r2(sl->levels.empty() ? 3.0 : sl->levels.back() + 3.0), 3}},
+                   [this, tag, levels = sl->levels](const QList<double>& v) {
+                       auto l = levels;
+                       l.push_back(v.value(0));
+                       slabEdit(tag).levels = l;
+                       recompute();
+                   });
+    // mavjud tuzatmalar — o'chirish
+    for (const auto& e : kp_.slabEdits) {
+        if (QString::fromStdString(e.tag) != tag) continue;
+        for (std::size_t i = 0; i < e.holes.size(); ++i) {
+            const auto& h = e.holes[i];
+            props_->action(QStringLiteral("delhole%1").arg(i), QString::fromUtf8("✕ ") + t("gui.xp.holeitem", {QString::number(h.w, 'f', 2), QString::number(h.h, 'f', 2), QString::number(h.x, 'f', 2), QString::number(h.y, 'f', 2)}),
+                           [this, tag, i] {
+                               auto& ed = slabEdit(tag);
+                               if (i < ed.holes.size()) ed.holes.erase(ed.holes.begin() + static_cast<std::ptrdiff_t>(i));
+                               recompute();
+                           }, true);
+        }
+        for (std::size_t i = 0; i < e.zones.size(); ++i) {
+            const auto& z = e.zones[i];
+            props_->action(QStringLiteral("delzone%1").arg(i), QString::fromUtf8("✕ ") + t("gui.xp.zoneitem", {QString::number(std::lround(z.d * 1000)), QString::number(std::lround(z.s * 1000)), QString::number(z.w, 'f', 2), QString::number(z.h, 'f', 2)}),
+                           [this, tag, i] {
+                               auto& ed = slabEdit(tag);
+                               if (i < ed.zones.size()) ed.zones.erase(ed.zones.begin() + static_cast<std::ptrdiff_t>(i));
+                               recompute();
+                           }, true);
+        }
+        if (!e.empty())
+            props_->action("reset", t("gui.xp.reset"), [this, tag] {
+                std::erase_if(kp_.slabEdits, [&](const bim::KjSlabEdit& x) { return QString::fromStdString(x.tag) == tag; });
+                recompute();
+            }, true);
+    }
+    props_->note(t("gui.xp.kjnote"));
+}
+
+void RebarDialog::onPicked(const QString& key) {
+    if (key.isEmpty()) {
+        props_->empty(t("gui.xp.hint"));
+        return;
+    }
+    auto run = [this](const QStringList& cmds) { emit commandsRequested(cmds); };
+    if (key.startsWith("r:")) {
+        const int bi = key.mid(2).toInt();
+        if (bi < 0 || bi >= static_cast<int>(rm_.bars.size())) return;
+        const auto& b = rm_.bars[static_cast<std::size_t>(bi)];
+        props_->begin(QString::fromUtf8("\xC3\x98") + QString::number(std::lround(b.d * 1000)) + " " + QString::fromStdString(b.cls) + " · " +
+                      t((std::string("rebar.role.") + bim::roleKey(b.role)).c_str()));
+        props_->section(t("gui.xp.bar"));
+        props_->info(t("gui.xp.elem"), t((std::string("bim.kind.") + bim::kindKey(b.kind)).c_str()) + " · " +
+                                         (b.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(b.level)})));
+        props_->info(t("gui.xp.length"), QString::number(b.length, 'f', 2) + " m");
+        props_->info(t("gui.xp.mass"), QString::number(b.length * bim::barMassPerM(b.d), 'f', 2) + " kg");
+        if (!projectMode_) fillTemplate(b.kind);
+        else props_->note(t("gui.xp.kjbar"));
+        props_->end();
+    } else {
+        const auto it = keyPrism_.find(key);
+        if (it == keyPrism_.end()) {
+            props_->empty(t("gui.xp.hint"));
+            return;
+        }
+        const auto& pr = bm_.prisms[static_cast<std::size_t>(it->second)];
+        if (const auto sl = keySlab_.find(key); projectMode_ && sl != keySlab_.end()) {
+            fillKjSlab(pr, sl->second);
+        } else if (projectMode_) {   // KJ: ustun / devor / fundament — ma'lumot (chizma tashqi fayl)
+            const QString kind = t((std::string("bim.kind.") + bim::kindKey(pr.kind)).c_str());
+            props_->begin(kind + " · " + (pr.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(pr.level)})));
+            props_->section(t("gui.xp.geom"));
+            BBox b;
+            for (const auto& q : pr.outline) b.expand(q);
+            props_->info(t("gui.xp.levels"), QString::asprintf("%+.3f … %+.3f", pr.z0 - kj_.datum, pr.z1 - kj_.datum));
+            props_->info(t("gui.xp.height"), QString::number(pr.z1 - pr.z0, 'f', 3) + " m");
+            if (b.valid()) props_->info(t("gui.xp.extent"), QString::number(b.max.x - b.min.x, 'f', 3) + QString::fromUtf8(" × ") + QString::number(b.max.y - b.min.y, 'f', 3) + " m");
+            props_->info(t("gui.xp.area"), QString::number(pr.area(), 'f', 3) + QString::fromUtf8(" m²"));
+            props_->info(t("gui.xp.volume"), QString::number(pr.volume(), 'f', 3) + QString::fromUtf8(" m³"));
+            props_->info(t("gui.xp.class"), QString::fromStdString(pr.concrete));
+            props_->note(t("gui.xp.kjelem"));
+        } else {
+            const EntityId sid = it->second < static_cast<int>(prismSrc_.size()) ? prismSrc_[static_cast<std::size_t>(it->second)] : 0;
+            fillBimElement(*props_, loc_, doc_, layers_, pr, sid, run);
+            fillTemplate(pr.kind == ElemKind::Lean ? ElemKind::FoundationSlab : pr.kind);
+        }
+        props_->end();
+    }
+    if (tabs_ && tabs_->currentWidget() != props_) tabs_->setCurrentWidget(props_);
 }
 
 } // namespace asiacad::gui

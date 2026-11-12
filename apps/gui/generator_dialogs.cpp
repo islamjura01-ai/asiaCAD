@@ -660,13 +660,19 @@ CityDialog::CityDialog(const i18n::Localizer& loc, const Document& doc, bool dar
     view_->setDark(dark);
     tabs->addTab(view_, "3D");
     tabs->addTab(prev_, t("gui.gen.city.plan"));
+    props_ = new PropPanel(split);   // 3D yonida: tanlangan bino
+    props_->empty(t("gui.xp.hint"));
+    props_->setMinimumWidth(240);
+    tabs_ = tabs;
+    connect(view_, &Model3DView::objectPicked, this, &CityDialog::onPicked);
     split->setStretchFactor(2, 1);
-    split->setSizes({260, 330, 730});
+    split->setSizes({260, 330, 730, 280});
 
     auto* bottom = new QHBoxLayout;
     bottom->addStretch(1);
     auto* draw = new QPushButton(t("gui.gen.draw"), this);
     draw->setDefault(true);
+    drawB_ = draw;
     auto* close = new QPushButton(QString::fromUtf8("✕"), this);
     bottom->addWidget(draw);
     bottom->addWidget(close);
@@ -685,6 +691,8 @@ civil::CitySpec CityDialog::spec() const {
     c.floorsMin = fmin_->value(); c.floorsMax = fmax_->value(); c.floorH = floorH_->value();
     c.x0 = x0_->value(); c.y0 = y0_->value(); c.ground = ground_->value();
     c.seed = static_cast<unsigned>(seed_->value());
+    c.edits = edits_;
+    c.extra = extra_;
     return c;
 }
 
@@ -697,6 +705,8 @@ void CityDialog::setSpec(const civil::CitySpec& c) {
     fmin_->setValue(c.floorsMin); fmax_->setValue(c.floorsMax); floorH_->setValue(c.floorH);
     x0_->setValue(c.x0); y0_->setValue(c.y0); ground_->setValue(c.ground);
     seed_->setValue(static_cast<int>(c.seed));
+    edits_ = c.edits;
+    extra_ = c.extra;
     updating_ = false;
     recompute();
 }
@@ -747,11 +757,74 @@ void CityDialog::recompute() {
     for (const auto& b : r_.buildings) {
         std::vector<P3> o;
         for (const auto& p : b.footprint) o.push_back({p[0], p[1], 0});
-        const double k = static_cast<double>(b.floors) / fmax;
+        const double k = std::min(1.0, static_cast<double>(b.floors) / fmax);
         const QColor col = QColor::fromHsvF(0.58 - 0.5 * k, 0.35 + 0.3 * k, 0.92);
+        const QString key = b.extra >= 0 ? QStringLiteral("x:%1").arg(b.extra) : QStringLiteral("b:%1").arg(b.index);
+        view_->beginObject(t("gui.xp.bld", {QString::number(b.extra >= 0 ? b.extra + 1 : b.index + 1)}), t("gui.gen.city.title"),
+                           {t("gui.xp.floors") + ": " + QString::number(b.floors)}, key);
         view_->addPrism(o, {}, b.base, b.base + b.height, col);
+        view_->endObject();
     }
     view_->endScene(true);
+}
+
+void CityDialog::onPicked(const QString& key) {
+    const civil::CityBuilding* B = nullptr;
+    for (const auto& b : r_.buildings)
+        if ((b.extra >= 0 ? QStringLiteral("x:%1").arg(b.extra) : QStringLiteral("b:%1").arg(b.index)) == key) B = &b;
+    if (!B || B->footprint.size() < 4) {
+        props_->empty(t("gui.xp.hint"));
+        return;
+    }
+    const bool ext = B->extra >= 0;
+    const int id = ext ? B->extra : B->index;
+    const double x0 = B->footprint[0][0], y0 = B->footprint[0][1], w = B->footprint[2][0] - x0, d = B->footprint[2][1] - y0;
+    props_->begin(ext ? t("gui.xp.bldx", {QString::number(id + 1)}) : t("gui.xp.bld", {QString::number(id + 1)}), t("gui.gen.city.title"));
+    props_->section(t("gui.xp.geom"));
+    props_->number("floors", t("gui.xp.floors"), B->floors, 0, [this, ext, id](double v) {
+        const int f = static_cast<int>(std::lround(v));
+        if (f < 1 || f > 300) return;
+        if (ext) {
+            if (id < static_cast<int>(extra_.size())) extra_[static_cast<std::size_t>(id)].floors = f;
+        } else {
+            auto it = std::find_if(edits_.begin(), edits_.end(), [&](const civil::CitySpec::Edit& e) { return e.index == id; });
+            if (it == edits_.end()) edits_.push_back({id, f, false});
+            else it->floors = f;
+        }
+        recompute();
+    });
+    props_->info(t("gui.xp.extent"), f2(w) + QString::fromUtf8(" × ") + f2(d) + " m");
+    props_->info(t("gui.xp.height"), f2(B->height) + " m");
+    props_->info(t("gui.xp.base"), f2(B->base) + " m");
+    props_->info(t("gui.xp.gfa"), QString::number(w * d * B->floors, 'f', 0) + QString::fromUtf8(" m²"));
+    // qo'shimcha detallar: nusxa (siljitib), olib tashlash
+    props_->section(t("gui.xp.details"));
+    props_->action("copy", t("gui.xp.copy"), {{"dX", w + std::max(6.0, gap_->value()), 2}, {"dY", 0, 2}}, [this, x0, y0, w, d, f = B->floors](const QList<double>& in) {
+        extra_.push_back({x0 + in.value(0), y0 + in.value(1), w, d, f});
+        recompute();
+        view_->selectKey(QStringLiteral("x:%1").arg(extra_.size() - 1));
+    });
+    props_->action("erase", t("gui.xp.erase"), [this, ext, id] {
+        view_->clearSelection();
+        if (ext) {
+            if (id < static_cast<int>(extra_.size())) extra_.erase(extra_.begin() + id);
+        } else {
+            auto it = std::find_if(edits_.begin(), edits_.end(), [&](const civil::CitySpec::Edit& e) { return e.index == id; });
+            if (it == edits_.end()) edits_.push_back({id, 0, true});
+            else it->removed = true;
+        }
+        recompute();
+    }, true);
+    if (!edits_.empty() || !extra_.empty())
+        props_->action("reset", t("gui.xp.reset"), [this] {
+            view_->clearSelection();
+            edits_.clear();
+            extra_.clear();
+            recompute();
+        }, true);
+    props_->action("todwg", t("gui.xp.todwg"), [this] { if (drawB_) drawB_->click(); });
+    props_->note(t("gui.xp.citynote"));
+    props_->end();
 }
 
 } // namespace asiacad::gui

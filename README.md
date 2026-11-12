@@ -313,6 +313,34 @@ Masalan "4 блок КЖ": ФПм-1 (fundament), Пм-1 −0.700, Пм-2 −0.15
   qadam yozuvi belgiga qo'shiladi. Kontur ochiq poliliniya + yopuvchi chiziq bo'lsa ham topiladi.
 - Cheklov: rigellar (plita ostidagi to'sinlar) hozircha betonga kirmaydi.
 
+## Xossalar paneli — har menyuda (v0.32) — `apps/gui/prop_panel.*`, `apps/gui/bim_props.*`
+
+3D da element tanlansa (sichqoncha bilan yoki jadvaldan), menyuning o'ng tomonida "Xossalar": maydonlar (Enter — darhol
+qo'llanadi), hisob natijalari va shu elementning xatolari, "Qo'shimcha detallar" tugmalari, oldingi/keyingi, chizmada
+ko'rsatish. Model qayta qurilganda tanlov saqlanadi — panel yangi qiymatlar bilan yangilanadi.
+
+| Menyu | Tanlanadi | Tuzatish | Qo'shimcha detallar |
+|---|---|---|---|
+| Monolit bino | ustun, devor, plita, zina, shaxta, fundament; oyna; sterjen | o'lcham (SETPROP), tur → qatlam (CHPROP), menyu parametrlari | nusxa, siljitish, teshik (RECTANG → TESHIK), o'chirish |
+| Armatura 3D (shablon) | beton element, sterjen | chizma obyekti (yuqoridagidek) + shu tur armatura shabloni (Ø, qadam, soni) | — |
+| Armatura 3D (KJ) | plita turi (har qavatda), ustun/devor | qalinlik, usti belgilari, asosiy to'r Ø/qadam | teshik, qo'shimcha armatura zonasi (yuqori/pastki X+Y), yana bir belgi (plita nusxasi); bekor qilish |
+| Yer osti tarmoqlari | chiziq, quduq | tur, Ø, chuqurlik (hamma uchlarda), har uch Z; quduq: nomi, belgilar, diametr | uchda quduq, uchda bo'lish, parallel nusxa, o'chirish |
+| Yo'l | piket (yuza bo'lagi) | loyiha belgisi (nazorat nuqtasi), kesim (butun yo'l) | to'shama qatlami qo'shish/olib tashlash |
+| Suv yo'li | piket | tub belgisi, kesim turi va o'lchamlari, sarf | kesim shabloni |
+| Koridor | piket | loyiha belgisi, yig'ma qismlari parametrlari | yig'maga qism qo'shish / olib tashlash |
+| Kanalizatsiya (tarmoq 3D) | quduq, quvur | nomi, X/Y, belgilar, diametr; quvur turi, nishablik, sarf | o'rtaga quduq, quvurni bo'lish, o'chirish |
+| Shahar mavzesi | bino | qavatlar soni | nusxa (siljitib), olib tashlash, bekor qilish (`edits`/`extra` — JSON da, chizishda ham) |
+| Asosiy oyna 3D | qatlam chiziqlari, yuzalar, bino elementlari | bosilgan joyga eng yaqin chizma obyekti tanlanadi → asosiy "Xossalar" (OBJEDIT, PIPEEDIT …) | — |
+
+- **Qayerga yoziladi:** ochiq chizmadagi manba obyektli elementlar (bino) — chizmaga buyruqlar bilan, har biri undo bilan,
+  so'ng menyu qayta quriladi. Menyu modelidagi elementlar (tarmoq, yo'l, suv yo'li, koridor, kanalizatsiya, shahar) —
+  modelda darhol (jadvallar bilan bir xil), "Chizmaga yozish" — chizma obyektlariga (undo bilan). Tashqi KJ/DWG varaqlari
+  o'zgartirilmaydi — tuzatmalar modelda (`KjParams::slabEdits`).
+- **KJ teshigi** plita ichida bo'lishi kerak (boshqa teshikka tegmasin) — aks holda qo'shilmaydi, ogohlantirish
+  `kj.chk.hole_outside`. Qo'shimcha armatura zonasi sterjenlari plita konturi va teshiklari bilan kesiladi.
+- **Chiziqni tanlash:** uchburchaksiz obyektlar (quvur o'qi, sterjen) ekranda 7 px gacha yaqinlikda tanlanadi
+  (`Model3DView::lineAt`); kanalizatsiya tarmog'i 3D (`Pipe3DView`) — bosilgan yuza bo'yicha.
+
 ## Tipik qavatlar: "+11.300...+23.400" — bir nechta qavat (v0.32) — `bim::parseLevelSet`
 
 Chizmadagi belgilar to'plami endi bitta qavat emas, shuncha qavat deb o'qiladi:

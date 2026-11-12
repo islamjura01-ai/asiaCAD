@@ -233,13 +233,22 @@ void SewerDialog::buildUi() {
     // ---- o'ng: 3D, tekshiruv, hajmlar
     tabs_ = new QTabWidget(split);
     pipe3d_ = new Pipe3DView(tabs_);
-    net3d_ = new Pipe3DView(tabs_);
+    // tarmoq 3D va yonida Xossalar (tanlangan quduq / quvur)
+    auto* netBox = new QSplitter(Qt::Horizontal, tabs_);
+    net3d_ = new Pipe3DView(netBox);
+    props_ = new PropPanel(netBox);
+    props_->empty(t("gui.xp.hint"));
+    netBox->addWidget(net3d_);
+    netBox->addWidget(props_);
+    netBox->setStretchFactor(0, 3);
+    netBox->setStretchFactor(1, 2);
+    connect(net3d_, &Pipe3DView::picked, this, &SewerDialog::onPicked);
     checks_ = new QListWidget(tabs_);
     checks_->setWordWrap(true);
     qty_ = new QPlainTextEdit(tabs_);
     qty_->setReadOnly(true);
     tabs_->addTab(pipe3d_, t("gui.sew.view3d"));
-    tabs_->addTab(net3d_, t("gui.sew.view3dnet"));
+    tabs_->addTab(netBox, t("gui.sew.view3dnet"));
     tabs_->addTab(checks_, t("gui.sew.checks"));
     tabs_->addTab(qty_, t("gui.sew.qty"));
     split->setStretchFactor(0, 0);
@@ -730,6 +739,160 @@ void SewerDialog::saveTemplate() {
     }
     fillTemplates();
     tpl_->setCurrentIndex(tpl_->count() - 1);
+}
+
+// ---------------------------------------------------------------- Xossalar
+void SewerDialog::editNet(const std::function<void(SewerNetwork&)>& fn) {
+    SewerNetwork n = network();
+    fn(n);
+    while (n.segments.size() + 1 < n.manholes.size()) n.segments.push_back(n.segments.empty() ? Segment{} : n.segments.back());
+    if (n.manholes.size() >= 1 && n.segments.size() >= n.manholes.size()) n.segments.resize(n.manholes.size() - 1);
+    setNetwork(n);
+}
+
+void SewerDialog::onPicked(const QString& key) {
+    const SewerNetwork n = network();
+    const QColor err(232, 70, 80), warn(230, 160, 30);
+    const int i = key.section(':', 1).toInt();
+    auto issues = [&](bool seg, int idx) {
+        for (const auto& is : res_.issues)
+            if ((seg ? is.segment : is.manhole) == idx && is.level != Issue::Info)
+                props_->info(QString::fromUtf8(is.level == Issue::Error ? "⚠" : "!"), QString::fromStdString(loc_.tr(is.key, is.args)),
+                             is.level == Issue::Error ? err : warn);
+    };
+    if (key.startsWith("mh:") && i >= 0 && i < static_cast<int>(n.manholes.size())) {
+        const auto& m = n.manholes[static_cast<std::size_t>(i)];
+        props_->begin(t("gui.xp.mh", {QString::fromStdString(m.name)}), QString::fromStdString(n.name));
+        props_->section(t("gui.xp.network"));
+        props_->text("name", t("gui.xp.name"), QString::fromStdString(m.name), [this, i](const QString& s) {
+            if (!s.trimmed().isEmpty()) editNet([&](SewerNetwork& x) { if (i < static_cast<int>(x.manholes.size())) x.manholes[static_cast<std::size_t>(i)].name = s.trimmed().toStdString(); });
+        });
+        auto num = [&](const char* k, const QString& label, double v, int dec, double Manhole::*f, const QString& unit) {
+            props_->number(k, label, v, dec, [this, i, f](double val) {
+                editNet([&](SewerNetwork& x) { if (i < static_cast<int>(x.manholes.size())) x.manholes[static_cast<std::size_t>(i)].*f = val; });
+            }, unit);
+        };
+        num("x", "X", m.x, 3, &Manhole::x, "m");
+        num("y", "Y", m.y, 3, &Manhole::y, "m");
+        num("rim", t("gui.xp.rim"), m.rim, 2, &Manhole::rim, "m");
+        props_->text("inv", t("gui.xp.mhinv"), m.invert ? fmt(*m.invert, 2) : QString(), [this, i](const QString& s) {
+            bool ok = false;
+            const double v = toNum(s, &ok);
+            editNet([&](SewerNetwork& x) {
+                if (i >= static_cast<int>(x.manholes.size())) return;
+                auto& mm = x.manholes[static_cast<std::size_t>(i)];
+                if (s.trimmed().isEmpty() || !ok) mm.invert.reset();
+                else mm.invert = v;
+            });
+        });
+        num("d", t("gui.xp.diam0"), m.diameter, 2, &Manhole::diameter, "m");
+        if (n.storm.enabled) num("area", t("gui.xp.areaha"), m.areaHa, 2, &Manhole::areaHa, "ga");
+        if (i < static_cast<int>(res_.manholes.size())) {
+            const auto& r = res_.manholes[static_cast<std::size_t>(i)];
+            props_->section(t("gui.xp.calc"));
+            if (i > 0) props_->info(t("gui.xp.invin"), fmt(r.invIn, 3) + " m");
+            if (i + 1 < static_cast<int>(n.manholes.size())) props_->info(t("gui.xp.invout"), fmt(r.invOut, 3) + " m");
+            props_->info(t("gui.xp.depth"), fmt(r.depth) + " m");
+            props_->info(t("gui.xp.diam"), fmt(r.diameter) + QStringLiteral(" (≥ %1) m").arg(fmt(r.required)), r.diameter + 1e-9 < r.required ? err : QColor());
+        }
+        issues(false, i);
+        props_->section(t("gui.xp.details"));
+        props_->action("insert", t("gui.xp.mhins"), [this, i] {   // keyingi quduq bilan o'rtasiga (oxirgisi — davomiga 40 m)
+            editNet([&](SewerNetwork& x) {
+                if (i >= static_cast<int>(x.manholes.size())) return;
+                Manhole a = x.manholes[static_cast<std::size_t>(i)];
+                Manhole q = a;
+                q.invert.reset();
+                q.diameter = 0;
+                q.areaHa = 0;
+                if (i + 1 < static_cast<int>(x.manholes.size())) {
+                    const auto& b = x.manholes[static_cast<std::size_t>(i) + 1];
+                    q.x = (a.x + b.x) / 2;
+                    q.y = (a.y + b.y) / 2;
+                    q.rim = (a.rim + b.rim) / 2;
+                } else {
+                    q.x += 40;
+                }
+                q.name = a.name + "a";
+                x.manholes.insert(x.manholes.begin() + i + 1, q);
+                if (!x.segments.empty()) {
+                    const std::size_t si = std::min<std::size_t>(static_cast<std::size_t>(i), x.segments.size() - 1);
+                    x.segments.insert(x.segments.begin() + static_cast<std::ptrdiff_t>(si) + 1, x.segments[si]);
+                }
+            });
+        });
+        if (n.manholes.size() > 2)
+            props_->action("erase", t("gui.xp.erase"), [this, i] {
+                net3d_->clearSelection();
+                editNet([&](SewerNetwork& x) {
+                    if (i >= static_cast<int>(x.manholes.size()) || x.manholes.size() <= 2) return;
+                    x.manholes.erase(x.manholes.begin() + i);
+                    if (!x.segments.empty()) x.segments.erase(x.segments.begin() + std::min<std::ptrdiff_t>(i, static_cast<std::ptrdiff_t>(x.segments.size()) - 1));
+                });
+            }, true);
+        props_->action("todwg", t("gui.xp.todwg"), [this] { draw(); });
+        if (i > 0) props_->action("prev", QString::fromUtf8("◀ ") + t("gui.xp.prev"), [this, i] { net3d_->selectKey(QStringLiteral("mh:%1").arg(i - 1)); });
+        if (i + 1 < static_cast<int>(n.manholes.size()))
+            props_->action("next", t("gui.xp.next") + QString::fromUtf8(" ▶"), [this, i] { net3d_->selectKey(QStringLiteral("mh:%1").arg(i + 1)); });
+        props_->note(t("gui.xp.sewnote"));
+        props_->end();
+    } else if (key.startsWith("seg:") && i >= 0 && i + 1 < static_cast<int>(n.manholes.size()) && i < segs_->rowCount()) {
+        const auto& a = n.manholes[static_cast<std::size_t>(i)];
+        const auto& b = n.manholes[static_cast<std::size_t>(i) + 1];
+        props_->begin(t("gui.xp.seg", {QString::fromStdString(a.name), QString::fromStdString(b.name)}), QString::fromStdString(n.name));
+        props_->section(t("gui.xp.network"));
+        if (auto* cb = specCombo(i)) {
+            QStringList items;
+            for (int k = 0; k < cb->count(); ++k) items << cb->itemText(k);
+            props_->choice("spec", t("gui.xp.pipe"), items, cb->currentIndex(), [this, i](int k) {
+                if (auto* c = specCombo(i)) c->setCurrentIndex(k);   // jadval kombosi — hisob o'zi qayta
+            });
+        }
+        const double sl = i < static_cast<int>(n.segments.size()) ? n.segments[static_cast<std::size_t>(i)].slope : 0;
+        props_->number("slope", t("gui.xp.slope0"), sl * 1000, 2, [this, i](double v) {
+            editNet([&](SewerNetwork& x) { if (i < static_cast<int>(x.segments.size())) x.segments[static_cast<std::size_t>(i)].slope = std::max(0.0, v / 1000); });
+        }, QString::fromUtf8("‰"));
+        if (!n.storm.enabled)
+            props_->number("flow", t("gui.xp.flow"), i < static_cast<int>(n.segments.size()) ? n.segments[static_cast<std::size_t>(i)].flowLs : 0, 2,
+                           [this, i](double v) {
+                               editNet([&](SewerNetwork& x) { if (i < static_cast<int>(x.segments.size())) x.segments[static_cast<std::size_t>(i)].flowLs = std::max(0.0, v); });
+                           }, "l/s");
+        if (i < static_cast<int>(res_.segments.size())) {
+            const auto& s = res_.segments[static_cast<std::size_t>(i)];
+            props_->section(t("gui.xp.calc"));
+            props_->info(t("gui.xp.length"), fmt(s.length) + " m");
+            props_->info(t("gui.xp.slope"), fmt(s.slope * 1000, 2) + QString::fromUtf8(" ‰"), s.minSlope > 0 && s.slope + 1e-12 < s.minSlope ? err : QColor());
+            props_->info(t("gui.xp.uaxis"), fmt(s.invUp, 3) + QString::fromUtf8(" → ") + fmt(s.invDown, 3));
+            props_->info(t("gui.xp.depth"), fmt(s.depthUp) + QString::fromUtf8(" → ") + fmt(s.depthDown) + " m");
+            props_->info(t("gui.xp.ucovermin"), fmt(s.coverMin) + " m");
+            props_->info(t("gui.xp.qfull"), fmt(s.qFull, 1) + " l/s · " + fmt(s.vFull) + " m/s");
+            if (s.flowLs > 0) props_->info(t("gui.xp.fillv"), fmt(s.fill) + " · " + fmt(s.velocity) + " m/s", s.maxFill > 0 && s.fill > s.maxFill ? err : QColor());
+        }
+        issues(true, i);
+        props_->section(t("gui.xp.details"));
+        props_->action("split", t("gui.xp.segsplit"), [this, i] {   // o'rtasiga quduq
+            editNet([&](SewerNetwork& x) {
+                if (i + 1 >= static_cast<int>(x.manholes.size())) return;
+                const Manhole& p = x.manholes[static_cast<std::size_t>(i)];
+                const Manhole& q2 = x.manholes[static_cast<std::size_t>(i) + 1];
+                Manhole m;
+                m.name = p.name + "a";
+                m.x = (p.x + q2.x) / 2;
+                m.y = (p.y + q2.y) / 2;
+                m.rim = (p.rim + q2.rim) / 2;
+                x.manholes.insert(x.manholes.begin() + i + 1, m);
+                if (i < static_cast<int>(x.segments.size())) x.segments.insert(x.segments.begin() + i + 1, x.segments[static_cast<std::size_t>(i)]);
+            });
+        });
+        props_->action("todwg", t("gui.xp.todwg"), [this] { draw(); });
+        if (i > 0) props_->action("prev", QString::fromUtf8("◀ ") + t("gui.xp.prev"), [this, i] { net3d_->selectKey(QStringLiteral("seg:%1").arg(i - 1)); });
+        if (i + 2 < static_cast<int>(n.manholes.size()))
+            props_->action("next", t("gui.xp.next") + QString::fromUtf8(" ▶"), [this, i] { net3d_->selectKey(QStringLiteral("seg:%1").arg(i + 1)); });
+        props_->note(t("gui.xp.sewnote"));
+        props_->end();
+    } else {
+        props_->empty(t("gui.xp.hint"));
+    }
 }
 
 void SewerDialog::draw() {

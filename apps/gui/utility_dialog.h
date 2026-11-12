@@ -7,6 +7,7 @@
 #include "drawing_set_widget.h"
 #include "excel_link.h"
 #include "model3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/utility.h>
@@ -18,7 +19,9 @@ class QCheckBox;
 class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
+class QPushButton;
 class QTableWidget;
+class QTabWidget;
 
 namespace asiacad::gui {
 
@@ -39,6 +42,7 @@ public:
     void selectLine(int index);
     void setZ(int line, int vertex, double z);      // qo'lda tuzatish (sinov uchun ham)
     void modelChanged();                             // tekshiruv + jadvallar + 3D
+    PropPanel* props() const { return props_; }      // Xossalar: 3D da tanlangan chiziq / quduq
 
 signals:
     void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
@@ -55,6 +59,9 @@ private:
     void fillPoints();
     void render();
     void applyTemplate(const QVariant& data);
+    void onPicked(const QString& key);
+    void fillLineProps(int i);
+    void fillNodeProps(int k);
 
     const i18n::Localizer& loc_;
     const Document& doc_;
@@ -76,6 +83,9 @@ private:
     QListWidget* checks_ = nullptr;
     QLabel* summary_ = nullptr;
     ExcelLink* excel_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
+    PropPanel* props_ = nullptr;
+    QPushButton* drawB_ = nullptr;
 };
 
 QColor utilColor(civil::UtilKind k);

@@ -1191,6 +1191,53 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
         }
     }
 
+    // ---- foydalanuvchi tuzatmalari ("Armatura 3D" → Xossalar): plita turi bo'yicha belgilar, qalinlik, teshiklar
+    auto editOf = [&](const Group& g) -> const KjSlabEdit* {
+        for (const auto& e : p.slabEdits)
+            if (utf8::toUpper(e.tag) == g.tag) return &e;
+        return nullptr;
+    };
+    for (auto& g : groups) {
+        const KjSlabEdit* e = editOf(g);
+        if (!e) continue;
+        if (!e->levels.empty()) {
+            g.levels = e->levels;
+            std::sort(g.levels.begin(), g.levels.end());
+            g.levels.erase(std::unique(g.levels.begin(), g.levels.end(), [](double a, double b) { return std::abs(a - b) < 1e-4; }), g.levels.end());
+            if (!multi) {   // bitta plita: tipik belgilar ham shu
+                r.typical = g.levels.size() >= 2 ? g.levels : std::vector<double>{};
+                slabTop = g.levels.front();
+            }
+        }
+        if (e->t > 0) {
+            g.t = e->t;
+            g.tFound = true;
+        }
+        for (const auto& h : e->holes) {   // teshik: soat strelkasi bo'yicha to'rtburchak (kontur — teskari)
+            if (g.ol.rings.empty() || h.w <= 0.01 || h.h <= 0.01) continue;
+            const std::vector<Vec3> rc{{h.x - h.w / 2, h.y + h.h / 2, 0}, {h.x + h.w / 2, h.y + h.h / 2, 0}, {h.x + h.w / 2, h.y - h.h / 2, 0},
+                                       {h.x - h.w / 2, h.y - h.h / 2, 0}};
+            // butunlay plita ichida va boshqa teshiklarga tegmasin: kesish juft-toq — tashqaridagi teshik maydon qo'shib yuboradi
+            bool ok = true;
+            for (int i = 0; i < 4 && ok; ++i)
+                for (int k = 0; k <= 8 && ok; ++k) {
+                    const Vec3 &a = rc[static_cast<std::size_t>(i)], &b = rc[static_cast<std::size_t>((i + 1) % 4)];
+                    const double x = a.x + (b.x - a.x) * k / 8.0, y = a.y + (b.y - a.y) * k / 8.0;
+                    ok = inPoly(g.ol.rings[0], x, y);
+                    for (std::size_t q = 1; ok && q < g.ol.rings.size(); ++q) ok = !inPoly(g.ol.rings[q], x, y);
+                }
+            for (std::size_t q = 1; ok && q < g.ol.rings.size(); ++q)
+                for (const auto& v : g.ol.rings[q]) ok = ok && !(std::abs(v.x - h.x) < h.w / 2 && std::abs(v.y - h.y) < h.h / 2);
+            if (!ok) {
+                issue(true, "kj.chk.hole_outside", {g.shown.empty() ? std::string("-") : g.shown, std::format("{:.2f}×{:.2f}", h.w, h.h),
+                                                    std::format("{:.2f}; {:.2f}", h.x, h.y)});
+                continue;
+            }
+            g.ol.rings.push_back(rc);
+            g.ol.net -= h.w * h.h;
+        }
+    }
+
     // ---- qavatlar: barcha plitalar usti belgilari; 1.5 m dan yaqinlari — bitta qavat (Пм-1 −0.700 va Пм-2 −0.150)
     std::vector<std::pair<double, double>> floorLH;
     {
@@ -1403,14 +1450,14 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
                 }
             return bd < 12 ? s : def;
         };
-        auto mainMesh = [&](const std::vector<std::vector<Vec3>>& rings, ElemKind ek, int level, double z0, double z1) {
+        auto mainMesh = [&](const std::vector<std::vector<Vec3>>& rings, ElemKind ek, int level, double z0, double z1, const KjSlabEdit* ed = nullptr) {
             const std::string bestK = M.best();
             BarMark m;
             if (!bestK.empty()) m = M.of.at(bestK);
-            else issue(false, "kj.chk.no_mark", {v.title});
-            const double d = m.d > 0 ? m.d : 0.012;
-            const std::string cls = m.cls.empty() ? "A400" : m.cls;
-            const double s = m.spacing > 0 ? m.spacing : M.step;
+            else if (!ed || ed->meshD <= 0) issue(false, "kj.chk.no_mark", {v.title});
+            const double d = ed && ed->meshD > 0 ? ed->meshD : m.d > 0 ? m.d : 0.012;
+            const std::string cls = m.cls.empty() ? (ed && ed->meshD > 0 ? cx.cls : std::string("A400")) : m.cls;
+            const double s = ed && ed->meshS > 0 ? ed->meshS : m.spacing > 0 ? m.spacing : M.step;
             v.mainMark = std::format("\xC3\x98{} {} s{}", std::lround(d * 1000), cls, std::lround(s * 1000));
             mesh(cx, rings, ek, level, d, cls, s, z0, z1);
             if (!m.cls.empty()) cx.cls = m.cls;
@@ -1428,7 +1475,7 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
                 if (G->ol.rings.empty()) issue(true, "kj.chk.no_outline", {v.title});
             }
             if (&v == G->meshV && !G->ol.rings.empty())
-                mainMesh(G->ol.rings, ElemKind::Slab, G->floors.front(), G->levels.front() - G->t, G->levels.front());
+                mainMesh(G->ol.rings, ElemKind::Slab, G->floors.front(), G->levels.front() - G->t, G->levels.front(), editOf(*G));
         }
         if (v.kind == KjViewKind::Columns) {
             const double w = v.box.max.x - v.box.min.x, h = v.box.max.y - v.box.min.y;
@@ -1534,6 +1581,38 @@ KjProject buildKjProject(const Document& doc, const std::vector<DxfDimInfo>& dim
                     const Vec3 o = z.o + W * ((i + 0.5) * lw / n);
                     const Vec3 e = o + U * lu;
                     cx.bar(ek, lvl, role, d, zcls, {Vec3{o.x, o.y, zz}, Vec3{e.x, e.y, zz}});
+                }
+            }
+        }
+    }
+    // ---- qo'shimcha armatura zonalari (Xossalar): zona to'rtburchagida X va Y sterjenlar, plitaning yuqori/pastki qatlamida
+    for (std::size_t gi = 0; gi < groups.size(); ++gi) {
+        const KjSlabEdit* e = editOf(groups[gi]);
+        if (!e || groups[gi].levels.empty()) continue;
+        const Group& g = groups[gi];
+        cx.group = static_cast<int>(gi);
+        for (const auto& z : e->zones) {
+            if (z.w <= 0.1 || z.h <= 0.1 || z.d <= 0 || z.s < 0.05) continue;
+            const double top = g.levels.front(), bot = top - g.t;
+            for (int dir = 0; dir < 2; ++dir) {   // 0 — X bo'ylab (qadam Y bo'yicha), 1 — Y bo'ylab
+                const double span = dir == 0 ? z.h : z.w, len = dir == 0 ? z.w : z.h;
+                const int n = std::max(1, static_cast<int>(std::floor(span / z.s + 1e-9)) + 1);
+                const double zz = z.top ? top - p.cover - z.d / 2 - (dir == 1 ? z.d : 0) : bot + p.cover + z.d / 2 + (dir == 1 ? z.d : 0);
+                const BarRole role = z.top ? (dir == 0 ? BarRole::TopX : BarRole::TopY) : (dir == 0 ? BarRole::BottomX : BarRole::BottomY);
+                for (int i = 0; i < n; ++i) {
+                    const double c = (n == 1 ? 0.0 : -span / 2 + span * i / (n - 1));
+                    const double cc = dir == 0 ? z.y + c : z.x + c, a0 = (dir == 0 ? z.x : z.y) - len / 2, a1 = a0 + len;
+                    // plita konturi (va teshiklar) bilan kesiladi — zona chetdan chiqsa ham sterjen plitada qoladi
+                    for (auto [s0, s1] : g.ol.rings.empty() ? std::vector<std::pair<double, double>>{{a0, a1}} : scan(g.ol.rings, dir, cc)) {
+                        if (!g.ol.rings.empty()) {
+                            s0 += p.cover;
+                            s1 -= p.cover;
+                        }
+                        const double u0 = std::max(s0, a0), u1 = std::min(s1, a1);
+                        if (u1 - u0 < 0.2) continue;
+                        auto P = [&](double u) { return dir == 0 ? Vec3{u, cc, zz} : Vec3{cc, u, zz}; };
+                        cx.bar(ElemKind::Slab, g.floors.front(), role, z.d, cx.cls, {P(u0), P(u1)});
+                    }
                 }
             }
         }

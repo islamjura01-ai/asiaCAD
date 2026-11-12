@@ -79,6 +79,9 @@ public:
     UiMode mode() const { return mode_; }
     void setLanguage(const QString& code);
     bool runLine(const QString& line, bool echo = true);  // false — EXIT
+    // Menyu "Xossalar" panelidan: chizma obyektiga buyruqlar (har biri undo bilan), so'ng menyu yangilanadi
+    EntityId nearestEntity(const std::string& layer, double x, double y, double z) const;   // 3D -> chizma obyekti
+    void runDialogCommands(const QStringList& lines, const std::function<void()>& after);
     Viewport* viewport() const { return view_; }
     SymbolPalette* symbolPalette() const { return symPal_; }
     SteelPanel* steelPanel() const { return steelPal_; }

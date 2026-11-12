@@ -6,6 +6,7 @@
 //  past — Excelga/Exceldan, "3D va profilni chizmaga" (ROAD fayl.json + x,y)
 #include "excel_link.h"
 #include "model3d_view.h"
+#include "prop_panel.h"
 #include "template_sidebar.h"
 
 #include <asiacad/civil/road.h>
@@ -16,6 +17,7 @@
 class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
+class QPushButton;
 class QSpinBox;
 class QTableWidget;
 class QTabWidget;
@@ -56,6 +58,7 @@ public:
     void setDesign(int station, double z);      // qo'lda tuzatish
     void applyCategory(const QString& id);
     void showTab(int i);
+    PropPanel* props() const { return props_; }   // Xossalar: 3D da tanlangan piket
 
 signals:
     void scratchRequested();                    // "0 dan" — generator oynasi (MainWindow ochadi)
@@ -73,6 +76,7 @@ private:
     void modelChanged();
     void fillTables();
     void render();
+    void onPicked(const QString& key);
 
     const i18n::Localizer& loc_;
     const Document& doc_;
@@ -96,6 +100,9 @@ private:
     QListWidget* checks_ = nullptr;
     QLabel* summary_ = nullptr;
     ExcelLink* excel_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
+    PropPanel* props_ = nullptr;
+    QPushButton* drawB_ = nullptr;
 };
 
 } // namespace asiacad::gui
